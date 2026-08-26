@@ -7,11 +7,12 @@ on:
 jobs:
   api:
     runs-on: ubuntu-latest
-    # Not used by any test yet (that starts in Session 2+), but declared now
-    # so this workflow file doesn't need a second edit when it is.
     services:
       postgres:
-        image: postgres:16
+        # Kept in sync with docker-compose.yml's pin to Supabase's actual
+        # Postgres version (see Phase 0 session 2) - not load-bearing for
+        # CI itself, but avoids "works differently in CI than locally".
+        image: postgres:17.6
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -27,7 +28,7 @@ jobs:
       # Placeholder values only, so config.py's fail-fast validation succeeds
       # in CI. Never real secrets - see api/.env.example for what these mean.
       # Port 5433 matches config.py's LOCAL_DB_EXPECTED_PORT / docker-compose.yml.
-      LOCAL_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/cricket_training
+      LOCAL_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/cricket_training?sslmode=disable
       CRICSHEET_DATA_DIR: ./data/cricsheet
       SUPABASE_URL: https://ci-placeholder.supabase.co
       SUPABASE_SECRET_KEY: sb_secret_ci_placeholder
@@ -36,8 +37,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - name: Install api package
         run: pip install -e "./api[dev]"
+      - name: Apply migrations to the CI postgres service
+        run: npx supabase db push --db-url "$LOCAL_DATABASE_URL"
       - name: Run tests
         run: pytest tests
 
