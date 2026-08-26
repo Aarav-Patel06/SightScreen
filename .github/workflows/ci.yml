@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    # Not used by any test yet (that starts in Session 2+), but declared now
+    # so this workflow file doesn't need a second edit when it is.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: cricket_training
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # Placeholder values only, so config.py's fail-fast validation succeeds
+      # in CI. Never real secrets - see api/.env.example for what these mean.
+      LOCAL_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/cricket_training
+      CRICSHEET_DATA_DIR: ./data/cricsheet
+      SUPABASE_URL: https://ci-placeholder.supabase.co
+      SUPABASE_SECRET_KEY: sb_secret_ci_placeholder
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install api package
+        run: pip install -e "./api[dev]"
+      - name: Run tests
+        run: pytest tests
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm test
