@@ -26,4 +26,16 @@ describe("env", () => {
     // SUPABASE_SECRET_KEY intentionally left unset
     await expect(import("./env")).rejects.toThrow(/SUPABASE_SECRET_KEY/);
   });
+
+  it("throws when NEXT_PUBLIC_SUPABASE_URL has a /rest/ path suffix", async () => {
+    Object.assign(process.env, REQUIRED_VARS);
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co/rest/v1/";
+    await expect(import("./env")).rejects.toThrow(/\/rest\//);
+  });
+
+  it("throws when a required var still holds a placeholder value", async () => {
+    Object.assign(process.env, REQUIRED_VARS);
+    process.env.SUPABASE_SECRET_KEY = "sb_secret_...";
+    await expect(import("./env")).rejects.toThrow(/placeholder/);
+  });
 });

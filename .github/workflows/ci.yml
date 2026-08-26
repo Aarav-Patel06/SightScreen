@@ -17,7 +17,7 @@ jobs:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: cricket_training
         ports:
-          - 5432:5432
+          - 5433:5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -26,7 +26,8 @@ jobs:
     env:
       # Placeholder values only, so config.py's fail-fast validation succeeds
       # in CI. Never real secrets - see api/.env.example for what these mean.
-      LOCAL_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/cricket_training
+      # Port 5433 matches config.py's LOCAL_DB_EXPECTED_PORT / docker-compose.yml.
+      LOCAL_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/cricket_training
       CRICSHEET_DATA_DIR: ./data/cricsheet
       SUPABASE_URL: https://ci-placeholder.supabase.co
       SUPABASE_SECRET_KEY: sb_secret_ci_placeholder

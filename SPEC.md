@@ -120,14 +120,34 @@ Every scheduled job in §8 is daily or slower, which is exactly what Actions cro
 
 Free tier gives 2,000 Actions minutes/month, which is ample. Run history is your job log for free, and a failed calibration run emails you automatically.
 
-### 2.4 Connection pooling — a gotcha that will bite you
+### 2.4 Connection pooling — read this before writing any connection code
 
-Supabase exposes two connection strings and using the wrong one causes intermittent, hard-to-debug failures under load:
+Supabase exposes **three** connection paths, and the naive choice fails outright rather than degrading.
 
-- **Port 6543 (pooler / pgBouncer, transaction mode)** — use from Vercel functions and anything serverless. Prepared statements are unavailable in transaction mode; disable them in your client.
-- **Port 5432 (direct)** — use from the long-running Railway worker.
+Direct connections (`db.<ref>.supabase.co:5432`) resolve over **IPv6 only** unless you buy the IPv4 add-on (~$4/mo). Railway has no outbound IPv6, and neither does Docker's default bridge network. So the direct connection string is unusable for this project. It will present as a DNS failure, not a connection error, which is confusing the first time.
 
-Serverless functions each open their own connection. Without the pooler you will exhaust Supabase's connection limit the first time you have a few concurrent users.
+Use the pooler for everything:
+
+| Caller | Path | Port |
+|---|---|---|
+| Vercel functions, anything serverless | Supavisor **transaction** mode | 6543 |
+| Railway live worker, Railway FastAPI | Supavisor **session** mode | 5432 |
+| Migrations, admin scripts, local tooling | Supavisor **session** mode | 5432 |
+
+Both use the same host pattern, and note the username changes — this is the detail everyone misses:
+
+```
+postgresql://postgres.<PROJECT_REF>:<PASSWORD>@aws-0-<REGION>.pooler.supabase.com:5432/postgres
+```
+
+The user is `postgres.<ref>`, not `postgres`. Copy the exact string from the dashboard's **Connect** button rather than assembling it by hand; the region prefix varies.
+
+Mode differences that matter:
+
+- **Transaction mode (6543)** hands a backend connection to a client only for the duration of a query. Prepared statements are unavailable — disable them in your client. Session state does not reliably reset between clients, so never rely on `SET`, temp tables, or session-scoped settings here.
+- **Session mode (5432)** holds a backend connection for the life of the client connection, behaving like a direct connection. Use it anywhere you need session state, prepared statements, or transactions spanning multiple statements — which includes all migrations and the agent's `SET LOCAL statement_timeout`.
+
+Pool size is shared across both modes. On the free tier that ceiling is low, so do not open connections speculatively.
 
 ---
 
@@ -912,7 +932,7 @@ Top to bottom:
 | **Perceived as a betting tool** | Explicit latency disclosure, no odds, no stake language, accuracy page framing it as analytics. |
 | **Supabase 500 MB free tier** | Training corpus stays in local Postgres (§2.1). Supabase holds serving data only. T20-only if still tight. |
 | **Trying to run the poller on Vercel** | It cannot work (§2.2). One Railway container, budgeted from day one. |
-| **Supabase connection exhaustion** | Pooler on 6543 from Vercel, direct 5432 from Railway (§2.4). |
+| **Supabase connection exhaustion** | Transaction pooler (6543) from Vercel, session pooler (5432) from Railway. Never direct — it is IPv6-only (§2.4). |
 | **Realtime silently delivering nothing** | Almost always missing RLS policies, not a broken subscription. Check policies first. |
 | **Schema drift between Python and TypeScript** | Regenerate `types.ts` on every migration; make CI fail if it's stale. |
 

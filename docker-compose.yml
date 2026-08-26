@@ -1,0 +1,30 @@
+# Local training Postgres only (SPEC.md section 2.1) - the full historical
+# corpus and match_states live here, never in Supabase. Do not run
+# `supabase start`; hosted Supabase is the serving database.
+#
+# Image pinned to the exact version Supabase reports for `select version()`
+# (17.6) so training and serving never drift apart in a way that looks like
+# a data bug. Re-check and re-pin if the Supabase project is ever upgraded.
+services:
+  postgres:
+    image: postgres:17.6
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cricket_training
+    ports:
+      # Host 5433, not the 5432 default - avoids clashing with any system
+      # Postgres already listening on 5432. Must match LOCAL_DATABASE_URL
+      # in api/.env and config.py's LOCAL_DB_EXPECTED_PORT.
+      - "5433:5432"
+    volumes:
+      - cricket_training_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cricket_training"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  cricket_training_data:
