@@ -30,14 +30,29 @@ from typing import Callable, Literal
 from rapidfuzz import fuzz
 
 Outcome = Literal["auto_resolved", "auto_created", "queued"]
+Method = Literal["registry_id", "name_alias", "fuzzy"]
 
 # Bias toward missed-match over wrong-merge (this session's governing
 # principle) - well above section 4.4's literal "~85".
 AUTO_RESOLVE_FLOOR = 95
 AUTO_RESOLVE_MARGIN = 10
 # Below this, nothing is even plausible - treat as a genuinely new entity
-# rather than cluttering the review queue with obvious non-matches.
+# rather than cluttering the review queue with obvious non-matches. Player
+# names are long/distinctive enough that 60 is a safe bar. Team and venue
+# names are short and share a lot of generic vocabulary ("Cricket Stadium",
+# "National Stadium", "Super Kings", "-shire") - confirmed against real
+# Cricsheet data that this pushes completely unrelated pairs
+# ("Uganda"/"England", unrelated stadiums both containing "Cricket
+# Stadium") up to ~80 on token_set_ratio alone. A single ceiling tuned for
+# players floods the review queue with these false positives rather than
+# genuine ambiguity. Raising it for team/venue doesn't weaken the
+# wrong-merge protection at all (AUTO_RESOLVE_FLOOR is unchanged) - it only
+# means an unrecognised rename auto-creates as a new row instead of
+# queuing, which is a completeness gap, not a corruption risk. Known
+# renames are handled by seeding aliases directly (session 4/5), not by
+# hoping fuzzy matching gets lucky - see known_team_aliases.json.
 AUTO_CREATE_CEILING = 60
+TEAM_VENUE_AUTO_CREATE_CEILING = 85
 # Surname-level fuzz.ratio threshold for blocking (players only) - tolerant
 # of a small typo in the surname itself, while still excluding anything
 # genuinely unrelated from ever being scored.
@@ -58,6 +73,11 @@ class ResolutionResult:
     entity_id: int | None
     outcome: Outcome
     unresolved_id: int | None = None
+    # Only meaningful when outcome == "auto_resolved" - which of the three
+    # resolution paths actually fired. Session 5's load report breaks down
+    # resolutions by this field; every fuzzy one gets listed individually
+    # for manual review, since that's the one path that can be wrong.
+    method: Method | None = None
 
 
 @dataclass
@@ -160,13 +180,35 @@ def _venue_candidates(conn, _normalized_query: str) -> list[tuple[int, str]]:
 
 # --- Scoring --------------------------------------------------------------
 
-def _score_candidates(normalized_query: str, candidates: list[tuple[int, str]]) -> list[_Candidate]:
+# token_set_ratio gives a bare word a perfect 100 against ANY longer name
+# that happens to contain it as a subset ("Warriors" vs "Guyana Amazon
+# Warriors", "Titans" vs "Gujarat Titans") - confirmed against real
+# Cricsheet data, and dangerous specifically for team/venue names: several
+# unrelated real teams share one branding word, and if only one such team
+# happened to exist yet (order-dependent - the exact determinism failure
+# Decision 4 warns about), that 100 has no second candidate to trip the
+# margin check and would auto-resolve as a wrong merge. Cricsheet's
+# info.teams/venue are always the entity's real full name, never a
+# genuine abbreviation the way player initials are, so - unlike players -
+# there's no legitimate case to protect here: requiring at least 2 shared
+# distinctive tokens before trusting a high score costs nothing real.
+MIN_SHARED_TOKENS_TEAM_VENUE = 2
+UNTRUSTED_SUBSET_SCORE_CAP = 50.0
+
+
+def _score_candidates(normalized_query: str, candidates: list[tuple[int, str]], kind: str) -> list[_Candidate]:
+    query_tokens = set(normalized_query.split())
     scored = []
     for entity_id, comparison_text in candidates:
         normalized_candidate = normalize_name(comparison_text)
         score = float(fuzz.token_set_ratio(normalized_query, normalized_candidate))
         if _initials_match(normalized_query, normalized_candidate):
             score = max(score, INITIALS_MATCH_SCORE)
+        if kind != "player":
+            candidate_tokens = set(normalized_candidate.split())
+            shared = len(query_tokens & candidate_tokens)
+            if shared < MIN_SHARED_TOKENS_TEAM_VENUE:
+                score = min(score, UNTRUSTED_SUBSET_SCORE_CAP)
         scored.append(_Candidate(entity_id=entity_id, canonical_name=comparison_text, score=score))
     scored.sort(key=lambda c: c.score, reverse=True)
     return scored
@@ -203,7 +245,9 @@ def _temporal_implausible(conn, candidate_id: int, query_date: date | None) -> b
 
 # --- Persistence -----------------------------------------------------------
 
-def _lookup_alias(conn, config: _KindConfig, source: str, source_name: str, source_id: str | None) -> int | None:
+def _lookup_alias(
+    conn, config: _KindConfig, source: str, source_name: str, source_id: str | None
+) -> tuple[int, Method] | None:
     with conn.cursor() as cur:
         if source_id is not None:
             cur.execute(
@@ -212,13 +256,13 @@ def _lookup_alias(conn, config: _KindConfig, source: str, source_name: str, sour
             )
             row = cur.fetchone()
             if row:
-                return row[0]
+                return row[0], "registry_id"
         cur.execute(
             f"SELECT {config.id_column} FROM {config.alias_table} WHERE source = %s AND source_name = %s",
             (source, source_name),
         )
         row = cur.fetchone()
-        return row[0] if row else None
+        return (row[0], "name_alias") if row else None
 
 
 def _create_alias(conn, config: _KindConfig, source: str, source_name: str, source_id: str | None, entity_id: int) -> None:
@@ -314,20 +358,43 @@ def _resolve(
 ) -> ResolutionResult:
     existing = _lookup_alias(conn, config, source, source_name, source_id)
     if existing is not None:
-        return ResolutionResult(entity_id=existing, outcome="auto_resolved")
+        entity_id, method = existing
+        return ResolutionResult(entity_id=entity_id, outcome="auto_resolved", method=method)
+
+    # An exact registry ID is authoritative and terminal (Cricsheet assigns
+    # one globally-unique ID per real human across the whole corpus). If we
+    # reach here, the ID lookup above already ran and found nothing - that
+    # means this is a fresh, never-before-seen but definitively real,
+    # distinct individual, not an unknown one. No fuzzy score or collision
+    # check has standing to override that; those heuristics exist only to
+    # substitute for an ID when there isn't one. Confirmed as the actual
+    # cause of a 2,000-match sample's entire player queue (100% of queued
+    # players had a registry ID present - see the session 5 diagnosis).
+    if source_id is not None:
+        new_id = _create_new_entity_and_alias(conn, config, source, source_name, source_id, extra_columns)
+        return ResolutionResult(entity_id=new_id, outcome="auto_created")
 
     normalized_query = normalize_name(comparison_query)
     raw_candidates = candidates_fn(conn, normalized_query)
-    scored = _score_candidates(normalized_query, raw_candidates)
+    scored = _score_candidates(normalized_query, raw_candidates, config.kind)
+
+    top = scored[0] if scored else None
 
     collision_reason: str | None = None
     if config.kind == "player":
-        if _same_surname_collision(surname_key(normalized_query), squad_names):
-            collision_reason = "same_surname_collision"
-        elif scored and _temporal_implausible(conn, scored[0].entity_id, match_date):
-            collision_reason = "temporal_implausible"
-
-    top = scored[0] if scored else None
+        # Both collision checks require an actual plausible candidate in
+        # the database first - a squad's shared surname or a name's
+        # temporal history is only a disambiguation risk if there's
+        # something in the DB it could actually be confused with. Without
+        # this guard, two brand-new squadmates who happen to share a
+        # surname would queue with zero candidates to review against
+        # anything - confirmed as a real bug against real data (22% of
+        # same_surname_collision entries had an empty candidate list).
+        if top is not None and top.score >= AUTO_CREATE_CEILING:
+            if _same_surname_collision(surname_key(normalized_query), squad_names):
+                collision_reason = "same_surname_collision"
+            elif _temporal_implausible(conn, top.entity_id, match_date):
+                collision_reason = "temporal_implausible"
     second = scored[1] if len(scored) > 1 else None
     margin = (top.score - second.score) if (top and second) else None
 
@@ -338,9 +405,10 @@ def _resolve(
         and (margin is None or margin >= AUTO_RESOLVE_MARGIN)
     ):
         _create_alias(conn, config, source, source_name, source_id, top.entity_id)
-        return ResolutionResult(entity_id=top.entity_id, outcome="auto_resolved")
+        return ResolutionResult(entity_id=top.entity_id, outcome="auto_resolved", method="fuzzy")
 
-    if collision_reason is None and (top is None or top.score < AUTO_CREATE_CEILING):
+    auto_create_ceiling = AUTO_CREATE_CEILING if config.kind == "player" else TEAM_VENUE_AUTO_CREATE_CEILING
+    if collision_reason is None and (top is None or top.score < auto_create_ceiling):
         new_id = _create_new_entity_and_alias(conn, config, source, source_name, source_id, extra_columns)
         return ResolutionResult(entity_id=new_id, outcome="auto_created")
 

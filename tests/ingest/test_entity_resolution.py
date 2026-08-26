@@ -93,6 +93,7 @@ def test_registry_id_exact_match(conn):
     result = resolve_player(conn, "cricsheet", "V Kohli", source_id="reg-123")
     assert result.outcome == "auto_resolved"
     assert result.entity_id == existing
+    assert result.method == "registry_id"
 
 
 # 2. Existing-alias exact match (baseline, no registry id)
@@ -107,6 +108,7 @@ def test_existing_alias_exact_match(conn):
     result = resolve_player(conn, "cricsheet", "Rohit Sharma", source_id=None)
     assert result.outcome == "auto_resolved"
     assert result.entity_id == existing
+    assert result.method == "name_alias"
 
 
 # 3. Initials-only name
@@ -115,6 +117,7 @@ def test_initials_only_name_resolves(conn):
     result = resolve_player(conn, "cricsheet", "V Kohli", source_id=None)
     assert result.outcome == "auto_resolved"
     assert result.entity_id == existing
+    assert result.method == "fuzzy"
 
 
 # 4. Reordered "Surname, Initial" form
@@ -314,3 +317,25 @@ def test_whitespace_and_case_noise_auto_resolves(conn):
     result = resolve_player(conn, "cricsheet", "  virat kohli  ", source_id=None)
     assert result.outcome == "auto_resolved"
     assert result.entity_id == existing
+
+
+# 21. Same surname, different registry IDs, same squad - the exact case that
+# was failing: an authoritative, never-before-seen registry ID must be
+# terminal and must never be second-guessed by the same-surname-in-squad
+# heuristic, which exists only for when there's no ID to rely on. Confirmed
+# against real Cricsheet data as the actual cause of an entire sample's
+# player queue (100% of queued players had a registry ID present).
+def test_same_surname_different_registry_ids_never_queue(conn):
+    squad = ["BOL Mendis", "BKG Mendis"]
+    first = resolve_player(conn, "cricsheet", "BOL Mendis", source_id="reg-mendis-1", squad_names=squad)
+    second = resolve_player(conn, "cricsheet", "BKG Mendis", source_id="reg-mendis-2", squad_names=squad)
+
+    assert first.outcome != "queued"
+    assert second.outcome != "queued"
+    assert first.entity_id is not None
+    assert second.entity_id is not None
+    assert first.entity_id != second.entity_id
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM unresolved_entities WHERE entity_kind='player'")
+        assert cur.fetchone()[0] == 0

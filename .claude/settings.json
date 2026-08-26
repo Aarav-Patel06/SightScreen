@@ -3,7 +3,10 @@
     "allow": [
       "Bash(git commit -m ' *)",
       "Bash(grep -inE \"sb_secret_[a-zA-Z0-9]{10,}|sk-ant-[a-zA-Z0-9]{10,}|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_-]{15,}\")",
-      "Bash(echo \"\\(grep exit $?, expect 1\\)\")"
+      "Bash(echo \"\\(grep exit $?, expect 1\\)\")",
+      "Bash(curl -sS -C - -o all_json.zip https://cricsheet.org/downloads/all_json.zip)",
+      "Bash(echo \"curl exit: $?\")",
+      "Bash(python3 -c ' *)"
     ]
   }
 }

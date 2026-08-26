@@ -26,3 +26,4 @@ artifacts/
 # known_team_aliases.json) are unaffected - these are subdirectories.
 api/data/cricsheet/
 api/data/load_reports/
+api/data/backups/

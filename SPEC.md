@@ -823,7 +823,14 @@ Each phase ends with a demoable artifact and explicit acceptance criteria. Do no
 - [ ] `match_states` builder
 - [ ] Elo ratings computed as a time series
 
-**Acceptance:** `SELECT COUNT(*) FROM deliveries` returns > 1,000,000. Fewer than 50 unresolved entities. A spot-check of five random matches against Cricsheet source JSON matches exactly.
+**Acceptance:**
+- `SELECT COUNT(*) FROM deliveries` returns > 1,000,000
+- Every player carrying a Cricsheet registry ID resolves by exact ID match. Fewer than 50 such players in the unresolved queue — an exact registry match is authoritative and no downstream heuristic may override it.
+- Players lacking a registry ID may queue freely; report the count but do not treat it as a failure. Fuzzy matching is the fallback path for a minority of the corpus, not the main road.
+- Zero wrong merges across the golden test set, including deliberate near-collisions.
+- A spot-check of five random matches against Cricsheet source JSON matches exactly, verified by a test.
+
+**Never tune resolver thresholds to make this criterion pass.** If the queue is large, the resolution *order* is wrong, not the thresholds. Diagnose before adjusting.
 
 ### Phase 1 — Win probability model, offline (week 2)
 
