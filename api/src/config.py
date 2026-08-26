@@ -11,11 +11,12 @@ from urllib.parse import urlparse
 from pydantic import Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Must match the port docker-compose.yml maps the training postgres service
-# to (see docker-compose.yml). Kept as a constant here rather than parsed
-# from the compose file so config loading has no filesystem dependency
-# beyond .env.
-LOCAL_DB_EXPECTED_PORT = 5433
+from db.defaults import LOCAL_DB_PORT as LOCAL_DB_EXPECTED_PORT
+
+# LOCAL_DB_EXPECTED_PORT comes from db/defaults.py - the single source of
+# truth for the local Postgres connection defaults, also used by ci.yml.
+# Kept as a constant here rather than parsed from docker-compose.yml so
+# config loading has no filesystem dependency beyond .env.
 
 # Substrings that only ever appear in the *.env.example templates. If one of
 # these shows up in a real value, someone copied the placeholder instead of

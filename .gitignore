@@ -17,3 +17,12 @@ node_modules/
 *.pkl
 *.joblib
 artifacts/
+
+# Claude Code - settings.json is shared, settings.local.json is per-developer
+.claude/settings.local.json
+
+# Cricsheet raw downloads (huge, non-commercial licence - never redistribute
+# via git) and load-run artifacts. api/data/*.json seed files (e.g.
+# known_team_aliases.json) are unaffected - these are subdirectories.
+api/data/cricsheet/
+api/data/load_reports/

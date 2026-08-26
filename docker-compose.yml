@@ -9,14 +9,17 @@ services:
   postgres:
     image: postgres:17.6
     restart: unless-stopped
+    # USER/PASSWORD/DB/port below must match api/src/db/defaults.py, the
+    # single source of truth config.py and ci.yml both import from. YAML
+    # can't import a Python constant, so this file is the one place that
+    # stays hand-maintained - keep it in sync manually if either changes.
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: cricket_training
     ports:
       # Host 5433, not the 5432 default - avoids clashing with any system
-      # Postgres already listening on 5432. Must match LOCAL_DATABASE_URL
-      # in api/.env and config.py's LOCAL_DB_EXPECTED_PORT.
+      # Postgres already listening on 5432.
       - "5433:5432"
     volumes:
       - cricket_training_data:/var/lib/postgresql/data

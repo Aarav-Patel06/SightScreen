@@ -4,10 +4,14 @@ These construct `Settings` directly with `_env_file=None` so the test is
 isolated from any real .env file or ambient shell environment.
 """
 
+from pathlib import Path
+
 import pytest
+from dotenv import dotenv_values
 from pydantic import ValidationError
 
 from config import Settings
+from db.defaults import LOCAL_DB_DEFAULT_URL
 
 REQUIRED_KWARGS = {
     "local_database_url": "postgresql://postgres:postgres@localhost:5433/cricket_training",
@@ -135,3 +139,14 @@ def test_settings_does_not_check_username_pattern_on_agent_sql_role_url():
     }
     settings = Settings(_env_file=None, **kwargs)
     assert settings.agent_sql_role_db_url == kwargs["agent_sql_role_db_url"]
+
+
+def test_env_example_matches_canonical_local_db_default():
+    # sslmode has broken CI and local dev independently twice (sessions 2
+    # and 4) because this value was hand-duplicated across files. This test
+    # is the enforcement mechanism for db/defaults.py actually being the
+    # one source of truth - a manual edit to just one copy now fails CI
+    # instead of waiting for a third incident to notice.
+    env_example_path = Path(__file__).resolve().parent.parent / "api" / ".env.example"
+    documented_value = dotenv_values(env_example_path)["LOCAL_DATABASE_URL"]
+    assert documented_value == LOCAL_DB_DEFAULT_URL

@@ -27,8 +27,10 @@ jobs:
     env:
       # Placeholder values only, so config.py's fail-fast validation succeeds
       # in CI. Never real secrets - see api/.env.example for what these mean.
-      # Port 5433 matches config.py's LOCAL_DB_EXPECTED_PORT / docker-compose.yml.
-      LOCAL_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/cricket_training?sslmode=disable
+      # LOCAL_DATABASE_URL is NOT set here - it's derived from
+      # api/src/db/defaults.py below, the single source of truth this app
+      # and CI both import, so it can't drift from docker-compose.yml's
+      # local dev value again (sslmode has broken this twice already).
       CRICSHEET_DATA_DIR: ./data/cricsheet
       SUPABASE_URL: https://ci-placeholder.supabase.co
       SUPABASE_SECRET_KEY: sb_secret_ci_placeholder
@@ -42,6 +44,9 @@ jobs:
           node-version: "22"
       - name: Install api package
         run: pip install -e "./api[dev]"
+      - name: Set LOCAL_DATABASE_URL from api/src/db/defaults.py
+        working-directory: api/src
+        run: echo "LOCAL_DATABASE_URL=$(python -m db.defaults)" >> "$GITHUB_ENV"
       - name: Apply migrations to the CI postgres service
         run: npx supabase db push --db-url "$LOCAL_DATABASE_URL"
       - name: Run tests

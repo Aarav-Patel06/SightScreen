@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git commit -m ' *)",
+      "Bash(grep -inE \"sb_secret_[a-zA-Z0-9]{10,}|sk-ant-[a-zA-Z0-9]{10,}|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_-]{15,}\")",
+      "Bash(echo \"\\(grep exit $?, expect 1\\)\")"
+    ]
+  }
+}
