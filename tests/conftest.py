@@ -1,4 +1,13 @@
-"""Shared fixtures for ingest tests.
+"""Shared fixtures for tests that need a writable, truncatable database.
+
+Moved here from tests/ingest/conftest.py (Phase 1 session 2) - Phase 1's
+as-of poison-pill tests (tests/features/test_venue_stats.py, an added test in
+tests/features/test_elo.py) need to INSERT a synthetic future match, which
+must never happen against the real, hand-verified cricket_training corpus.
+This fixture was already exactly what ingest's tests needed for the same
+reason; promoting it to the shared tests/ root conftest (rather than
+duplicating it in a second directory) makes it available to any test
+directory instead of just tests/ingest/.
 
 Locally, runs against a dedicated cricket_training_test database on the
 same docker-compose Postgres instance, never the real cricket_training
@@ -24,7 +33,7 @@ import psycopg
 import pytest
 from dotenv import dotenv_values
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent
 ENV_PATH = REPO_ROOT / "api" / ".env"
 
 NPX = shutil.which("npx")

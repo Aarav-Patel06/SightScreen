@@ -176,7 +176,7 @@ def test_shuffled_ball_level_split_scores_implausibly_well(datasets):
     real_train, real_test = datasets["train"], datasets["test"]
     real_brier = _fit_predict_brier(real_train, real_test)
 
-    pool_ids = ["match_id", "match_date", "required_run_rate", "wickets_in_hand",
+    pool_ids = ["delivery_id", "match_id", "match_date", "required_run_rate", "wickets_in_hand",
                 "balls_remaining", "runs_required", "phase", "label"]
 
     def _concat(a, b):

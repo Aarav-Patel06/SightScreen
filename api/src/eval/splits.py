@@ -79,10 +79,15 @@ def _date_bounds(split: Split) -> tuple[date | None, date | None]:
 @dataclass(frozen=True)
 class SecondInningsDataset:
     """Training-ready second-innings rows for one split. Every array is the
-    same length, one entry per delivery. match_id/match_date exist only to
-    support leakage tests (no match_id in more than one split, strict date
-    ordering) - they are not model features."""
+    same length, one entry per delivery. delivery_id/match_id/match_date
+    exist only to support leakage tests (no match_id in more than one
+    split, strict date ordering) and, as of Phase 1 session 2, to let a
+    model's own feature-assembly step re-fetch additional columns for
+    these EXACT rows by primary key (delivery_id) - never to let a
+    downstream module derive its own row selection or filtering. None of
+    the three are model features."""
 
+    delivery_id: np.ndarray  # int64
     match_id: np.ndarray  # int64
     match_date: np.ndarray  # datetime64[D]
     required_run_rate: np.ndarray  # float32
@@ -117,8 +122,8 @@ def get_second_innings_split(conn, split: Split) -> SecondInningsDataset:
         params.append(upper)
 
     query = f"""
-        SELECT match_id, match_date, innings, required_run_rate, wickets,
-               balls_remaining, runs_required, phase, batting_team_won
+        SELECT delivery_id, match_id, match_date, innings, required_run_rate,
+               wickets, balls_remaining, runs_required, phase, batting_team_won
         FROM match_states
         WHERE {' AND '.join(clauses)}
     """
@@ -128,6 +133,7 @@ def get_second_innings_split(conn, split: Split) -> SecondInningsDataset:
 
     if not rows:
         return SecondInningsDataset(
+            delivery_id=np.array([], dtype=np.int64),
             match_id=np.array([], dtype=np.int64),
             match_date=np.array([], dtype="datetime64[D]"),
             required_run_rate=np.array([], dtype=np.float32),
@@ -139,7 +145,7 @@ def get_second_innings_split(conn, split: Split) -> SecondInningsDataset:
         )
 
     cols = list(zip(*rows))
-    innings_col = np.array(cols[2], dtype=np.int16)
+    innings_col = np.array(cols[3], dtype=np.int16)
     # Assert, don't assume (module docstring): confirms Phase 0's invariant
     # that match_states never holds a super-over row still holds, by
     # checking the data actually fetched rather than trusting the WHERE
@@ -149,7 +155,7 @@ def get_second_innings_split(conn, split: Split) -> SecondInningsDataset:
         "match_states should never contain super-over rows"
     )
 
-    wickets = np.array(cols[4], dtype=np.int16)
+    wickets = np.array(cols[5], dtype=np.int16)
     wickets_in_hand = (10 - wickets).astype(np.int8)
     assert wickets_in_hand.min() >= 0 and wickets_in_hand.max() <= 10, (
         "wickets_in_hand out of [0, 10] range - check for a wickets-fallen "
@@ -157,14 +163,15 @@ def get_second_innings_split(conn, split: Split) -> SecondInningsDataset:
     )
 
     return SecondInningsDataset(
-        match_id=np.array(cols[0], dtype=np.int64),
-        match_date=np.array(cols[1], dtype="datetime64[D]"),
-        required_run_rate=np.array(cols[3], dtype=np.float32),
+        delivery_id=np.array(cols[0], dtype=np.int64),
+        match_id=np.array(cols[1], dtype=np.int64),
+        match_date=np.array(cols[2], dtype="datetime64[D]"),
+        required_run_rate=np.array(cols[4], dtype=np.float32),
         wickets_in_hand=wickets_in_hand,
-        balls_remaining=np.array(cols[5], dtype=np.int16),
-        runs_required=np.array(cols[6], dtype=np.int16),
-        phase=np.array(cols[7], dtype=object),
-        label=np.array(cols[8], dtype=np.int8),
+        balls_remaining=np.array(cols[6], dtype=np.int16),
+        runs_required=np.array(cols[7], dtype=np.int16),
+        phase=np.array(cols[8], dtype=object),
+        label=np.array(cols[9], dtype=np.int8),
     )
 
 

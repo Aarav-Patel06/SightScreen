@@ -1,11 +1,15 @@
 """Elo ratings tests (SPEC.md section 6.1, Phase 0 session 6).
 
 Local-only, like test_match_state.py - needs the real bulk-loaded corpus in
-LOCAL_DATABASE_URL, which CI doesn't have.
+LOCAL_DATABASE_URL, which CI doesn't have. The one exception is the
+poison-pill test (Phase 1 session 2), which uses the writable
+cricket_training_test database (tests/conftest.py's `test_db_url` fixture)
+instead, since it inserts synthetic matches.
 """
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import psycopg
@@ -177,6 +181,67 @@ def test_lopsided_rivalry_direction(conn):
     assert best_final_rating > 1500.0
     assert worst_final_rating < 1500.0
     assert best_final_rating > worst_final_rating
+
+
+def test_elo_as_of_poison_pill_future_match_never_seen(test_db_url):
+    """Phase 1 session 2's poison-pill pattern, applied to elo_as_of: session
+    6 argued this by construction (append-only rows, processed in strict
+    chronological order); this makes it an assertion instead of a
+    code-review promise. Needs its own writable connection to
+    cricket_training_test (tests/conftest.py's `test_db_url`, NOT its `conn`
+    fixture - `conn` would resolve to THIS FILE's own module-scoped fixture
+    above, which points at the real corpus) - this test inserts synthetic
+    matches and calls features.elo.recompute_format(conn, ...) directly
+    (NOT the rebuild() CLI wrapper, which ignores any conn and always
+    connects to LOCAL_DATABASE_URL itself - calling that here would rebuild
+    Elo against the real corpus, exactly what this test must not do).
+
+    Truncates every table it touches itself, including `teams` - a table a
+    plain TRUNCATE matches/deliveries/elo_ratings would leave dirty across
+    runs, and did (a real UNIQUE-violation failure on a second run, found
+    and fixed this session, not hypothetical).
+    """
+    import psycopg
+
+    from features.elo import elo_as_of, recompute_format
+
+    write_conn = psycopg.connect(test_db_url, autocommit=True)
+    with write_conn.cursor() as cur:
+        cur.execute("TRUNCATE matches, deliveries, elo_ratings, teams RESTART IDENTITY CASCADE")
+        cur.execute("INSERT INTO teams (name) VALUES ('Poison Pill A'), ('Poison Pill B') "
+                    "RETURNING team_id")
+        team_a, team_b = [row[0] for row in cur.fetchall()]
+        for i in range(5):
+            cur.execute(
+                """
+                INSERT INTO matches (competition, format, start_time, team_a, team_b, winner,
+                                      result_method, status)
+                VALUES ('test', 'T20', %s, %s, %s, %s, 'normal', 'complete')
+                """,
+                (f"2020-01-{i + 1:02d}", team_a, team_b, team_a),
+            )
+
+    recompute_format(write_conn, "T20")
+    as_of_date = date(2021, 1, 1)
+    before = elo_as_of(write_conn, team_a, "T20", as_of_date)
+
+    # Poison pill: a lopsided future run of results in the OPPOSITE
+    # direction - if this leaked, team_a's rating would move sharply.
+    with write_conn.cursor() as cur:
+        for i in range(20):
+            cur.execute(
+                """
+                INSERT INTO matches (competition, format, start_time, team_a, team_b, winner,
+                                      result_method, status)
+                VALUES ('test', 'T20', %s, %s, %s, %s, 'normal', 'complete')
+                """,
+                (f"2021-06-{i + 1:02d}", team_a, team_b, team_b),
+            )
+    recompute_format(write_conn, "T20")
+    after = elo_as_of(write_conn, team_a, "T20", as_of_date)
+
+    assert after == before
+    write_conn.close()
 
 
 def test_renamed_franchise_has_unbroken_elo_history(conn):

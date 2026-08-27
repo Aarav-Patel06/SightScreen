@@ -744,6 +744,12 @@ Why the innings-wide average is lower than it intuitively should be: a chase con
 
 **Standard error must be computed by bootstrapping over matches, not over balls.** Balls within a match are highly correlated, so treating them as independent understates the standard error by roughly an order of magnitude and will make a noise-level improvement look significant. Effective sample size is closer to the match count than the row count.
 
+Measured baseline CIs (match-clustered, 2000 resamples): overall `[0.1264, 0.1419]`, final 3 overs `[0.0806, 0.1041]`.
+
+**Model comparison uses a PAIRED bootstrap, not overlapping CIs.** Do not ask whether the model's point estimate falls outside the baseline's interval — that is the unpaired test and it is far too conservative here. Both models score the same matches, so resample matches once and compute the *difference* in Brier on each resample. Match-level difficulty cancels, and the paired interval is typically several times tighter than either model's individual CI.
+
+The criterion: the 95% CI of (baseline Brier − model Brier), paired and match-clustered, lies entirely above zero. This same paired test governs shadow-model promotion in §8.4 — never promote on a comparison of independent intervals.
+
 Any model that fails to beat the baseline by a match-clustered significant margin is not an improvement, regardless of how close to target its absolute number looks.
 
 ### 9.4 Player predictions — set expectations correctly
@@ -1002,3 +1008,4 @@ Log decisions here as you make them, with dates and reasoning.
 | | Include ODI in v1 or T20 only (drives the Supabase sizing question in §2.1) | |
 | | FastAPI on Railway vs Vercel Python functions | |
 | | Whether to upgrade Supabase to Pro so the agent can query full history | |
+| 2026-08-27 | Player-ability features (§6.2: `striker_ability`, `non_striker_ability`, `remaining_batting_ability`, `current_bowler_ability`) deferred to the Phase 5 retrain, not proxied in the Phase 1 session 2 model | `player_state` doesn't exist until §6.5/Phase 5. A rushed proxy (a placeholder constant, or a career-average stat computed outside the Bayesian update rule §6.5 actually specifies) would either contribute nothing or a badly-calibrated signal Phase 5's real ability model would then have to compete against and partially undo. Measuring the lift as a clean before/after ablation once §6.5 is built is better science and no slower in the end. |

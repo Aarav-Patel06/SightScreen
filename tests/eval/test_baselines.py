@@ -16,6 +16,7 @@ from eval.splits import SecondInningsDataset
 def _make_dataset(n: int, match_id_start: int = 0, seed: int = 0) -> SecondInningsDataset:
     rng = np.random.default_rng(seed)
     return SecondInningsDataset(
+        delivery_id=np.arange(match_id_start, match_id_start + n, dtype=np.int64),
         match_id=np.arange(match_id_start, match_id_start + n, dtype=np.int64),
         match_date=np.array(["2023-01-01"] * n, dtype="datetime64[D]"),
         required_run_rate=rng.uniform(4, 12, size=n).astype(np.float32),
@@ -66,6 +67,7 @@ def test_base_rate_baseline_exact_bin_used_when_well_populated():
     # above the min-bin-observations floor, all labelled 1.
     n = 200
     train = SecondInningsDataset(
+        delivery_id=np.arange(n, dtype=np.int64),
         match_id=np.arange(n, dtype=np.int64),
         match_date=np.array(["2023-01-01"] * n, dtype="datetime64[D]"),
         required_run_rate=np.full(n, 5.0, dtype=np.float32),
@@ -78,6 +80,7 @@ def test_base_rate_baseline_exact_bin_used_when_well_populated():
     model = HistoricalBaseRateBaseline().fit(train)
 
     test = SecondInningsDataset(
+        delivery_id=np.array([999990], dtype=np.int64),
         match_id=np.array([99999], dtype=np.int64),
         match_date=np.array(["2025-01-01"], dtype="datetime64[D]"),
         required_run_rate=np.array([5.0], dtype=np.float32),
@@ -99,6 +102,7 @@ def test_base_rate_baseline_falls_back_when_bin_is_sparse():
     rng = np.random.default_rng(4)
     n_broad = 200
     broad = SecondInningsDataset(
+        delivery_id=np.arange(n_broad, dtype=np.int64),
         match_id=np.arange(n_broad, dtype=np.int64),
         match_date=np.array(["2023-01-01"] * n_broad, dtype="datetime64[D]"),
         required_run_rate=rng.uniform(4, 12, size=n_broad).astype(np.float32),
@@ -110,6 +114,7 @@ def test_base_rate_baseline_falls_back_when_bin_is_sparse():
     )
     n_rare = 5
     rare = SecondInningsDataset(
+        delivery_id=np.arange(n_broad, n_broad + n_rare, dtype=np.int64),
         match_id=np.arange(n_broad, n_broad + n_rare, dtype=np.int64),
         match_date=np.array(["2023-01-01"] * n_rare, dtype="datetime64[D]"),
         required_run_rate=np.full(n_rare, 5.0, dtype=np.float32),
@@ -122,13 +127,14 @@ def test_base_rate_baseline_falls_back_when_bin_is_sparse():
     train = SecondInningsDataset(
         **{
             name: np.concatenate([getattr(broad, name), getattr(rare, name)])
-            for name in ("match_id", "match_date", "required_run_rate", "wickets_in_hand",
-                         "balls_remaining", "runs_required", "phase", "label")
+            for name in ("delivery_id", "match_id", "match_date", "required_run_rate",
+                         "wickets_in_hand", "balls_remaining", "runs_required", "phase", "label")
         }
     )
     model = HistoricalBaseRateBaseline().fit(train)
 
     test = SecondInningsDataset(
+        delivery_id=np.array([999990], dtype=np.int64),
         match_id=np.array([99999], dtype=np.int64),
         match_date=np.array(["2025-01-01"], dtype="datetime64[D]"),
         required_run_rate=np.array([5.0], dtype=np.float32),

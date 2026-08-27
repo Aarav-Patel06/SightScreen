@@ -3,8 +3,16 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
-from eval.metrics import brier_match_clustered_ci, brier_score, bucketed_metrics, log_loss, reliability_table
+from eval.metrics import (
+    brier_match_clustered_ci,
+    brier_score,
+    bucketed_metrics,
+    log_loss,
+    paired_brier_match_clustered_ci,
+    reliability_table,
+)
 
 
 def test_constant_half_prediction_on_balanced_labels_gives_brier_quarter():
@@ -130,3 +138,77 @@ def test_match_clustered_ci_uses_all_of_a_resampled_matchs_rows():
     y_prob = np.full(10, 0.5)
     result = brier_match_clustered_ci(y_true, y_prob, match_id, n_resamples=50, seed=5)
     assert result["ci_low"] == result["ci_high"] == result["point"] == 0.25
+
+
+# --- Paired match-clustered bootstrap (SPEC.md section 9.3, session 2) ----
+
+
+def test_paired_ci_point_diff_matches_plain_brier_difference():
+    rng = np.random.default_rng(10)
+    n_matches, rows_per_match = 80, 25
+    match_id = np.repeat(np.arange(n_matches), rows_per_match)
+    y_true = rng.integers(0, 2, size=n_matches * rows_per_match).astype(np.int8)
+    y_prob_a = rng.uniform(0, 1, size=n_matches * rows_per_match)  # "baseline" - worse, uncorrelated
+    y_prob_b = np.clip(y_true + rng.normal(0, 0.1, size=n_matches * rows_per_match), 0, 1)  # "model" - better
+
+    result = paired_brier_match_clustered_ci(y_true, y_prob_a, y_prob_b, match_id, n_resamples=300, seed=11)
+    assert result["point_diff"] == pytest.approx(brier_score(y_true, y_prob_a) - brier_score(y_true, y_prob_b))
+    assert result["brier_a"] == pytest.approx(brier_score(y_true, y_prob_a))
+    assert result["brier_b"] == pytest.approx(brier_score(y_true, y_prob_b))
+
+
+def test_paired_ci_detects_a_real_improvement_as_significant():
+    # Model b is unambiguously, consistently better than model a on every
+    # row - the paired CI must find this significant (entirely above zero).
+    rng = np.random.default_rng(12)
+    n_matches, rows_per_match = 200, 30
+    match_id = np.repeat(np.arange(n_matches), rows_per_match)
+    y_true = rng.integers(0, 2, size=n_matches * rows_per_match).astype(np.int8)
+    y_prob_a = np.full(n_matches * rows_per_match, 0.5)  # naive - Brier 0.25
+    y_prob_b = np.clip(y_true + rng.normal(0, 0.05, size=n_matches * rows_per_match), 0, 1)  # near-perfect
+
+    result = paired_brier_match_clustered_ci(y_true, y_prob_a, y_prob_b, match_id, n_resamples=500, seed=13)
+    assert result["significant"] is True
+    assert result["ci_low"] > 0
+
+
+def test_paired_ci_identical_models_are_never_significant():
+    # Same predictions for both "models" - the true difference is exactly
+    # zero, so the interval must straddle zero, not spuriously exclude it.
+    rng = np.random.default_rng(14)
+    n_matches, rows_per_match = 100, 20
+    match_id = np.repeat(np.arange(n_matches), rows_per_match)
+    y_true = rng.integers(0, 2, size=n_matches * rows_per_match).astype(np.int8)
+    y_prob = rng.uniform(0, 1, size=n_matches * rows_per_match)
+
+    result = paired_brier_match_clustered_ci(y_true, y_prob, y_prob, match_id, n_resamples=300, seed=15)
+    assert result["point_diff"] == 0.0
+    assert result["ci_low"] <= 0.0 <= result["ci_high"]
+    assert result["significant"] is False
+
+
+def test_paired_ci_tighter_than_two_independent_intervals_under_shared_match_difficulty():
+    # Construct match-level "difficulty" shared by BOTH models (a hard match
+    # is hard for both) - this is exactly what the paired test is supposed
+    # to cancel out, and what two independent per-model CIs (naively
+    # compared) would double-count instead.
+    rng = np.random.default_rng(16)
+    n_matches, rows_per_match = 150, 40
+    match_difficulty = rng.uniform(0, 1, size=n_matches)  # shared "true" outcome rate per match
+    match_id = np.repeat(np.arange(n_matches), rows_per_match)
+    y_true = np.concatenate(
+        [rng.binomial(1, p, size=rows_per_match) for p in match_difficulty]
+    ).astype(np.int8)
+    base_pred = np.repeat(match_difficulty, rows_per_match)
+    y_prob_a = base_pred  # baseline
+    y_prob_b = np.clip(base_pred + 0.03, 0, 1)  # model: small, consistent, real improvement
+
+    paired = paired_brier_match_clustered_ci(y_true, y_prob_a, y_prob_b, match_id, n_resamples=500, seed=17)
+    independent_a = brier_match_clustered_ci(y_true, y_prob_a, match_id, n_resamples=500, seed=17)
+    independent_b = brier_match_clustered_ci(y_true, y_prob_b, match_id, n_resamples=500, seed=17)
+
+    paired_width = paired["ci_high"] - paired["ci_low"]
+    unpaired_width = (independent_a["ci_high"] - independent_a["ci_low"]) + (
+        independent_b["ci_high"] - independent_b["ci_low"]
+    )
+    assert paired_width < unpaired_width

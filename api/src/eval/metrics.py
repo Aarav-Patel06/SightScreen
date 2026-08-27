@@ -121,3 +121,67 @@ def brier_match_clustered_ci(
         "n_resamples": n_resamples,
         "bootstrap_se": float(boot_scores.std(ddof=1)),
     }
+
+
+def paired_brier_match_clustered_ci(
+    y_true: np.ndarray,
+    y_prob_a: np.ndarray,
+    y_prob_b: np.ndarray,
+    match_id: np.ndarray,
+    n_resamples: int = 2000,
+    ci: float = 0.95,
+    seed: int = 0,
+) -> dict:
+    """95% CI for (Brier_a - Brier_b), the PAIRED match-clustered bootstrap
+    (SPEC.md section 9.3, Phase 1 session 2). Both models score the same
+    rows, so each resample draws matches ONCE and evaluates both models on
+    the identical resampled rows, rather than building two independent
+    per-model intervals (brier_match_clustered_ci) and comparing them -
+    the latter is the unpaired test and is too conservative to detect a
+    real, small improvement, because match-level difficulty (an easy vs. a
+    hard chase) inflates both models' individual variances independently
+    instead of cancelling in the difference.
+
+    The criterion this supports: model beats baseline iff the 95% CI of
+    (brier_a - brier_b) - with a = baseline, b = model, by convention - lies
+    entirely above zero.
+    """
+    y_true = np.asarray(y_true, dtype=np.float64)
+    y_prob_a = np.asarray(y_prob_a, dtype=np.float64)
+    y_prob_b = np.asarray(y_prob_b, dtype=np.float64)
+    match_id = np.asarray(match_id)
+    sq_err_a = (y_prob_a - y_true) ** 2
+    sq_err_b = (y_prob_b - y_true) ** 2
+
+    unique_matches, inverse = np.unique(match_id, return_inverse=True)
+    n_matches = len(unique_matches)
+    sse_a = np.bincount(inverse, weights=sq_err_a, minlength=n_matches)
+    sse_b = np.bincount(inverse, weights=sq_err_b, minlength=n_matches)
+    n_per_match = np.bincount(inverse, minlength=n_matches)
+
+    point_a = float(sq_err_a.sum() / len(sq_err_a))
+    point_b = float(sq_err_b.sum() / len(sq_err_b))
+    point_diff = point_a - point_b
+
+    rng = np.random.default_rng(seed)
+    diffs = np.empty(n_resamples)
+    for i in range(n_resamples):
+        draw_counts = np.bincount(rng.integers(0, n_matches, size=n_matches), minlength=n_matches)
+        denom = (draw_counts * n_per_match).sum()
+        brier_a = (draw_counts * sse_a).sum() / denom
+        brier_b = (draw_counts * sse_b).sum() / denom
+        diffs[i] = brier_a - brier_b
+
+    alpha = (1 - ci) / 2
+    lo, hi = np.quantile(diffs, [alpha, 1 - alpha])
+    return {
+        "point_diff": point_diff,
+        "brier_a": point_a,
+        "brier_b": point_b,
+        "ci_low": float(lo),
+        "ci_high": float(hi),
+        "ci": ci,
+        "n_matches": int(n_matches),
+        "n_resamples": n_resamples,
+        "significant": bool(lo > 0),
+    }
