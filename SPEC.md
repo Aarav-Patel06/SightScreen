@@ -723,14 +723,28 @@ If LightGBM does not clearly beat both, that is a finding worth reporting honest
 
 ### 9.3 Metrics and targets
 
+**Targets are relative to the measured baseline, not absolute.** The original absolute figures in this spec were too pessimistic and have been corrected against real measurements from Phase 1 Session 1.
+
+Measured baselines on the test split (three-feature logistic, innings 2):
+
+| Bucket | Logistic baseline |
+|---|---|
+| Overall | 0.1342 |
+| Final 3 overs | 0.0925 |
+
+Why the innings-wide average is lower than it intuitively should be: a chase contributes up to 120 rows, and the late ones are near-determined states where Brier is 0.02–0.05. Averaging across the innings pulls the mean well below the ~0.25 of an opening-ball coin flip. This is a property of the row distribution, not of model quality — never read a low innings-wide Brier as evidence of a good model.
+
 | Metric | Target |
 |---|---|
-| Brier, second innings, all balls | 0.16 – 0.18 |
-| Log loss, second innings | 0.48 – 0.55 |
-| Brier, start of chase | ~0.25 (this is correct — it's near a coin flip) |
-| Brier, final 3 overs | ≤ 0.05 |
-| Brier, first innings | ~0.22 |
+| Brier, second innings, overall | ≤ 0.125, and must beat the logistic baseline by more than the standard error |
+| Brier, final 3 overs | ≤ 0.085 |
+| Brier, start of chase | ~0.25 (correct — it is near a coin flip) |
+| Brier, first innings | Establish a baseline first; do not carry over a guessed figure |
 | Calibration error, any decile with n > 200 | < 3 percentage points |
+
+**Standard error must be computed by bootstrapping over matches, not over balls.** Balls within a match are highly correlated, so treating them as independent understates the standard error by roughly an order of magnitude and will make a noise-level improvement look significant. Effective sample size is closer to the match count than the row count.
+
+Any model that fails to beat the baseline by a match-clustered significant margin is not an improvement, regardless of how close to target its absolute number looks.
 
 ### 9.4 Player predictions — set expectations correctly
 

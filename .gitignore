@@ -27,3 +27,4 @@ artifacts/
 api/data/cricsheet/
 api/data/load_reports/
 api/data/backups/
+api/data/eval_reports/
