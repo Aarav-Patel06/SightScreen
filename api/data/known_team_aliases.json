@@ -10,5 +10,17 @@
   {
     "canonical_name": "Royal Challengers Bengaluru",
     "old_names": ["Royal Challengers Bangalore"]
+  },
+  {
+    "canonical_name": "Himachal Pradesh",
+    "old_names": ["Himachal"]
+  },
+  {
+    "canonical_name": "Sharjah Warriorz",
+    "old_names": ["Sharjah Warriors"]
+  },
+  {
+    "canonical_name": "Kathmandu Gorkhas",
+    "old_names": ["Kathmandu Gurkhas"]
   }
 ]

@@ -226,6 +226,26 @@ def seed_people_registry(conn, csv_path: Path) -> int:
     return seeded
 
 
+def _merge_team(cur, keep_id: int, absorb_id: int) -> None:
+    """Only needed when the corpus was already loaded before a rename was
+    recognized (session 6), so the old name got its own team_id with real
+    match/delivery history attached - repoint everything to the canonical
+    team_id, then drop the now-orphaned row. Safe to re-run: once absorb_id
+    is gone, every UPDATE here affects zero rows and the DELETE is a no-op.
+    elo_ratings isn't touched here - it doesn't exist yet the first time
+    this runs in the normal pipeline order (session 6 builds it after the
+    load), so it will only ever see the canonical team_id.
+    """
+    for table, columns in (
+        ("matches", ["team_a", "team_b", "toss_winner", "winner"]),
+        ("deliveries", ["batting_team_id", "bowling_team_id"]),
+    ):
+        for column in columns:
+            cur.execute(f"UPDATE {table} SET {column} = %s WHERE {column} = %s", (keep_id, absorb_id))
+    cur.execute("UPDATE team_aliases SET team_id = %s WHERE team_id = %s", (keep_id, absorb_id))
+    cur.execute("DELETE FROM teams WHERE team_id = %s", (absorb_id,))
+
+
 def seed_known_team_aliases(conn) -> None:
     if not KNOWN_TEAM_ALIASES_PATH.exists():
         return
@@ -242,6 +262,10 @@ def seed_known_team_aliases(conn) -> None:
                 row = cur.fetchone()
             team_id = row[0]
             for old_name in entry.get("old_names", []):
+                cur.execute("SELECT team_id FROM teams WHERE name = %s", (old_name,))
+                old_row = cur.fetchone()
+                if old_row is not None and old_row[0] != team_id:
+                    _merge_team(cur, keep_id=team_id, absorb_id=old_row[0])
                 cur.execute(
                     """
                     INSERT INTO team_aliases (team_id, source, source_name)
@@ -333,6 +357,36 @@ def _match_outcome(info: dict, team_names: list[str], team_ids: dict[str, int]) 
     return team_ids[winner_name], result_method
 
 
+def _extract_target(
+    innings_list: list[dict],
+    result_method: str,
+    innings_1_total: int | None,
+    format_nominal_overs: int,
+) -> tuple[int | None, float | None]:
+    """The chasing innings' own recorded target (session 6, Decision 3) -
+    authoritative even when DLS-revised (confirmed against a real match:
+    innings 1 scored 165, DLS target was 70 off 6 overs - nowhere near
+    innings_1_total + 1). Scans rather than assuming index 1, defensively.
+
+    Cricsheet sometimes omits the target key even for a normal, properly-
+    decided chase - confirmed against real data: 761 of ~12,100 "normal"
+    matches and all 7 tied matches missing it, discovered via match_states'
+    own build-time diagnostic, not assumed away. Derived as
+    innings_1_total + 1 ONLY for "normal"/"tie" results, where that
+    derivation is provably correct (a tie means the chase landed exactly
+    one run short of it). Never derived for a DLS-decided result missing
+    this field (10 such matches) - there is no safe fallback for those;
+    target stays NULL rather than guessed.
+    """
+    for innings in innings_list:
+        target = innings.get("target")
+        if target:
+            return target.get("runs"), target.get("overs")
+    if result_method in ("normal", "tie") and innings_1_total is not None:
+        return innings_1_total + 1, float(format_nominal_overs)
+    return None, None
+
+
 def _insert_match_row(
     conn,
     cricsheet_id: str,
@@ -340,12 +394,16 @@ def _insert_match_row(
     venue_id: int | None,
     team_ids: dict[str, int],
     has_reconciliation_anomaly: bool,
+    innings_list: list[dict],
+    innings_1_total: int | None,
 ) -> int:
     team_names = info["teams"]
     toss = info.get("toss", {})
     toss_winner_name = toss.get("winner")
     toss_winner_id = team_ids.get(toss_winner_name)
     winner_id, result_method = _match_outcome(info, team_names, team_ids)
+    format_nominal_overs = MAX_LEGAL_BALLS[info["match_type"]] // 6
+    target_runs, target_overs = _extract_target(innings_list, result_method, innings_1_total, format_nominal_overs)
 
     with conn.cursor() as cur:
         cur.execute(
@@ -353,8 +411,8 @@ def _insert_match_row(
             INSERT INTO matches
               (external_ids, competition, format, venue_id, start_time,
                team_a, team_b, toss_winner, toss_decision, winner, result_method,
-               status, has_reconciliation_anomaly)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'complete', %s)
+               status, has_reconciliation_anomaly, target_runs, target_overs)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'complete', %s, %s, %s)
             RETURNING match_id
             """,
             (
@@ -370,6 +428,8 @@ def _insert_match_row(
                 winner_id,
                 result_method,
                 has_reconciliation_anomaly,
+                target_runs,
+                target_overs,
             ),
         )
         return cur.fetchone()[0]
@@ -594,10 +654,13 @@ def load_match(bulk_conn, catalog_conn, report: LoadReport, path: Path, dry_run:
         ]
         total_deliveries = sum(len(rows) for rows in all_rows)
         has_anomaly = _has_reconciliation_anomaly(info, innings_list, all_rows)
+        innings_1_total = sum(row[12] + row[13] for row in all_rows[0]) if all_rows else None
 
         if not dry_run:
             with bulk_conn.transaction():
-                match_id = _insert_match_row(bulk_conn, cricsheet_id, info, venue_id, team_ids, has_anomaly)
+                match_id = _insert_match_row(
+                    bulk_conn, cricsheet_id, info, venue_id, team_ids, has_anomaly, innings_list, innings_1_total
+                )
                 for rows in all_rows:
                     patched_rows = [(match_id, *row[1:]) for row in rows]
                     _copy_deliveries(bulk_conn, patched_rows)
