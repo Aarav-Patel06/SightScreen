@@ -51,6 +51,23 @@ jobs:
         run: npx supabase db push --db-url "$LOCAL_DATABASE_URL"
       - name: Run tests
         run: pytest tests
+      - name: Check web/lib/types.ts is not stale
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          # --project-id (not --linked, and not --db-url) deliberately:
+          # --linked needs supabase/.temp/project-ref, which is gitignored
+          # and doesn't exist in a fresh checkout. --db-url against a bare
+          # Postgres (no PostgREST/GraphQL server behind it) omits the
+          # __InternalSupabase/graphql_public block entirely, which would
+          # make this diff fail on every run regardless of real drift -
+          # confirmed empirically, not assumed. --project-id hits the same
+          # Management API --linked does, with no local link state needed.
+          npx supabase gen types typescript --project-id xrvgmjmvgmtepgryyulk > /tmp/types.ts
+          diff web/lib/types.ts /tmp/types.ts || {
+            echo "::error::web/lib/types.ts is stale - run 'npx supabase gen types typescript --linked > web/lib/types.ts' and commit it";
+            exit 1;
+          }
 
   web:
     runs-on: ubuntu-latest

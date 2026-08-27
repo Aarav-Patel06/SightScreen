@@ -44,6 +44,11 @@ accidentally leak data:
 (`Settings → Secrets and variables → Actions`) for `calibration.yml`/`drift.yml`, which read
 and write Supabase's `predictions`/`model_versions` tables on a schedule.
 
+`SUPABASE_ACCESS_TOKEN` is a separate **GitHub Actions secret** (not an env var used by the
+app itself) — a personal access token from Supabase dashboard → Account → Access Tokens,
+used only by `ci.yml`'s `web/lib/types.ts` staleness check to call the Management API and
+regenerate types for comparison. Never the same as `SUPABASE_SECRET_KEY`.
+
 **Never use a direct connection string** (`db.<ref>.supabase.co`) anywhere in this project.
 It resolves over IPv6 only and is unreachable from Railway or Docker's default bridge
 network — it fails as a DNS error, not a connection error, which is confusing the first
