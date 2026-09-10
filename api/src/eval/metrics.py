@@ -185,3 +185,67 @@ def paired_brier_match_clustered_ci(
         "n_resamples": n_resamples,
         "significant": bool(lo > 0),
     }
+
+
+def reliability_match_clustered(
+    y_true: np.ndarray,
+    y_prob: np.ndarray,
+    match_id: np.ndarray,
+    n_bins: int = 10,
+    n_resamples: int = 2000,
+    ci: float = 0.95,
+    seed: int = 0,
+) -> list[dict]:
+    """Per-decile calibration, measured correctly (Phase 1 session 3): a
+    raw "<3pp, n>200 balls" check is unmeasurable, because balls within a
+    match are correlated - 200 balls might be 5 effective observations.
+    For each decile this reports the observed rate's match-clustered 95%
+    CI (resampling matches with replacement, restricted to each drawn
+    match's own rows that already fall in this decile) and whether the
+    predicted mean falls inside it, plus BOTH n (rows) and n_matches
+    (distinct matches contributing any row to this decile) - the
+    "how thin is this actually" number a raw row count hides.
+    """
+    y_true = np.asarray(y_true, dtype=np.float64)
+    y_prob = np.asarray(y_prob, dtype=np.float64)
+    match_id = np.asarray(match_id)
+    edges = np.linspace(0.0, 1.0, n_bins + 1)
+    bin_idx = np.clip(np.digitize(y_prob, edges[1:-1], right=True), 0, n_bins - 1)
+
+    rows = []
+    for b in range(n_bins):
+        mask = bin_idx == b
+        n = int(mask.sum())
+        if n == 0:
+            rows.append({
+                "bin_low": float(edges[b]), "bin_high": float(edges[b + 1]),
+                "n": 0, "n_matches": 0, "mean_predicted": None, "observed_rate": None,
+                "ci_low": None, "ci_high": None, "contains_predicted": None,
+            })
+            continue
+
+        y_true_b, y_prob_b, match_id_b = y_true[mask], y_prob[mask], match_id[mask]
+        unique_matches, inverse = np.unique(match_id_b, return_inverse=True)
+        n_matches = len(unique_matches)
+        sums = np.bincount(inverse, weights=y_true_b, minlength=n_matches)
+        counts = np.bincount(inverse, minlength=n_matches)
+
+        mean_predicted = float(y_prob_b.mean())
+        observed_rate = float(y_true_b.mean())
+
+        rng = np.random.default_rng(seed)
+        boot = np.empty(n_resamples)
+        for i in range(n_resamples):
+            draw = np.bincount(rng.integers(0, n_matches, size=n_matches), minlength=n_matches)
+            boot[i] = (draw * sums).sum() / (draw * counts).sum()
+        alpha = (1 - ci) / 2
+        lo, hi = np.quantile(boot, [alpha, 1 - alpha])
+
+        rows.append({
+            "bin_low": float(edges[b]), "bin_high": float(edges[b + 1]),
+            "n": n, "n_matches": int(n_matches),
+            "mean_predicted": mean_predicted, "observed_rate": observed_rate,
+            "ci_low": float(lo), "ci_high": float(hi),
+            "contains_predicted": bool(lo <= mean_predicted <= hi),
+        })
+    return rows

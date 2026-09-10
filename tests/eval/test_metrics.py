@@ -11,6 +11,7 @@ from eval.metrics import (
     bucketed_metrics,
     log_loss,
     paired_brier_match_clustered_ci,
+    reliability_match_clustered,
     reliability_table,
 )
 
@@ -212,3 +213,56 @@ def test_paired_ci_tighter_than_two_independent_intervals_under_shared_match_dif
         independent_b["ci_high"] - independent_b["ci_low"]
     )
     assert paired_width < unpaired_width
+
+
+# --- reliability_match_clustered (Phase 1 session 3) -----------------------
+
+
+def test_reliability_match_clustered_contains_predicted_when_well_calibrated():
+    rng = np.random.default_rng(20)
+    n_matches, rows_per_match = 300, 20
+    match_id = np.repeat(np.arange(n_matches), rows_per_match)
+    y_prob = rng.uniform(0, 1, size=n_matches * rows_per_match)
+    y_true = (rng.uniform(0, 1, size=n_matches * rows_per_match) < y_prob).astype(np.int8)
+
+    table = reliability_match_clustered(y_true, y_prob, match_id, n_bins=10, n_resamples=300, seed=21)
+    assert len(table) == 10
+    checked = [row for row in table if row["n"] > 200]
+    assert len(checked) >= 8  # most bins should be populated
+    # A 95% CI is expected to miss the true value ~5% of the time even when
+    # genuinely well-calibrated - assert MOST bins pass, not every single
+    # one (demanding zero misses would be statistically dishonest given
+    # what a 95% CI actually promises).
+    misses = sum(1 for row in checked if not row["contains_predicted"])
+    assert misses <= 2, f"{misses}/{len(checked)} bins missed - too many for a well-calibrated set"
+
+
+def test_reliability_match_clustered_flags_a_deliberately_miscalibrated_bin():
+    # Everyone predicted ~0.7, but the true rate is ~0.3 - a large,
+    # deliberate miscalibration that should fail contains_predicted.
+    rng = np.random.default_rng(22)
+    n_matches, rows_per_match = 300, 20
+    match_id = np.repeat(np.arange(n_matches), rows_per_match)
+    y_prob = np.full(n_matches * rows_per_match, 0.7)
+    y_true = rng.binomial(1, 0.3, size=n_matches * rows_per_match).astype(np.int8)
+
+    table = reliability_match_clustered(y_true, y_prob, match_id, n_bins=10, n_resamples=500, seed=23)
+    # A constant 0.7 score lands in the (0.6, 0.7] bin under this table's
+    # right-inclusive convention (shared with reliability_table).
+    bin_07 = next(row for row in table if row["bin_low"] == pytest.approx(0.6))
+    assert bin_07["n"] > 200
+    assert not bin_07["contains_predicted"]
+    assert bin_07["observed_rate"] == pytest.approx(0.3, abs=0.05)
+
+
+def test_reliability_match_clustered_n_matches_counts_distinct_matches_not_rows():
+    # One match contributes 500 rows, all in the same decile - n=500 but
+    # n_matches must be 1, not 500.
+    match_id = np.zeros(500, dtype=np.int64)
+    y_prob = np.full(500, 0.5)
+    y_true = np.array([1, 0] * 250, dtype=np.int8)
+
+    table = reliability_match_clustered(y_true, y_prob, match_id, n_bins=10, n_resamples=50, seed=24)
+    bin_05 = next(row for row in table if row["n"] > 0)
+    assert bin_05["n"] == 500
+    assert bin_05["n_matches"] == 1
