@@ -46,13 +46,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+import numpy as np
 import psycopg
 from dotenv import dotenv_values
+
+from ingest.live_client import Delivery
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 ENV_PATH = REPO_ROOT / "api" / ".env"
@@ -268,6 +273,181 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     if args.command == "rebuild":
         rebuild()
+
+
+def _f32(x: float | None) -> float | None:
+    """Postgres's match_states rate columns are REAL (float32) - casting
+    here keeps every value this class returns at float32 precision, the
+    same as the bulk builder's `::real` casts (not bit-identical to what
+    psycopg reads back, since Postgres's wire format for `real` is a
+    ~6-significant-digit decimal string rather than the raw 4 bytes - the
+    parity test compares these with a small tolerance for exactly that
+    reason, not because the values are allowed to be wrong)."""
+    return None if x is None else float(np.float32(x))
+
+
+def _round_half_up(x: float) -> int:
+    """Postgres's ROUND(numeric) rounds half AWAY FROM ZERO (confirmed
+    empirically: ROUND(22.5::numeric) = 23), unlike Python's built-in
+    round(), which rounds half TO EVEN (round(22.5) = 22) - and unlike
+    Postgres's OWN round(double precision), which also rounds half to
+    even. REBUILD_SQL casts powerplay_frac/middle_frac to ::numeric before
+    this specific ROUND() call, so this half-up variant is the one that
+    must be used here - using plain round() silently disagreed with the
+    bulk builder at exactly the .5 boundary a 30-ball reduced innings hits
+    (found by the parity test, not assumed)."""
+    return int(math.floor(x + 0.5)) if x >= 0 else int(math.ceil(x - 0.5))
+
+
+@dataclass(frozen=True)
+class MatchStateRow:
+    """One incrementally-built row, field names matching match_states'
+    own columns exactly - the parity test compares these directly against
+    a fetched bulk-built row, field by field, not through any translation
+    layer that could itself hide a mismatch."""
+
+    match_id: int
+    innings: int
+    score: int
+    wickets: int
+    balls_bowled: int
+    balls_remaining: int
+    target: int | None
+    runs_required: int | None
+    current_run_rate: float | None
+    required_run_rate: float | None
+    rrr_minus_crr: float | None
+    partnership_runs: int
+    partnership_balls: int
+    balls_since_wicket: int
+    phase: str
+    batter_runs_so_far: int
+    batter_balls_faced: int
+
+
+class IncrementalMatchStateBuilder:
+    """Builds match_states rows ball by ball - Phase 2's answer to Phase
+    0's REBUILD_SQL, maintained as running Python state across `Delivery`
+    objects (ingest/live_client.py) instead of window functions over a
+    complete table. Every formula below is the identical one REBUILD_SQL
+    uses - see this module's top docstring for the off-by-one reasoning
+    both builders must honor. `PHASE_FRACTIONS` is imported from this same
+    module, not re-declared, so the two builders can never silently drift
+    apart on phase boundaries.
+
+    `target_runs`/`target_overs` are None until `set_target()` is called
+    (innings 2 starting, or a later provider-reported revision mid-chase).
+    Re-supplying them recomputes scheduled_balls/required_run_rate for
+    every SUBSEQUENT ball - already-returned rows are never rewritten,
+    matching the project's "never patch history" discipline.
+    """
+
+    def __init__(self, match_id: int, format_: str) -> None:
+        self.match_id = match_id
+        self.format = format_
+        self.target_runs: int | None = None
+        self.target_overs: float | None = None
+        self._current_innings: int | None = None
+        self._reset_innings_state()
+
+    def _reset_innings_state(self) -> None:
+        self._score = 0
+        self._wickets = 0
+        self._partnership_runs = 0
+        self._partnership_balls = 0
+        self._batter_runs: dict[int, int] = {}
+        self._batter_balls: dict[int, int] = {}
+
+    def set_target(self, target_runs: int, target_overs: float) -> None:
+        self.target_runs = target_runs
+        self.target_overs = target_overs
+
+    def _scheduled_balls(self, innings: int) -> int:
+        nominal = {"T20": 120, "ODI": 300}[self.format]
+        if innings == 2 and self.target_overs is not None:
+            floor_overs = int(self.target_overs)
+            frac_balls = round((self.target_overs - floor_overs) * 10)
+            return floor_overs * 6 + frac_balls
+        return nominal
+
+    def process(self, d: Delivery) -> MatchStateRow:
+        """Returns the state BEFORE this ball, then updates running totals
+        to include it - the same "exclusive of current row" discipline
+        REBUILD_SQL's window frames enforce."""
+        if d.innings != self._current_innings:
+            self._current_innings = d.innings
+            self._reset_innings_state()
+
+        is_legal = d.extra_type is None or d.extra_type not in ("wide", "noball")
+        balls_bowled_before = d.legal_ball_num - (1 if is_legal else 0)
+        scheduled_balls = self._scheduled_balls(d.innings)
+        balls_remaining = scheduled_balls - balls_bowled_before
+
+        target = self.target_runs if d.innings == 2 else None
+        runs_required = (self.target_runs - self._score) if (d.innings == 2 and self.target_runs is not None) else None
+        current_run_rate = (self._score / (balls_bowled_before / 6.0)) if balls_bowled_before > 0 else None
+        required_run_rate = None
+        if d.innings == 2 and balls_remaining > 0 and self.target_runs is not None:
+            required_run_rate = (self.target_runs - self._score) / (balls_remaining / 6.0)
+        rrr_minus_crr = (
+            required_run_rate - current_run_rate
+            if (required_run_rate is not None and current_run_rate is not None)
+            else None
+        )
+
+        pp_frac, mid_frac = PHASE_FRACTIONS[self.format]
+        if balls_bowled_before < _round_half_up(scheduled_balls * pp_frac):
+            phase = "powerplay"
+        elif balls_bowled_before < _round_half_up(scheduled_balls * (pp_frac + mid_frac)):
+            phase = "middle"
+        else:
+            phase = "death"
+
+        batter_runs_before = self._batter_runs.get(d.batter_id, 0)
+        batter_balls_before = self._batter_balls.get(d.batter_id, 0)
+
+        row = MatchStateRow(
+            match_id=self.match_id,
+            innings=d.innings,
+            score=self._score,
+            wickets=self._wickets,
+            balls_bowled=balls_bowled_before,
+            balls_remaining=balls_remaining,
+            target=target,
+            runs_required=runs_required,
+            current_run_rate=_f32(current_run_rate),
+            required_run_rate=_f32(required_run_rate),
+            rrr_minus_crr=_f32(rrr_minus_crr),
+            partnership_runs=self._partnership_runs,
+            partnership_balls=self._partnership_balls,
+            balls_since_wicket=self._partnership_balls,
+            phase=phase,
+            batter_runs_so_far=batter_runs_before,
+            batter_balls_faced=batter_balls_before,
+        )
+
+        # Update running totals to include THIS ball, becoming "before" for
+        # the next one processed.
+        runs_this_ball = d.runs_batter + d.runs_extras
+        self._score += runs_this_ball
+        if d.wicket_type is not None:
+            self._wickets += d.wicket_count
+            # The wicket ball's own runs are dropped, never contributing to
+            # any future partnership sum - matches REBUILD_SQL's behavior
+            # exactly (the partition key changes on THIS row's wicket, so
+            # no later row's window sum ever includes it; see this
+            # module's parity test for the empirical proof).
+            self._partnership_runs = 0
+            self._partnership_balls = 0
+        else:
+            self._partnership_runs += runs_this_ball
+            if is_legal:
+                self._partnership_balls += 1
+
+        self._batter_runs[d.batter_id] = batter_runs_before + d.runs_batter
+        self._batter_balls[d.batter_id] = batter_balls_before + (1 if is_legal else 0)
+
+        return row
 
 
 if __name__ == "__main__":

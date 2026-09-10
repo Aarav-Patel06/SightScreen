@@ -21,11 +21,21 @@ import psycopg
 import pytest
 from dotenv import dotenv_values
 
+from ingest.live_client import Delivery
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 ENV_PATH = REPO_ROOT / "api" / ".env"
 
 FIXTURE_NORMAL = "1410501"  # Sussex v Gloucestershire, all out 106, target 107
 FIXTURE_REDUCED = "1494102"  # Hong Kong v Malaysia, reduced to 5 overs/side
+
+# Phase 2 session 1's incremental-vs-bulk parity fixtures - local match_id,
+# not cricsheet id, since the incremental builder reads deliveries directly.
+PARITY_MATCH_IDS = {
+    "normal": 6290,   # == FIXTURE_NORMAL
+    "reduced": 8359,  # == FIXTURE_REDUCED
+    "dls": 5997,      # cricsheet 1399119 - DLS-decided, target 65 off 5 overs, 63 deliveries
+}
 
 
 def _env() -> dict[str, str]:
@@ -255,3 +265,162 @@ def test_rebuild_is_idempotent(conn):
     rebuild()
     second = _fingerprint()
     assert first == second
+
+
+# --- Phase 2 session 1: incremental-vs-bulk parity, the real deliverable ---
+# A mismatch here means the model sees a different distribution at serving
+# time than at training time, with nothing in the output to reveal it -
+# every ball is checked, not a sample.
+
+
+def _fetch_deliveries_for_replay(conn, match_id: int):
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT delivery_id, innings, over_num, ball_in_over, legal_ball_num,
+                   batter_id, non_striker_id, bowler_id, runs_batter, runs_extras,
+                   extra_type, wicket_type, player_out_id, wicket_count
+            FROM deliveries
+            WHERE match_id = %s AND NOT is_super_over
+            ORDER BY innings, over_num, ball_in_over
+            """,
+            (match_id,),
+        )
+        rows = cur.fetchall()
+    delivery_ids = [r[0] for r in rows]
+    deliveries = [
+        Delivery(
+            innings=r[1], over_num=r[2], ball_in_over=r[3], legal_ball_num=r[4],
+            batter_id=r[5], non_striker_id=r[6], bowler_id=r[7], runs_batter=r[8],
+            runs_extras=r[9], extra_type=r[10], wicket_type=r[11], player_out_id=r[12],
+            wicket_count=r[13],
+        )
+        for r in rows
+    ]
+    return delivery_ids, deliveries
+
+
+def _fetch_bulk_row(conn, delivery_id: int) -> dict:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT match_id, innings, score, wickets, balls_bowled, balls_remaining,
+                   target, runs_required, current_run_rate, required_run_rate,
+                   rrr_minus_crr, partnership_runs, partnership_balls,
+                   balls_since_wicket, phase, batter_runs_so_far, batter_balls_faced
+            FROM match_states WHERE delivery_id = %s
+            """,
+            (delivery_id,),
+        )
+        row = cur.fetchone()
+    columns = ("match_id", "innings", "score", "wickets", "balls_bowled", "balls_remaining",
+               "target", "runs_required", "current_run_rate", "required_run_rate",
+               "rrr_minus_crr", "partnership_runs", "partnership_balls", "balls_since_wicket",
+               "phase", "batter_runs_so_far", "batter_balls_faced")
+    return dict(zip(columns, row))
+
+
+_FLOAT_FIELDS = ("current_run_rate", "required_run_rate", "rrr_minus_crr")
+
+
+def _rows_match(actual: dict, expected: dict) -> bool:
+    """Exact equality for every field except the three REAL-typed rate
+    columns, compared with a float32-appropriate tolerance instead - not
+    because the values are allowed to differ, but because Postgres's own
+    `real` wire format is a ~6-significant-digit decimal string (confirmed
+    empirically: psycopg round-trips a `real` column to a different float64
+    bit pattern than `float(np.float32(x))` produces, even though both
+    represent "the same" float32 value). Reproducing that exact
+    text-serialization quirk in Python would be pointless busywork; a small
+    tolerance is the correct fix, not a loosened test."""
+    for key in expected:
+        a, b = actual[key], expected[key]
+        if key in _FLOAT_FIELDS:
+            if a is None or b is None:
+                if a != b:
+                    return False
+            elif abs(a - b) > 1e-4:
+                return False
+        elif a != b:
+            return False
+    return True
+
+
+@pytest.mark.parametrize("fixture_name", ["normal", "reduced", "dls"])
+def test_incremental_builder_matches_bulk_builder_every_ball(conn, fixture_name):
+    from features.match_state import IncrementalMatchStateBuilder
+
+    match_id = PARITY_MATCH_IDS[fixture_name]
+    with conn.cursor() as cur:
+        cur.execute("SELECT format, target_runs, target_overs FROM matches WHERE match_id = %s", (match_id,))
+        row = cur.fetchone()
+    if row is None:
+        pytest.skip(f"match {match_id} not loaded - run the full corpus load first")
+    format_, target_runs, target_overs = row
+
+    delivery_ids, deliveries = _fetch_deliveries_for_replay(conn, match_id)
+    if not delivery_ids:
+        pytest.skip(f"match {match_id} has no deliveries loaded")
+
+    builder = IncrementalMatchStateBuilder(match_id, format_)
+    prev_innings = None
+    mismatches = []
+    for delivery_id, d in zip(delivery_ids, deliveries):
+        if d.innings == 2 and prev_innings != 2:
+            builder.set_target(target_runs, target_overs)
+        built = builder.process(d)
+        prev_innings = d.innings
+
+        expected = _fetch_bulk_row(conn, delivery_id)
+        actual = {
+            "match_id": built.match_id, "innings": built.innings, "score": built.score,
+            "wickets": built.wickets, "balls_bowled": built.balls_bowled,
+            "balls_remaining": built.balls_remaining, "target": built.target,
+            "runs_required": built.runs_required, "current_run_rate": built.current_run_rate,
+            "required_run_rate": built.required_run_rate, "rrr_minus_crr": built.rrr_minus_crr,
+            "partnership_runs": built.partnership_runs, "partnership_balls": built.partnership_balls,
+            "balls_since_wicket": built.balls_since_wicket, "phase": built.phase,
+            "batter_runs_so_far": built.batter_runs_so_far, "batter_balls_faced": built.batter_balls_faced,
+        }
+        if not _rows_match(actual, expected):
+            mismatches.append((delivery_id, actual, expected))
+
+    assert not mismatches, (
+        f"{len(mismatches)}/{len(delivery_ids)} deliveries mismatched for match {match_id} "
+        f"(fixture={fixture_name}); first mismatch: {mismatches[0]}"
+    )
+
+
+def test_incremental_builder_picks_up_a_target_revision_mid_chase():
+    """No real historical fixture can exercise a true mid-chase DLS
+    re-revision honestly - Cricsheet only records the final, settled
+    target, never whatever figure was live-broadcast before a second rain
+    interruption revised it again. This is a synthetic, targeted unit test
+    of that code path specifically: set_target() called twice, mid-innings,
+    and later balls must use the NEW target - earlier, already-returned
+    rows are never rewritten (matching the project's "never patch history"
+    discipline).
+    """
+    from features.match_state import IncrementalMatchStateBuilder
+
+    builder = IncrementalMatchStateBuilder(match_id=1, format_="T20")
+    builder.set_target(target_runs=120, target_overs=20.0)
+
+    d1 = Delivery(innings=2, over_num=0, ball_in_over=1, legal_ball_num=1, batter_id=1,
+                  non_striker_id=2, bowler_id=3, runs_batter=1, runs_extras=0,
+                  extra_type=None, wicket_type=None, player_out_id=None)
+    row1 = builder.process(d1)
+    assert row1.target == 120
+    assert row1.runs_required == 120  # score is 0 before this ball
+
+    # Rain interrupts, DLS revises the target downward mid-innings.
+    builder.set_target(target_runs=90, target_overs=15.0)
+    d2 = Delivery(innings=2, over_num=0, ball_in_over=2, legal_ball_num=2, batter_id=1,
+                  non_striker_id=2, bowler_id=3, runs_batter=0, runs_extras=0,
+                  extra_type=None, wicket_type=None, player_out_id=None)
+    row2 = builder.process(d2)
+    assert row2.target == 90  # picks up the revision for this and all later balls
+    assert row2.runs_required == 89  # 90 - 1 run scored so far
+
+    # The EARLIER row, already returned, is untouched - never patched.
+    assert row1.target == 120

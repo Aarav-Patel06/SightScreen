@@ -645,18 +645,28 @@ On page load, fetch current state via a normal Next.js server component query, t
 
 Mistakes carry information **in aggregate**, not individually. Four layers:
 
-### 8.1 Calibration monitor — nightly
+### 8.1 Calibration monitor — daily
+
+**Phase 1 finding that governs this job:** on roughly 650 matches of held-out data, every calibration method tested (global isotonic, phase-stratified isotonic, global Platt, phase-stratified Platt) scored *worse* than no calibration at all. An unconditional refit would actively degrade the model. Recalibration is a candidate that must earn its place, never a scheduled certainty.
 
 ```
 1. Pull all resolved predictions from the trailing 12 months
 2. Bucket by predicted probability (deciles)
-3. For each bucket: predicted mean vs actual win rate
-4. Refit IsotonicRegression on (predicted, actual)
-5. Store new calibration params, version them
-6. Alert if any bucket is off by more than 5 percentage points with n > 200
+3. For each bucket: predicted mean vs observed rate, with a
+   MATCH-CLUSTERED CI (see §9.3 — raw pp deviation is not a valid test)
+4. Report the reliability table regardless of what happens next
+5. Split the window temporally: fit candidate maps on the earlier part,
+   evaluate on the later part
+6. Candidates must include IDENTITY. Fit isotonic and Platt as challengers.
+7. Promote a new calibrator ONLY if it beats identity on the held-out
+   later part, by a paired match-clustered margin whose CI excludes zero
+8. Otherwise keep identity and log that it won again
+9. Alert if any decile's clustered CI excludes its predicted mean
 ```
 
-This is the single highest-value automated job in the system. It is also the one users see on the accuracy page.
+Steps 1–4 are the monitoring, which always runs and always has value. Steps 5–8 are the refit, which usually should decline to act. Do not conflate them: a job that reports honestly and changes nothing is succeeding.
+
+The reliability table from step 4 is what users see on the accuracy page, and it should show real miscalibration where real miscalibration exists. Phase 1 closed with 4 of 10 test deciles failing the clustered check — that is disclosed debt, and hiding it behind a cosmetic transform would defeat the purpose of the page.
 
 ### 8.2 Segment drift detection — weekly
 
@@ -740,7 +750,15 @@ Why the innings-wide average is lower than it intuitively should be: a chase con
 | Brier, final 3 overs | ≤ 0.085 |
 | Brier, start of chase | ~0.25 (correct — it is near a coin flip) |
 | Brier, first innings | Establish a baseline first; do not carry over a guessed figure |
-| Calibration error, any decile with n > 200 | < 3 percentage points |
+| Calibration | Every decile's observed win rate must be consistent with its predicted mean, judged by a match-clustered 95% CI on the observed rate — not by a raw percentage-point deviation |
+
+**Do not judge calibration by raw pp deviation per decile.** `n` counts balls, and balls within a match are correlated, so 200 balls may be 5 effective observations. A 3pp gap at that sample size is often noise. Compute each decile's observed rate with a match-clustered interval and ask whether it contains the predicted mean.
+
+**Calibration must be conditional on match phase, not global.** A single monotone map over [0,1] assumes miscalibration depends only on predicted probability. It does not: a prediction of 0.7 arises both early in a chase (genuinely uncertain, often overconfident) and late (usually reliable). A global map merges those populations into one bin and mis-corrects both. Fit separately by phase bucket, or use a method that takes `balls_remaining` as an input.
+
+**Identity is a legitimate candidate.** LightGBM trained on log loss over millions of rows is often already well calibrated, and isotonic can add variance without reducing bias. If no calibration method beats identity on held-out data, ship identity and record why.
+
+**Selecting a calibration method requires two held-out chunks.** Fitting and selecting on the same validation data is circular. Split validation temporally: fit candidate maps on the earlier portion, select among them on the later portion, then touch test once.
 
 **Standard error must be computed by bootstrapping over matches, not over balls.** Balls within a match are highly correlated, so treating them as independent understates the standard error by roughly an order of magnitude and will make a noise-level improvement look significant. Effective sample size is closer to the match count than the row count.
 
@@ -956,6 +974,7 @@ Top to bottom:
 | **Scope creep** | Phases are ordered by value density. Phase 3 is a complete project. |
 | **SQL injection via agent** | Five layers in §10.3, role-level permissions being the one that matters. |
 | **LLM hallucinating stats** | Narratives and reports generated *from model outputs only*, never from the LLM's own knowledge. |
+| **Supabase free-tier auto-pause** | Free projects pause after ~7 days without activity. Presents as connection errors that look like code bugs. Harmless in Phase 0-1; before Phase 2 deployment either upgrade to Pro or add a keepalive ping, and make the worker log a distinguishable error on a paused project. |
 | **Perceived as a betting tool** | Explicit latency disclosure, no odds, no stake language, accuracy page framing it as analytics. |
 | **Supabase 500 MB free tier** | Training corpus stays in local Postgres (§2.1). Supabase holds serving data only. T20-only if still tight. |
 | **Trying to run the poller on Vercel** | It cannot work (§2.2). One Railway container, budgeted from day one. |
@@ -1008,4 +1027,4 @@ Log decisions here as you make them, with dates and reasoning.
 | | Include ODI in v1 or T20 only (drives the Supabase sizing question in §2.1) | |
 | | FastAPI on Railway vs Vercel Python functions | |
 | | Whether to upgrade Supabase to Pro so the agent can query full history | |
-| 2026-08-27 | Player-ability features (§6.2: `striker_ability`, `non_striker_ability`, `remaining_batting_ability`, `current_bowler_ability`) deferred to the Phase 5 retrain, not proxied in the Phase 1 session 2 model | `player_state` doesn't exist until §6.5/Phase 5. A rushed proxy (a placeholder constant, or a career-average stat computed outside the Bayesian update rule §6.5 actually specifies) would either contribute nothing or a badly-calibrated signal Phase 5's real ability model would then have to compete against and partially undo. Measuring the lift as a clean before/after ablation once §6.5 is built is better science and no slower in the end. |
+| 2026-09-10 | How the real deployed live worker's `elo_as_of`/venue as-of lookups reach the full historical corpus, which only exists in local Postgres — in tension with §2.1's "serving never touches local Postgres" | Not resolved in Phase 2 session 1 (replay-only scope; replay itself reads local Postgres as a separate, already-justified dev-tool exception). Two live candidates: (a) a narrow, explicit exception for these specific reads, or (b) a periodic Elo/venue-summary sync job to Supabase. Needs deciding before Railway deployment (session 2+ of Phase 2). |
