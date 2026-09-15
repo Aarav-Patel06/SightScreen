@@ -113,7 +113,7 @@ Every scheduled job in §8 is daily or slower, which is exactly what Actions cro
 
 | Workflow | Schedule | Job |
 |---|---|---|
-| `calibration.yml` | Daily 03:00 UTC | Refit isotonic calibration (§8.1) |
+| `calibration.yml` | Daily 03:00 UTC | Report reliability; refit only if a candidate beats identity (§8.1) |
 | `drift.yml` | Weekly Monday | Segment bias detection (§8.2) |
 | `retrain.yml` | Biweekly | Retrain + shadow evaluation (§8.4) |
 | `ci.yml` | On push | Tests, lint, type check |
@@ -251,7 +251,7 @@ Pick one. All are freemium.
 
 | Provider | Entry cost | Notes |
 |---|---|---|
-| **Cricket Data (formerly CricAPI)** — cricketdata.org | Free tier; paid from ~$5.99/mo | Cheapest ball-by-ball access. Start here. |
+| **Cricket Data (formerly CricAPI)** — cricketdata.org | Free tier; paid from ~$5.99/mo | **Chosen, but has no usable ball-by-ball** — `match_bbb` returns only penalty/extras deliveries and has no wicket field. Used via snapshot reconstruction. See §15. |
 | **Sportmonks** — sportmonks.com/cricket-api | 14-day free trial; 3,000 calls/hour on all tiers | Cleaner schema, better docs, costs more |
 | **Roanuz** — cricketapi.com | Paid | Good IPL coverage |
 
@@ -265,7 +265,11 @@ Pick one. All are freemium.
 - Provider lag behind actual play: 5–30 seconds
 - TV broadcast is itself 20–40 seconds behind the ground
 
-Net: your prediction appears **30–60 seconds after the ball is bowled.** Display this ("42s behind live") in the UI header. This is honesty, and it also positions the product clearly as analytics rather than a betting tool.
+Net: your prediction appears **30–60 seconds after the ball is bowled.**
+
+**Provider lag is unmeasurable on CricketData.** No endpoint carries a per-ball timestamp, so the ball-bowled → provider-publish leg cannot be observed at all. Only poll → write is measurable.
+
+The UI must therefore not display a false-precision figure like "42s behind live." Show the measured half and be honest about the unknown half: "updates every 15s · provider lag not published." Revisit only if a provider exposing ball timestamps is adopted. This is honesty, and it also positions the product clearly as analytics rather than a betting tool.
 
 ### 4.4 Entity resolution — the hidden time sink
 
@@ -878,7 +882,9 @@ Each phase ends with a demoable artifact and explicit acceptance criteria. Do no
 - [ ] Isotonic calibration
 - [ ] Reliability diagram + metrics report
 
-**Acceptance:** Test Brier ≤ 0.18. Beats both baselines. Reliability diagram shows no decile off by more than 3 points where n > 200.
+**Acceptance (revised — the original figures here were guesses and were superseded by §9.3):** Test Brier ≤ 0.125 overall, ≤ 0.085 in the final 3 overs. Beats both §9.2 baselines by a paired match-clustered margin whose 95% CI excludes zero. Calibration judged per §9.3's clustered-CI criterion, never raw pp deviation.
+
+**Closed 2026-09-13:** test Brier 0.1232 overall / 0.0652 final-3-overs; paired deltas vs logistic +0.0110 and vs base rate +0.0266, both CIs above zero. Identity beat all four calibration candidates on a held-out selection split and shipped uncalibrated; 4 of 10 test deciles still fail the clustered check — disclosed debt carried into Phase 2.
 
 ### Phase 2 — Live loop and minimal UI (week 3)
 
@@ -913,6 +919,8 @@ Each phase ends with a demoable artifact and explicit acceptance criteria. Do no
 **Acceptance:** 5,000 sims in under 200ms. Simulation-based WP within 3 points of the direct classifier across a test set (they should broadly agree; large divergence means a bug).
 
 ### Phase 5 — Player predictions and WPA (weeks 7–8)
+
+**Scope note (2026-09-14):** live BBB is unavailable on the current provider, so this phase is built against the historical corpus, not the live feed. Season/career WPA, player ability curves, next-innings predictions, scouting reports, and post-match impact breakdowns all work from Cricsheet and are unaffected. Only the *live in-match* WPA ticker and live batter/bowler prediction cards are deferred. They need no new logic if a BBB provider is ever adopted — only an adapter swap. See §15.
 
 - [ ] Bayesian player ability model with per-innings updates
 - [ ] Batter and bowler live predictions
@@ -1028,5 +1036,7 @@ Log decisions here as you make them, with dates and reasoning.
 | | FastAPI on Railway vs Vercel Python functions | |
 | | Whether to upgrade Supabase to Pro so the agent can query full history | |
 | 2026-09-08 | Defer player-ability features (striker_ability, non_striker_ability, remaining_batting_ability, current_bowler_ability) from §6.2 to Phase 5 | player_state doesn't exist until §6.5 in Phase 5. Building a rushed proxy now would contaminate the comparison later; deferring gives a clean ablation measuring exactly what player features are worth. Phase 1's model uses state + venue + Elo only. |
-| 2026-09-10 | RESOLVED (decision 2026-09-14; **implementation lands in Phase 2 Session 3**, and Railway deployment is blocked until it does): sync elo_ratings and a precomputed venue as-of summary table to Supabase. | Option (a) is not viable — local Postgres is on a laptop and unreachable from Railway. Option (b) is also not a §2.1 exception: §2.1 splits by purpose, not provenance, and these are consumed at serving time. Both tables are aggregates, not corpus: elo_ratings ~26k rows, venue summary ~13k, a few MB total. The rule that stands is that deliveries and match_states never go to Supabase. Sync runs after any Elo or venue rebuild, and the live path must use the identical as_of helper so serving and training lookups cannot diverge. |
-| 2026-09-14 | **Phase 5 (WPA attribution, player predictions, impact leaderboard) is blocked on a ball-by-ball-capable provider.** | Snapshot reconstruction recovers score, wickets and ball counts exactly, but carries no per-delivery striker or bowler identity — CricketData's feed simply does not contain it (see the provider decision above). §6.5's per-innings ability updates, §6.6's WPA attribution and §12.1's impact leaderboard all require knowing who faced and who bowled each ball. Unblocking costs €29/mo for Sportmonks Major, and that call should be made before Phase 5 starts, not during it. Phases 2–4 are unaffected: the Phase 1 model uses no player features. |
+| 2026-09-10 | RESOLVED and **IMPLEMENTED 2026-09-15** (Phase 2 Session 3; Railway deployment is no longer blocked on this). Shipped as two derived tables rather than a raw `elo_ratings` sync: `venue_asof_summary` (10,508 rows) and `elo_asof_summary` (25,290 rows), 4.76 MB total, both present in **both** databases and read by the same helper in both. `elo_ratings` stays local — its `match_id` references `matches`, and syncing `matches` would put corpus rows in the same `match_id` space the live worker writes into. Original reasoning below; see `docs/phase2-session3-asof-sync.md` for what the parity gate found. | Option (a) is not viable — local Postgres is on a laptop and unreachable from Railway. Option (b) is also not a §2.1 exception: §2.1 splits by purpose, not provenance, and these are consumed at serving time. Both tables are aggregates, not corpus: elo_ratings ~26k rows, venue summary ~13k, a few MB total. The rule that stands is that deliveries and match_states never go to Supabase. Sync runs after any Elo or venue rebuild, and the live path must use the identical as_of helper so serving and training lookups cannot diverge. |
+| 2026-09-14 | **Only the *live in-match* parts of Phase 5 are blocked on a ball-by-ball-capable provider. Most of Phase 5 is not.** | Snapshot reconstruction recovers score, wickets and ball counts exactly, but carries no per-delivery striker or bowler identity — CricketData's feed simply does not contain it (see the provider decision above). §6.5's per-innings ability updates, §6.6's WPA attribution and §12.1's impact leaderboard all require knowing who faced and who bowled each ball. But that identity exists for 3.78M historical deliveries in local Postgres, free. Live BBB and historical BBB are different things, and almost everything valuable sits on the side we already own. Unaffected: season and career WPA leaderboards, §6.5 player ability curves (Cricsheet publishes within ~a day of a match ending), next-innings predictions, scouting reports, post-match ball-by-ball impact breakdowns, the agent's text-to-SQL, player pages, upcoming-match predictions, the accuracy page. Blocked: only the live in-match WPA ticker and live batter/bowler prediction cards on §12.1. Build Phase 5 against the corpus; if a BBB provider is ever adopted the WPA code is unchanged and only the adapter swaps, so the €29/mo decision defers indefinitely rather than gating anything. Phases 2–4 are unaffected either way: the Phase 1 model uses no player features. |
+| 2026-09-15 | **`elo_as_of` was non-deterministic, and the summary rewrite is what exposed it.** Fixed by tie-breaking on `match_id DESC`; the end-of-day rating is now what an as-of lookup returns. | Every `matches.start_time` in this corpus is exactly midnight, so a team playing twice on one date writes two `elo_ratings` rows with an identical `as_of`, and the shipped `ORDER BY as_of DESC LIMIT 1` chose between them by heap order. Measured: 372 tied groups, of which 137 returned the *earlier* match's rating — the pre-second-match value. Across the 25,899 `(team, format, date)` lookups training performs, 140 resolved to the wrong side; 162 of 12,916 matches had their `elo_diff` change, mean 9.2 Elo points, max 24.2. **Phase 1's registered `winprob2-20260910` was trained with the ambiguous ordering for those 162 matches (1.3%).** Not retrained on this finding alone — the effect is small and the feature's scale is hundreds of points — but the training run was not bit-reproducible before this fix and now is, so the decision of whether to re-register is open and belongs with the next retrain. Collapsing to a date grain forced the tie-break to be named, which is the only reason anyone looked. |
+| 2026-09-15 | Serving values must not depend on Postgres session settings. `elo_asof_summary.rating` is `NUMERIC`, not `REAL`, and its rebuild pins `extra_float_digits`. | Caught by the parity gate's first run, not by review. `real`'s TEXT output — which is what psycopg decodes — depends on `extra_float_digits`, and Supabase's pooler hands out sessions with `0` where local Postgres uses the 12+ default of `1`. The identical stored float4 came back to Python as `1496.445` locally and `1496.44` from Supabase: a silent training/serving divergence in the exact feature this session exists to keep aligned. Two further traps found while fixing it: `float4::numeric` is hardcoded to 6 significant digits and ignores the setting entirely (it turns 1601.9048 into 1601.9), so the rebuild casts via `::text::numeric`; and `date`'s output depends on `DateStyle`, so content hashes render columns explicitly rather than using `row::text`. |

@@ -82,6 +82,9 @@ def test_db_url() -> str:
 TABLES_TO_RESET = (
     "unresolved_entities",
     "predictions",
+    "reference_sync_state",
+    "venue_asof_summary",
+    "elo_asof_summary",
     "match_states",
     "deliveries",
     "elo_ratings",

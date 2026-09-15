@@ -67,6 +67,16 @@ Schema identity is enforced by applying the same `supabase/migrations/*.sql` fil
 |---|---|
 | `elo_ratings` | Elo as a time series (§6.1) — one row per team per format per completed match, never a single current-rating column. `elo_as_of(conn, team_id, format, date)` (`api/src/features/elo.py`) is the only sanctioned read path for any later phase's `elo_diff` feature; it returns the 1500 default before a team's first match, never `NULL`. Team renames (Delhi Daredevils→Capitals, Kings XI Punjab→Punjab Kings, RCB Bangalore→Bengaluru, +3 more display-name variants) need no Elo-specific handling — they're represented as `team_aliases` rows pointing at one continuous `team_id`, so Elo sees unbroken history automatically. `python -m features.elo rebuild`, ~44s on the real corpus. |
 
+### As-of summaries (`20260915000001_asof_summaries.sql`)
+
+| Table | Purpose |
+|---|---|
+| `venue_asof_summary` | One row per (venue, date a match was played there) — 10,508 rows — carrying cumulative `chase_wins`/`chase_n`/`first_inns_runs`/`first_inns_n` including that date. Backs `venue_chase_win_rate_as_of` and `venue_avg_first_innings_as_of`, which previously recomputed from `match_states`/`deliveries` on every call and so could not run on Supabase at all. The `min_matches` floor is applied at read time, not baked in — it's a hyperparameter, and one place must own it. `chase_wins` is `NUMERIC` at scale 1 so `chase_wins / chase_n` reproduces `avg()`'s `numeric_div` digit for digit. |
+| `elo_asof_summary` | One row per (team, format, date) — 25,290 rows — carrying that date's **end-of-day** rating. Backs `elo_as_of`. `elo_ratings` itself stays local: its `match_id` references `matches`, which never goes to Supabase. `rating` is `NUMERIC`, not `REAL`, because a float's text output depends on the session's `extra_float_digits` and Supabase's pooler sets it to 0 — see the migration. |
+| `reference_sync_state` | One row per derived table: content hash, row count, `rebuilt_at`, `synced_at`. `features/as_of.py`'s `assert_reference_fresh` refuses to serve on a hash mismatch or a newest breakpoint older than 14 days. |
+
+Both summaries exist in **both** databases and are read by the same functions in both — that is the point. Rebuild with `python -m features.asof_summary rebuild` (~27s), then push with `python -m ingest.sync_reference_tables`, which verifies the hash on the Supabase side before recording it. 4.76 MB for all three tables.
+
 ### Realtime + RLS (`20260826180008_realtime_and_rls.sql`)
 
 No new tables — enables RLS with anonymous/authenticated `SELECT` policies on `predictions`, `matches`, `players`, `venues`, `teams` (the tables a browser reads directly), and adds `predictions` to the `supabase_realtime` publication. No write policies for `anon`/`authenticated` anywhere; all writes go through the service-role key, which bypasses RLS by design.
@@ -78,6 +88,18 @@ python supabase/apply_migrations.py                # apply migrations to both DB
 pytest tests/db/test_schema_parity.py -v            # confirm they're still identical
 python -m features.match_state rebuild              # rebuild match_states (idempotent)
 python -m features.elo rebuild                      # rebuild elo_ratings (idempotent)
+python -m features.asof_summary rebuild             # rebuild both as-of summaries (idempotent)
 pytest tests/features/test_match_state.py -v        # off-by-one, phase boundaries, parity
 pytest tests/features/test_elo.py -v                 # idempotency, as-of lookup, rename continuity
+pytest tests/features/test_asof_summary.py -v        # date grain, Elo tie-break, staleness refusal
+python -m ingest.sync_reference_tables               # push reference + derived tables to Supabase
+pytest tests/db/test_asof_parity.py -v               # THE GATE - ~6 min, full corpus, both DBs
 ```
+
+The order matters. `asof_summary` reads `match_states` and `elo_ratings`, so it
+must run after both of those rebuilds; `sync_reference_tables` refuses to run
+for a derived table with no local `reference_sync_state` row, so it must run
+after `asof_summary`. Skipping the sync leaves Supabase serving the previous
+summary, which the worker's startup check catches as a stale breakpoint but
+cannot catch immediately — see `features/as_of.py`'s note on what that check
+can and cannot prove.

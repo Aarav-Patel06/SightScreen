@@ -200,14 +200,24 @@ def test_elo_as_of_poison_pill_future_match_never_seen(test_db_url):
     plain TRUNCATE matches/deliveries/elo_ratings would leave dirty across
     runs, and did (a real UNIQUE-violation failure on a second run, found
     and fixed this session, not hypothetical).
+
+    Phase 2 session 3: elo_as_of reads elo_asof_summary, so the summary is
+    rebuilt after each recompute_format - INCLUDING after the pill is
+    planted. Skipping that second rebuild would make this test pass for the
+    wrong reason: the pill would be invisible because it was never
+    aggregated, rather than because the as-of rule excluded it.
     """
     import psycopg
 
+    from features.asof_summary import rebuild_elo_summary
     from features.elo import elo_as_of, recompute_format
 
     write_conn = psycopg.connect(test_db_url, autocommit=True)
     with write_conn.cursor() as cur:
-        cur.execute("TRUNCATE matches, deliveries, elo_ratings, teams RESTART IDENTITY CASCADE")
+        cur.execute(
+            "TRUNCATE matches, deliveries, elo_ratings, elo_asof_summary, "
+            "venue_asof_summary, teams RESTART IDENTITY CASCADE"
+        )
         cur.execute("INSERT INTO teams (name) VALUES ('Poison Pill A'), ('Poison Pill B') "
                     "RETURNING team_id")
         team_a, team_b = [row[0] for row in cur.fetchall()]
@@ -222,6 +232,7 @@ def test_elo_as_of_poison_pill_future_match_never_seen(test_db_url):
             )
 
     recompute_format(write_conn, "T20")
+    rebuild_elo_summary(write_conn)
     as_of_date = date(2021, 1, 1)
     before = elo_as_of(write_conn, team_a, "T20", as_of_date)
 
@@ -238,6 +249,7 @@ def test_elo_as_of_poison_pill_future_match_never_seen(test_db_url):
                 (f"2021-06-{i + 1:02d}", team_a, team_b, team_b),
             )
     recompute_format(write_conn, "T20")
+    rebuild_elo_summary(write_conn)  # the pill is now IN the summary
     after = elo_as_of(write_conn, team_a, "T20", as_of_date)
 
     assert after == before

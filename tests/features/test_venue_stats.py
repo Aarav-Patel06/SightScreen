@@ -9,6 +9,14 @@ as_of_date, insert a synthetic FUTURE match with a deliberately extreme,
 unmistakable outcome, recompute at the SAME as_of_date, and assert
 byte-identical results. This mechanically proves "can't see a match on or
 after the prediction date" - an assertion, not a re-read of the WHERE clause.
+
+Phase 2 session 3 made the poison pill sharper rather than weaker. The
+helpers now read venue_asof_summary, so each test rebuilds the summary after
+inserting - INCLUDING after planting the pill. Leaving the summary stale
+would let these tests pass for the wrong reason: the pill would be invisible
+because it was never aggregated, not because the as-of rule excluded it.
+Rebuilding means the pill really is in the table and the lookup still has to
+refuse to see it.
 """
 
 from __future__ import annotations
@@ -17,6 +25,7 @@ from datetime import date
 
 import pytest
 
+from features.asof_summary import rebuild_venue_summary
 from features.venue_stats import venue_avg_first_innings_as_of, venue_chase_win_rate_as_of
 
 
@@ -113,6 +122,7 @@ def test_venue_chase_win_rate_returns_none_below_min_matches(conn):
     venue_id = _insert_venue(conn, "Test Ground A")
     team_a, team_b = _insert_team(conn, "Team A"), _insert_team(conn, "Team B")
     _make_prior_matches(conn, venue_id, team_a, team_b, n=9, chase_won=True)  # one short of 10
+    rebuild_venue_summary(conn)
 
     result = venue_chase_win_rate_as_of(conn, venue_id, date(2021, 1, 1), min_matches=10)
     assert result is None
@@ -120,6 +130,7 @@ def test_venue_chase_win_rate_returns_none_below_min_matches(conn):
 
 def test_venue_chase_win_rate_returns_none_with_no_history(conn):
     venue_id = _insert_venue(conn, "Empty Ground")
+    rebuild_venue_summary(conn)
     result = venue_chase_win_rate_as_of(conn, venue_id, date(2025, 1, 1))
     assert result is None
 
@@ -128,6 +139,7 @@ def test_venue_chase_win_rate_uses_exact_bin_once_min_matches_met(conn):
     venue_id = _insert_venue(conn, "Test Ground B")
     team_a, team_b = _insert_team(conn, "Team C"), _insert_team(conn, "Team D")
     _make_prior_matches(conn, venue_id, team_a, team_b, n=10, chase_won=True)
+    rebuild_venue_summary(conn)
 
     result = venue_chase_win_rate_as_of(conn, venue_id, date(2021, 1, 1), min_matches=10)
     assert result == 1.0
@@ -141,6 +153,7 @@ def test_venue_chase_win_rate_poison_pill_future_match_never_seen(conn):
     _make_prior_matches(conn, venue_id, team_a, team_b, n=10, chase_won=True)
 
     as_of_date = date(2021, 1, 1)
+    rebuild_venue_summary(conn)
     before = venue_chase_win_rate_as_of(conn, venue_id, as_of_date, min_matches=10)
 
     # Poison pill: 20 future matches, ALL chase losses (opposite of every
@@ -151,6 +164,7 @@ def test_venue_chase_win_rate_poison_pill_future_match_never_seen(conn):
             conn, m, False, f"2021-06-{i + 1:02d}", batting_team_id=team_a, bowling_team_id=team_b
         )
 
+    rebuild_venue_summary(conn)  # the pill is now IN the summary
     after = venue_chase_win_rate_as_of(conn, venue_id, as_of_date, min_matches=10)
     assert after == before == 1.0
 
@@ -169,6 +183,7 @@ def test_venue_chase_win_rate_boundary_match_does_not_count(conn):
         conn, boundary_match, False, str(as_of_date), batting_team_id=team_a, bowling_team_id=team_b
     )
 
+    rebuild_venue_summary(conn)
     result = venue_chase_win_rate_as_of(conn, venue_id, as_of_date, min_matches=10)
     assert result == 1.0  # unaffected by the same-day match
 
@@ -180,6 +195,7 @@ def test_venue_avg_first_innings_returns_none_below_min_matches(conn):
     venue_id = _insert_venue(conn, "Test Ground C")
     team_a, team_b = _insert_team(conn, "Team I"), _insert_team(conn, "Team J")
     _make_prior_matches(conn, venue_id, team_a, team_b, n=5, chase_won=True)
+    rebuild_venue_summary(conn)
 
     result = venue_avg_first_innings_as_of(conn, venue_id, date(2021, 1, 1), min_matches=10)
     assert result is None
@@ -191,6 +207,7 @@ def test_venue_avg_first_innings_poison_pill_future_match_never_seen(conn):
     _make_prior_matches(conn, venue_id, team_a, team_b, n=10, chase_won=True)  # each: 150 first-innings runs
 
     as_of_date = date(2021, 1, 1)
+    rebuild_venue_summary(conn)
     before = venue_avg_first_innings_as_of(conn, venue_id, as_of_date, min_matches=10)
     assert before == pytest.approx(150.0)
 
@@ -200,5 +217,6 @@ def test_venue_avg_first_innings_poison_pill_future_match_never_seen(conn):
         conn, future_match, 400, match_date="2021-06-01", batting_team_id=team_a, bowling_team_id=team_b
     )
 
+    rebuild_venue_summary(conn)  # the pill is now IN the summary
     after = venue_avg_first_innings_as_of(conn, venue_id, as_of_date, min_matches=10)
     assert after == before

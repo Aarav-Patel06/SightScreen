@@ -37,6 +37,11 @@ from pathlib import Path
 import psycopg
 from dotenv import dotenv_values
 
+# as_of_date_key lives in venue_stats because that's the module that
+# introduces the date-key contract. It can't move up into features/as_of.py:
+# that module imports both this one and venue_stats, so the edge would cycle.
+from features.venue_stats import as_of_date_key
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 ENV_PATH = REPO_ROOT / "api" / ".env"
 REPORTS_DIR = REPO_ROOT / "api" / "data" / "load_reports"
@@ -124,13 +129,58 @@ def recompute_format(conn, format_: str) -> dict:
 
 def elo_as_of(conn, team_id: int, format_: str, as_of_date) -> float:
     """The only sanctioned way any later phase may read a rating - never a
-    direct SELECT against a "current" value, because there isn't one."""
+    direct SELECT against a "current" value, because there isn't one.
+
+    Reads elo_asof_summary, not elo_ratings (Phase 2 session 3): elo_ratings
+    stays local because its match_id references matches, which never goes to
+    Supabase. The summary exists in both databases, so this one function
+    serves training and the live worker alike and differs only in which
+    connection it receives.
+
+    Returns STARTING_RATING, never None, when a team has no prior rated
+    match. That is a different fact from the venue helpers' None: the model
+    was trained on 1500.0 for cold-start teams and NaN for cold-start venues.
+
+    The float() is required because elo_asof_summary.rating is NUMERIC and
+    psycopg hands back a Decimal - and it changes nothing: the stored decimal
+    is float4's shortest exact representation, so float(Decimal('1496.445'))
+    is the same float the old REAL-backed text decode produced. See the
+    migration for why NUMERIC rather than REAL.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT rating FROM elo_asof_summary
+            WHERE team_id = %s AND format = %s AND effective_date < %s
+            ORDER BY effective_date DESC LIMIT 1
+            """,
+            (team_id, format_, as_of_date_key(as_of_date)),
+        )
+        row = cur.fetchone()
+    return float(row[0]) if row is not None else STARTING_RATING
+
+
+def elo_as_of_direct(conn, team_id: int, format_: str, as_of_date) -> float:
+    """The elo_ratings-backed implementation, kept as the parity gate's
+    oracle and never called on a serving path.
+
+    NOTE the `, match_id DESC` that the pre-session-3 version did not have.
+    Every matches.start_time in this corpus is exactly midnight, so a team
+    playing twice on one date writes TWO elo_ratings rows with an identical
+    as_of, and a bare `ORDER BY as_of DESC LIMIT 1` chose between them by
+    heap order. Measured on the real corpus: 372 tied groups, and for 137 of
+    them the bare ordering returned the EARLIER match's rating - the
+    pre-second-match value rather than the end-of-day one. recompute_format
+    processes matches `ORDER BY start_time, match_id`, so the highest
+    match_id on a date is that date's last match and its rating is the
+    end-of-day rating.
+    """
     with conn.cursor() as cur:
         cur.execute(
             """
             SELECT rating FROM elo_ratings
             WHERE team_id = %s AND format = %s AND as_of < %s
-            ORDER BY as_of DESC LIMIT 1
+            ORDER BY as_of DESC, match_id DESC LIMIT 1
             """,
             (team_id, format_, as_of_date),
         )

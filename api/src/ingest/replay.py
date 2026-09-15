@@ -32,9 +32,11 @@ import numpy as np
 import psycopg
 from dotenv import dotenv_values
 
-from features.elo import elo_as_of
+# Re-exported, not redefined: compute_as_of_features moved to features/as_of.py
+# in Phase 2 session 3 so training could call it without importing from
+# ingest. Existing callers and tests import it from here unchanged.
+from features.as_of import compute_as_of_features
 from features.match_state import IncrementalMatchStateBuilder, MatchStateRow
-from features.venue_stats import venue_avg_first_innings_as_of, venue_chase_win_rate_as_of
 from ingest.live_client import Delivery, MatchState, MatchSummary, PhaseTransitionEvent
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -221,26 +223,6 @@ def predict_win_prob(artifact: dict, row: MatchStateRow, as_of_features: dict) -
     X = np.array([[values[name] if values[name] is not None else np.nan for name in artifact["feature_names"]]])
     raw = artifact["booster"].predict(X, num_iteration=artifact["booster"].best_iteration)
     return float(artifact["calibrator"].predict(raw, phase=np.array([row.phase]))[0])
-
-
-def compute_as_of_features(conn, venue_id: int | None, batting_team_id: int, bowling_team_id: int,
-                            format_: str, match_date) -> dict:
-    """The SAME functions models/win_prob_2nd.py calls for training -
-    guarantees a cold-start venue (24-33% of matches, Phase 1's measured
-    rate) gets the identical None -> NaN fallback the model was trained
-    with, by construction rather than by re-implementing the rule twice."""
-    bat_elo = elo_as_of(conn, batting_team_id, format_, match_date)
-    bowl_elo = elo_as_of(conn, bowling_team_id, format_, match_date)
-    if venue_id is None:
-        venue_rate, venue_avg = None, None
-    else:
-        venue_rate = venue_chase_win_rate_as_of(conn, venue_id, match_date)
-        venue_avg = venue_avg_first_innings_as_of(conn, venue_id, match_date)
-    return {
-        "elo_diff": bat_elo - bowl_elo,
-        "venue_chase_win_rate": venue_rate,
-        "venue_avg_first_innings": venue_avg,
-    }
 
 
 def run_cli(match_id: int, speed: Speed, start_ball: int, with_predictions: bool, poll_interval: float) -> None:

@@ -39,8 +39,7 @@ from dotenv import dotenv_values
 from sklearn.isotonic import IsotonicRegression
 
 from eval.splits import SecondInningsDataset
-from features.elo import elo_as_of
-from features.venue_stats import venue_avg_first_innings_as_of, venue_chase_win_rate_as_of
+from features.as_of import compute_as_of_features
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 ENV_PATH = REPO_ROOT / "api" / ".env"
@@ -178,9 +177,13 @@ def _match_level_features(
     min_venue_matches: int = 10,
 ) -> dict[str, np.ndarray]:
     """elo_diff/venue features are constant per match - compute once per
-    unique match_id (looping the as-of primitives directly; see the plan's
-    assumption 3 for why a batched SQL alternative isn't built preemptively),
-    then broadcast back onto every row of that match."""
+    unique match_id, then broadcast back onto every row of that match.
+
+    Delegates to features.as_of.compute_as_of_features, the one entry point
+    the live worker also calls (Phase 2 session 3, Decision 3). Calling the
+    as-of primitives directly from here is what allowed training and serving
+    to drift apart - they differed by the TYPE of as_of_date each passed, and
+    nothing failed."""
     _, first_idx = np.unique(match_id, return_index=True)
     per_match_elo_diff: dict[int, float] = {}
     per_match_venue_rate: dict[int, float] = {}
@@ -192,18 +195,19 @@ def _match_level_features(
         vid = venue_id[idx]
         bat_id, bowl_id, fmt = int(batting_team_id[idx]), int(bowling_team_id[idx]), format_[idx]
 
-        bat_elo = elo_as_of(conn, bat_id, fmt, d)
-        bowl_elo = elo_as_of(conn, bowl_id, fmt, d)
-        per_match_elo_diff[mid] = bat_elo - bowl_elo
-
-        if vid is None:
-            per_match_venue_rate[mid] = np.nan
-            per_match_venue_avg[mid] = np.nan
-        else:
-            rate = venue_chase_win_rate_as_of(conn, int(vid), d, min_matches=min_venue_matches)
-            avg = venue_avg_first_innings_as_of(conn, int(vid), d, min_matches=min_venue_matches)
-            per_match_venue_rate[mid] = np.nan if rate is None else rate
-            per_match_venue_avg[mid] = np.nan if avg is None else avg
+        features = compute_as_of_features(
+            conn,
+            None if vid is None else int(vid),
+            bat_id,
+            bowl_id,
+            fmt,
+            d,
+            min_venue_matches=min_venue_matches,
+        )
+        rate, avg = features["venue_chase_win_rate"], features["venue_avg_first_innings"]
+        per_match_elo_diff[mid] = features["elo_diff"]
+        per_match_venue_rate[mid] = np.nan if rate is None else rate
+        per_match_venue_avg[mid] = np.nan if avg is None else avg
 
     elo_diff = np.array([per_match_elo_diff[int(m)] for m in match_id], dtype=np.float64)
     venue_rate = np.array([per_match_venue_rate[int(m)] for m in match_id], dtype=np.float64)
