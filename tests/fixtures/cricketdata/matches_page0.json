@@ -1,0 +1,1160 @@
+{
+ "apikey": "REDACTED",
+ "data": [
+  {
+   "id": "4d504550-036d-42bd-9f49-4fd0c038be54",
+   "name": "England vs Pakistan, 3rd Test, Pakistan tour of England 2026",
+   "matchType": "test",
+   "status": "England won by 8 wkts",
+   "venue": "Edgbaston, Birmingham",
+   "date": "2026-09-09",
+   "dateTimeGMT": "2026-09-09T10:00:00",
+   "teams": [
+    "England",
+    "Pakistan"
+   ],
+   "teamInfo": [
+    {
+     "name": "England",
+     "shortname": "ENG",
+     "img": "https://g.cricapi.com/iapi/23-637877072894080569.webp?w=48"
+    },
+    {
+     "name": "Pakistan",
+     "shortname": "PAK",
+     "img": "https://g.cricapi.com/iapi/66-637877075103236690.webp?w=48"
+    }
+   ],
+   "score": [
+    {
+     "r": 133,
+     "w": 10,
+     "o": 33.5,
+     "inning": "Pakistan Inning 1"
+    },
+    {
+     "r": 453,
+     "w": 10,
+     "o": 89,
+     "inning": "England Inning 1"
+    },
+    {
+     "r": 449,
+     "w": 10,
+     "o": 96.4,
+     "inning": "Pakistan Inning 2"
+    },
+    {
+     "r": 130,
+     "w": 2,
+     "o": 24.2,
+     "inning": "England Inning 2"
+    }
+   ],
+   "series_id": "4f8f04e8-8c11-402d-9bc3-48c09603d9d8",
+   "fantasyEnabled": false,
+   "bbbEnabled": false,
+   "hasSquad": true,
+   "matchStarted": true,
+   "matchEnded": true
+  },
+  {
+   "id": "cc1c57c0-7ecf-4556-8465-47bbac896427",
+   "name": "England vs Pakistan, 2nd Test, Pakistan tour of England 2026",
+   "matchType": "test",
+   "status": "England won by 194 runs",
+   "venue": "Lord's, London",
+   "date": "2026-08-27",
+   "dateTimeGMT": "2026-08-27T10:00:00",
+   "teams": [
+    "England",
+    "Pakistan"
+   ],
+   "teamInfo": [
+    {
+     "name": "England",
+     "shortname": "ENG",
+     "img": "https://g.cricapi.com/iapi/23-637877072894080569.webp?w=48"
+    },
+    {
+     "name": "Pakistan",
+     "shortname": "PAK",
+     "img": "https://g.cricapi.com/iapi/66-637877075103236690.webp?w=48"
+    }
+   ],
+   "score": [
+    {
+     "r": 290,
+     "w": 10,
+     "o": 66.4,
+     "inning": "England Inning 1"
+    },
+    {
+     "r": 110,
+     "w": 10,
+     "o": 37.2,
+     "inning": "Pakistan Inning 1"
+    },
+    {
+     "r": 208,
+     "w": 10,
+     "o": 54.2,
+     "inning": "England Inning 2"
+    },
+    {
+     "r": 194,
+     "w": 10,
+     "o": 50.5,
+     "inning": "Pakistan Inning 2"
+    }
+   ],
+   "series_id": "4f8f04e8-8c11-402d-9bc3-48c09603d9d8",
+   "fantasyEnabled": false,
+   "bbbEnabled": false,
+   "hasSquad": true,
+   "matchStarted": true,
+   "matchEnded": true
+  },
+  {
+   "id": "89c3e654-61d9-46d4-8420-94059021cb20",
+   "name": "England vs Pakistan, 1st Test, Pakistan tour of England 2026",
+   "matchType": "test",
+   "status": "England won by an innings and 103 runs",
+   "venue": "Headingley, Leeds",
+   "date": "2026-08-19",
+   "dateTimeGMT": "2026-08-19T00:00:00",
+   "teams": [
+    "England",
+    "Pakistan"
+   ],
+   "teamInfo": [
+    {
+     "name": "England",
+     "shortname": "ENG",
+     "img": "https://g.cricapi.com/iapi/23-637877072894080569.webp?w=48"
+    },
+    {
+     "name": "Pakistan",
+     "shortname": "PAK",
+     "img": "https://g.cricapi.com/iapi/66-637877075103236690.webp?w=48"
+    }
+   ],
+   "score": [
+    {
+     "r": 171,
+     "w": 10,
+     "o": 48.1,
+     "inning": "Pakistan Inning 1"
+    },
+    {
+     "r": 409,
+     "w": 10,
+     "o": 89.5,
+     "inning": "England Inning 1"
+    },
+    {
+     "r": 135,
+     "w": 10,
+     "o": 37.3,
+     "inning": "Pakistan Inning 2"
+    }
+   ],
+   "series_id": "4f8f04e8-8c11-402d-9bc3-48c09603d9d8",
+   "fantasyEnabled": false,
+   "bbbEnabled": false,
+   "hasSquad": true,
+   "matchStarted": true,
+   "matchEnded": true
+  },
+  {
+   "id": "66f658bf-fbd0-49f5-8169-0d5806ceb2cf",
+   "name": "Professional County Club Select XI vs Pakistan, 3 -Day Warm-up match, Pakistan tour of England 2026",
+   "matchType": "test",
+   "status": "Pakistan won by 7 wkts",
+   "venue": "Kent County Cricket Ground, Beckenham",
+   "date": "2026-08-13",
+   "dateTimeGMT": "2026-08-13T00:00:00",
+   "teams": [
+    "Professional County Club Select XI",
+    "Pakistan"
+   ],
+   "teamInfo": [
+    {
+     "name": "Pakistan",
+     "shortname": "PAK",
+     "img": "https://g.cricapi.com/iapi/66-637877075103236690.webp?w=48"
+    },
+    {
+     "name": "Professional County Club Select XI",
+     "shortname": "PCCXI",
+     "img": "https://h.cricapi.com/img/icon512.png"
+    }
+   ],
+   "score": [
+    {
+     "r": 305,
+     "w": 10,
+     "o": 69.5,
+     "inning": "professional county club select xi Inning 1"
+    },
+    {
+     "r": 238,
+     "w": 10,
+     "o": 71.2,
+     "inning": "Professional County Club Select XI,Pakistan Inning 1"
+    },
+    {
+     "r": 194,
+     "w": 10,
+     "o": 41.1,
+     "inning": "professional county club select xi Inning 2"
+    },
+    {
+     "r": 264,
+     "w": 3,
+     "o": 57.1,
+     "inning": "Professional County Club Select XI,Pakistan Inning 2"
+    }
+   ],
+   "series_id": "4f8f04e8-8c11-402d-9bc3-48c09603d9d8",
+   "fantasyEnabled": false,
+   "bbbEnabled": false,
+   "hasSquad": false,
+   "matchStarted": true,
+   "matchEnded": true
+  },
+  {
+   "id": "d7ad6f40-5f17-4a8e-8552-044453e33b43",
+   "name": "Luxembourg Women vs Belgium Women, 4th T20I, Belgium Women tour of Luxembourg, 2026",
+   "matchType": "t20",
+   "status": "Luxembourg Women won by 47 runs",
+   "venue": "Pierre Werner Cricket Ground, Walferdange",
+   "date": "2026-08-23",
+   "dateTimeGMT": "2026-08-23T13:30:00",
+   "teams": [
+    "Luxembourg Women",
+    "Belgium Women"
+   ],
+   "teamInfo": [
+    {
+     "name": "Belgium Women",
+     "shortname": "BW",
+     "img": "https://h.cricapi.com/img/icon512.png"
+    },
+    {
+     "name": "Luxembourg Women",
+     "shortname": "LW",
+     "img": "https://g.cricapi.com/iapi/623-637869397000752571.webp?w=48"
+    }
+   ],
+   "score": [
+    {
+     "r": 194,
+     "w": 0,
+     "o": 20,
+     "inning": "Luxembourg Women Inning 1"
+    },
+    {
+     "r": 147,
+     "w": 8,
+     "o": 20,
+     "inning": "Belgium Women Inning 1"
+    }
+   ],
+   "series_id": "2959c81f-9df4-41f8-b9d7-f316975d9677",
+   "fantasyEnabled": false,
+   "bbbEnabled": false,
+   "hasSquad": false,
+   "matchStarted": true,
+   "matchEnded": true
+  },
+  {
+   "id": "67c75be2-2cbe-4d4a-9b42-a71277bceab6",
+   "name": "Luxembourg Women vs Belgium Women, 3rd T20I, Belgium Women tour of Luxembourg, 2026",
+   "matchType": "t20",
+   "status": "Luxembourg Women won by 4 wkts",
+   "venue": "Pierre Werner Cricket Ground, Walferdange",
+   "date": "2026-08-23",
+   "dateTimeGMT": "2026-08-23T08:30:00",
+   "teams": [
+    "Luxembourg Women",
+    "Belgium Women"
+   ],
+   "teamInfo": [
+    {
+     "name": "Belgium Women",
+     "shortname": "BW",
+     "img": "https://h.cricapi.com/img/icon512.png"
+    },
+    {
+     "name": "Luxembourg Women",
+     "shortname": "LW",
+     "img": "https://g.cricapi.com/iapi/623-637869397000752571.webp?w=48"
+    }
+   ],
+   "score": [
+    {
+     "r": 121,
+     "w": 7,
+     "o": 20,
+     "inning": "Belgium Women Inning 1"
+    },
+    {
+     "r": 122,
+     "w": 6,
+     "o": 18.4,
+     "inning": "Luxembourg Women Inning 1"
+    }
+   ],
+   "series_id": "2959c81f-9df4-41f8-b9d7-f316975d9677",
+   "fantasyEnabled": false,
+   "bbbEnabled": false,
+   "hasSquad": false,
+   "matchStarted": true,
+   "matchEnded": true
+  },
+  {
+   "id": "a6270d0c-7674-4272-a6f8-ff01a140fc03",
+   "name": "Luxembourg Women vs Belgium Women, 2nd T20I, Belgium Women tour of Luxembourg, 2026",
+   "matchType": "t20",
+   "status": "Luxembourg Women won by 10 wkts (DLS method)",
+   "venue": "Pierre Werner Cricket Ground, Walferdange",
+   "date": "2026-08-22",
+   "dateTimeGMT": "2026-08-22T13:30:00",
+   "teams": [
+    "Luxembourg Women",
+    "Belgium Women"
+   ],
+   "teamInfo": [
+    {
+     "name": "Belgium Women",
+     "shortname": "BW",
+     "img": "https://h.cricapi.com/img/icon512.png"
+    },
+    {
+     "name": "Luxembourg Women",
+     "shortname": "LW",
+     "img": "https://g.cricapi.com/iapi/623-637869397000752571.webp?w=48"
+    }
+   ],
+   "score": [
+    {
+     "r": 122,
+     "w": 5,
+     "o": 15,
+     "inning": "Belgium Women Inning 1"
+    },
+    {
+     "r": 139,
+     "w": 0,
+     "o": 12.5,
+     "inning": "Luxembourg Women Inning 1"
+    }
+   ],
+   "series_id": "2959c81f-9df4-41f8-b9d7-f316975d9677",
+   "fantasyEnabled": false,
+   "bbbEnabled": false,
+   "hasSquad": false,
+   "matchStarted": true,
+   "matchEnded": true
+  },
+  {
+   "id": "30e4ed6b-c9a1-445f-8b67-1f0bb4d61707",
+   "name": "Luxembourg Women vs Belgium Women, 1st T20I, Belgium Women tour of Luxembourg, 2026",
+   "matchType": "t20",
+   "status": "Belgium Women won by 26 runs",
+   "venue": "Pierre Werner Cricket Ground, Walferdange",
+   "date": "2026-08-22",
+   "dateTimeGMT": "2026-08-22T08:30:00",
+   "teams": [
+    "Luxembourg Women",
+    "Belgium Women"
+   ],
+   "teamInfo": [
+    {
+     "name": "Belgium Women",
+     "shortname": "BW",
+     "img": "https://h.cricapi.com/img/icon512.png"
+    },
+    {
+     "name": "Luxembourg Women",
+     "shortname": "LW",
+     "img": "https://g.cricapi.com/iapi/623-637869397000752571.webp?w=48"
+    }
+   ],
+   "score": [
+    {
+     "r": 198,
+     "w": 6,
+     "o": 20,
+     "inning": "Belgium Women Inning 1"
+    },
+    {
+     "r": 172,
+     "w": 4,
+     "o": 20,
+     "inning": "Luxembourg Women Inning 1"
+    }
+   ],
+   "series_id": "2959c81f-9df4-41f8-b9d7-f316975d9677",
+   "fantasyEnabled": false,
+   "bbbEnabled": false,
+   "hasSquad": false,
+   "matchStarted": true,
+   "matchEnded": true
+  },
+  {
+   "id": "2f7b4b4d-222e-4a4b-93f8-5794ed89ad24",
+   "name": "China Women vs Oman Women, 1st T20I, China Women T20I Tri-Series, 2026",
+   "matchType": "t20",
+   "status": "China Women won by 18 runs (DLS method Target 53)",
+   "venue": "Zhejiang University of Technology Cricket Field, Hangzhou",
+   "date": "2026-08-20",
+   "dateTimeGMT": "2026-08-20T07:30:00",
+   "teams": [
+    "China Women",
+    "Oman Women"
+   ],
+   "teamInfo": [
+    {
+     "name": "China Women",
+     "shortname": "CHW",
+     "img": "https://g.cricapi.com/iapi/595-637928918571134357.png?w=48"
+    },
+    {
+     "name": "Oman Women",
+     "shortname": "OMN-W",
+     "img": "https://g.cricapi.com/iapi/1552-637926305825161946.webp?w=48"
+    }
+   ],
+   "score": [
+    {
+     "r": 99,
+     "w": 1,
+     "o": 13,
+     "inning": "China Women Inning 1"
+    },
+    {
+     "r": 34,
+     "w": 4,
+     "o": 7,
+     "inning": "Oman Women Inning 1"
+    }
+   ],
+   "series_id": "4df3a8b2-ea50-47df-8954-39b615b14e84",
+   "fantasyEnabled": false,
+   "bbbEnabled": false,
+   "hasSquad": false,
+   "matchStarted": true,
+   "matchEnded": true
+  },
+  {
+   "id": "ca1a54c7-6c4d-4a33-a11d-5d025494ce8e",
+   "name": "Papua New Guinea Women vs Thailand Women, 3rd ODI, Thailand Women tour of Papua New Guinea, 2026",
+   "status": "Thailand Women won by 5 wkts",
+   "venue": "Amini Park, Port Moresby",
+   "date": "2026-08-17",
+   "dateTimeGMT": "2026-08-17T23:30:00",
+   "teams": [
+    "Papua New Guinea Women",
+    "Thailand Women"
+   ],
+   "teamInfo": [
+    {
+     "name": "Papua New Guinea Women",
+     "shortname": "PN -W",
+     "img": "https://g.cricapi.com/iapi/2425-637991983542500362.webp?w=48"
+    },
+    {
+     "name": "Thailand Women",
+     "shortname": "THW",
+     "img": "https://g.cricapi.com/iapi/2351-637985730472466346.webp?w=48"
+    }
+   ],
+   "score": [
+    {
+     "r": 122,
+     "w": 10,
+     "o": 47,
+     "inning": "papua new guinea women Inning 1"
+    },
+    {
+     "r": 126,
+     "w": 5,
+     "o": 27,
+     "inning": "Papua New Guinea Women,Thailand Women Inning 1"
+    }
+   ],
+   "series_id": "639d4a51-6405-402a-9281-17e7922e5a25",
+   "fantasyEnabled": false,
+   "bbbEnabled": false,
+   "hasSquad": false,
+   "matchStarted": true,
+   "matchEnded": true
+  },
+  {
+   "id": "ac956620-023b-4430-8f78-1877951a44d7",
+   "name": "West Delhi Lions vs New Delhi Tigers, 3rd Match, Delhi Premier League 2026",
+   "matchType": "t20",
+   "status": "West Delhi Lions won by 19 runs",
+   "venue": "Arun Jaitley Stadium, Delhi",
+   "date": "2026-08-01",
+   "dateTimeGMT": "2026-08-01T13:30:00",
+   "teams": [
+    "West Delhi Lions",
+    "New Delhi Tigers"
+   ],
+   "teamInfo": [
+    {
+     "name": "New Delhi Tigers",
+     "shortname": "NDT",
+     "img": "https://h.cricapi.com/img/icon512.png"
+    },
+    {
+     "name": "West Delhi Lions",
+     "shortname": "WDL",
+     "img": "https://h.cricapi.com/img/icon512.png"
+    }
+   ],
+   "score": [
+    {
+     "r": 170,
+     "w": 5,
+     "o": 20,
+     "inning": "West Delhi Lions Inning 1"
+    },
+    {
+     "r": 151,
+     "w": 10,
+     "o": 20,
+     "inning": "New Delhi Tigers Inning 1"
+    }
+   ],
+   "series_id": "2d42b70d-c4d3-4f90-9ae2-00de7244bd0a",
+   "fantasyEnabled": true,
+   "bbbEnabled": false,
+   "hasSquad": false,
+   "matchStarted": true,
+   "matchEnded": true
+  },
+  {
+   "id": "29afe24f-1bca-40da-9161-9f1463a4a0b8",
+   "name": "South Delhi Superstarz vs East Delhi Riders, 2nd Match, Delhi Premier League 2026",
+   "matchType": "t20",
+   "status": "South Delhi Superstarz won by 4 wkts",
+   "venue": "Arun Jaitley Stadium, Delhi",
+   "date": "2026-08-01",
+   "dateTimeGMT": "2026-08-01T08:00:00",
+   "teams": [
+    "South Delhi Superstarz",
+    "East Delhi Riders"
+   ],
+   "teamInfo": [
+    {
+     "name": "East Delhi Riders",
+     "shortname": "EDR",
+     "img": "https://h.cricapi.com/img/icon512.png"
+    },
+    {
+     "name": "South Delhi Superstarz",
+     "shortname": "SDS",
+     "img": "https://h.cricapi.com/img/icon512.png"
+    }
+   ],
+   "score": [
+    {
+     "r": 165,
+     "w": 10,
+     "o": 18.1,
+     "inning": "East Delhi Riders Inning 1"
+    },
+    {
+     "r": 169,
+     "w": 6,
+     "o": 18.1,
+     "inning": "South Delhi Superstarz Inning 1"
+    }
+   ],
+   "series_id": "2d42b70d-c4d3-4f90-9ae2-00de7244bd0a",
+   "fantasyEnabled": true,
+   "bbbEnabled": false,
+   "hasSquad": false,
+   "matchStarted": true,
+   "matchEnded": true
+  },
+  {
+   "id": "f0a96a04-5541-43d6-b8a8-fecd720eb207",
+   "name": "Central Delhi Kings vs Purani Dilli 6, 1st Match, Delhi Premier League 2026",
+   "matchType": "t20",
+   "status": "Central Delhi Kings won by 4 wkts",
+   "venue": "Arun Jaitley Stadium, Delhi",
+   "date": "2026-07-31",
+   "dateTimeGMT": "2026-07-31T15:30:00",
+   "teams": [
+    "Central Delhi Kings",
+    "Purani Dilli 6"
+   ],
+   "teamInfo": [
+    {
+     "name": "Central Delhi Kings",
+     "shortname": "CDK",
+     "img": "https://h.cricapi.com/img/icon512.png"
+    },
+    {
+     "name": "Purani Dilli 6",
+     "shortname": "PD6",
+     "img": "https://h.cricapi.com/img/icon512.png"
+    }
+   ],
+   "score": [
+    {
+     "r": 202,
+     "w": 4,
+     "o": 20,
+     "inning": "Purani Dilli 6 Inning 1"
+    },
+    {
+     "r": 204,
+     "w": 6,
+     "o": 19.1,
+     "inning": "Central Delhi Kings Inning 1"
+    }
+   ],
+   "series_id": "2d42b70d-c4d3-4f90-9ae2-00de7244bd0a",
+   "fantasyEnabled": true,
+   "bbbEnabled": false,
+   "hasSquad": false,
+   "matchStarted": true,
+   "matchEnded": true
+  },
+  {
+   "id": "32894cba-b94e-48c7-ba75-bdadd487d0d6",
+   "name": "Brazil Women vs Spain Women, Final, Womens T20I Quadrangular Series in Switzerland, 2026",
+   "matchType": "t20",
+   "status": "Brazil Women won by 86 runs",
+   "venue": "Embrach Cricket Ground, Embrach",
+   "date": "2026-07-30",
+   "dateTimeGMT": "2026-07-30T12:00:00",
+   "teams": [
+    "Brazil Women",
+    "Spain Women"
+   ],
+   "teamInfo": [
+    {
+     "name": "Brazil Women",
+     "shortname": "BRW",
+     "img": "https://g.cricapi.com/iapi/590-637928918903393620.png?w=48"
+    },
+    {
+     "name": "Spain Women",
+     "shortname": "ESPW",
+     "img": "https://g.cricapi.com/iapi/657-637867439332284127.png?w=48"
+    }
+   ],
+   "score": [
+    {
+     "r": 210,
+     "w": 10,
+     "o": 19.4,
+     "inning": "brazil women Inning 1"
+    },
+    {
+     "r": 124,
+     "w": 6,
+     "o": 20,
+     "inning": "Brazil Women,Spain Women Inning 1"
+    }
+   ],
+   "series_id": "67076271-fae2-49a3-892f-fb3135fcfe6f",
+   "fantasyEnabled": true,
+   "bbbEnabled": false,
+   "hasSquad": false,
+   "matchStarted": true,
+   "matchEnded": true
+  },
+  {
+   "id": "68ab3133-143b-4ef8-aea9-b9cb86be18d1",
+   "name": "Spain Women vs Switzerland Women, 3rd place play-off, Womens T20I Quadrangular Series in Switzerland, 2026",
+   "matchType": "t20",
+   "status": "Spain Women won by 76 runs",
+   "venue": "Embrach Cricket Ground, Embrach",
+   "date": "2026-07-30",
+   "dateTimeGMT": "2026-07-30T07:30:00",
+   "teams": [
+    "Spain Women",
+    "Switzerland Women"
+   ],
+   "teamInfo": [
+    {
+     "name": "Spain Women",
+     "shortname": "ESPW",
+     "img": "https://g.cricapi.com/iapi/657-637867439332284127.png?w=48"
+    },
+    {
+     "name": "Switzerland Women",
+     "shortname": "SW",
+     "img": "https://h.cricapi.com/img/icon512.png"
+    }
+   ],
+   "score": [
+    {
+     "r": 232,
+     "w": 2,
+     "o": 20,
+     "inning": "Spain Women Inning 1"
+    },
+    {
+     "r": 156,
+     "w": 2,
+     "o": 20,
+     "inning": "Switzerland Women Inning 1"
+    }
+   ],
+   "series_id": "67076271-fae2-49a3-892f-fb3135fcfe6f",
+   "fantasyEnabled": true,
+   "bbbEnabled": false,
+   "hasSquad": false,
+   "matchStarted": true,
+   "matchEnded": true
+  },
+  {
+   "id": "42f49a0b-75ce-4092-89ac-7be50d5adec7",
+   "name": "Switzerland Women vs Brazil Women, 6th Match, Womens T20I Quadrangular Series in Switzerland, 2026",
+   "matchType": "t20",
+   "status": "Brazil Women won by 6 wkts",
+   "venue": "Embrach Cricket Ground, Embrach",
+   "date": "2026-07-29",
+   "dateTimeGMT": "2026-07-29T14:00:00",
+   "teams": [
+    "Switzerland Women",
+    "Brazil Women"
+   ],
+   "teamInfo": [
+    {
+     "name": "Brazil Women",
+     "shortname": "BRW",
+     "img": "https://g.cricapi.com/iapi/590-637928918903393620.png?w=48"
+    },
+    {
+     "name": "Switzerland Women",
+     "shortname": "SW",
+     "img": "https://h.cricapi.com/img/icon512.png"
+    }
+   ],
+   "score": [
+    {
+     "r": 76,
+     "w": 10,
+     "o": 18.3,
+     "inning": "switzerland women Inning 1"
+    },
+    {
+     "r": 80,
+     "w": 4,
+     "o": 8.2,
+     "inning": "Switzerland Women,Brazil Women Inning 1"
+    }
+   ],
+   "series_id": "67076271-fae2-49a3-892f-fb3135fcfe6f",
+   "fantasyEnabled": true,
+   "bbbEnabled": false,
+   "hasSquad": false,
+   "matchStarted": true,
+   "matchEnded": true
+  },
+  {
+   "id": "9259fa83-a58e-4151-ab30-68ca65348fa5",
+   "name": "Brazil Women vs Spain Women, 5th Match, Womens T20I Quadrangular Series in Switzerland, 2026",
+   "matchType": "t20",
+   "status": "Brazil Women won by 6 wkts",
+   "venue": "Embrach Cricket Ground, Embrach",
+   "date": "2026-07-29",
+   "dateTimeGMT": "2026-07-29T10:30:00",
+   "teams": [
+    "Brazil Women",
+    "Spain Women"
+   ],
+   "teamInfo": [
+    {
+     "name": "Brazil Women",
+     "shortname": "BRW",
+     "img": "https://g.cricapi.com/iapi/590-637928918903393620.png?w=48"
+    },
+    {
+     "name": "Spain Women",
+     "shortname": "ESPW",
+     "img": "https://g.cricapi.com/iapi/657-637867439332284127.png?w=48"
+    }
+   ],
+   "score": [
+    {
+     "r": 142,
+     "w": 5,
+     "o": 20,
+     "inning": "Spain Women Inning 1"
+    },
+    {
+     "r": 143,
+     "w": 4,
+     "o": 10.1,
+     "inning": "Brazil Women Inning 1"
+    }
+   ],
+   "series_id": "67076271-fae2-49a3-892f-fb3135fcfe6f",
+   "fantasyEnabled": true,
+   "bbbEnabled": false,
+   "hasSquad": false,
+   "matchStarted": true,
+   "matchEnded": true
+  },
+  {
+   "id": "387a469a-d84f-4ec5-a296-eacfa64b7f5d",
+   "name": "Switzerland Women vs Jersey Women, Only T20I, Jersey Women tour of Switzerland, 2026",
+   "matchType": "t20",
+   "status": "Jersey Women won by 66 runs",
+   "venue": "Embrach Cricket Ground, Embrach",
+   "date": "2026-07-29",
+   "dateTimeGMT": "2026-07-29T07:00:00",
+   "teams": [
+    "Switzerland Women",
+    "Jersey Women"
+   ],
+   "teamInfo": [
+    {
+     "name": "Jersey Women",
+     "shortname": "JERW",
+     "img": "https://g.cricapi.com/iapi/1178-637877088776576806.webp?w=48"
+    },
+    {
+     "name": "Switzerland Women",
+     "shortname": "SW",
+     "img": "https://h.cricapi.com/img/icon512.png"
+    }
+   ],
+   "score": [
+    {
+     "r": 206,
+     "w": 5,
+     "o": 20,
+     "inning": "jersey women Inning 1"
+    },
+    {
+     "r": 140,
+     "w": 8,
+     "o": 20,
+     "inning": "Switzerland Women,Jersey Women Inning 1"
+    }
+   ],
+   "series_id": "15b456a1-c32b-4b10-aca8-ef5638d74685",
+   "fantasyEnabled": true,
+   "bbbEnabled": false,
+   "hasSquad": false,
+   "matchStarted": true,
+   "matchEnded": true
+  },
+  {
+   "id": "d7a79f6e-87ed-41b8-be3f-bb3ac764167b",
+   "name": "Namibia Women vs Uganda Women, Final, Womens T20I Quadrangular Series in Namibia 2026",
+   "matchType": "t20",
+   "status": "Uganda Women won by 17 runs",
+   "venue": "High Performance Oval, Windhoek",
+   "date": "2026-07-30",
+   "dateTimeGMT": "2026-07-30T12:00:00",
+   "teams": [
+    "Namibia Women",
+    "Uganda Women"
+   ],
+   "teamInfo": [
+    {
+     "name": "Namibia Women",
+     "shortname": "NAMW",
+     "img": "https://g.cricapi.com/iapi/1128-637877082812217889.webp?w=48"
+    },
+    {
+     "name": "Uganda Women",
+     "shortname": "UGAW",
+     "img": "https://g.cricapi.com/iapi/1135-637877086844153505.webp?w=48"
+    }
+   ],
+   "score": [
+    {
+     "r": 146,
+     "w": 3,
+     "o": 20,
+     "inning": "Uganda Women Inning 1"
+    },
+    {
+     "r": 129,
+     "w": 6,
+     "o": 20,
+     "inning": "Namibia Women Inning 1"
+    }
+   ],
+   "series_id": "3014a459-6e69-4f64-86eb-2f30a2cdbd0b",
+   "fantasyEnabled": true,
+   "bbbEnabled": false,
+   "hasSquad": false,
+   "matchStarted": true,
+   "matchEnded": true
+  },
+  {
+   "id": "7f1af414-5983-43f2-b02f-c80ad2280362",
+   "name": "Hong Kong, China Women vs Tanzania Women, 3rd Place Play-off, Womens T20I Quadrangular Series in Namibia 2026",
+   "matchType": "t20",
+   "status": "Tanzania Women won by 7 wkts",
+   "venue": "High Performance Oval, Windhoek",
+   "date": "2026-07-30",
+   "dateTimeGMT": "2026-07-30T07:30:00",
+   "teams": [
+    "Hong Kong"
+   ],
+   "teamInfo": [
+    {
+     "name": "Hong Kong",
+     "shortname": "HKG",
+     "img": "https://g.cricapi.com/iapi/611-637877089158155520.webp?w=48"
+    }
+   ],
+   "score": [
+    {
+     "r": 116,
+     "w": 4,
+     "o": 20,
+     "inning": "Hong Kong Inning 1"
+    },
+    {
+     "r": 117,
+     "w": 3,
+     "o": 16.5,
+     "inning": " Inning 1"
+    }
+   ],
+   "series_id": "3014a459-6e69-4f64-86eb-2f30a2cdbd0b",
+   "fantasyEnabled": true,
+   "bbbEnabled": false,
+   "hasSquad": false,
+   "matchStarted": true,
+   "matchEnded": true
+  },
+  {
+   "id": "1fa3bd8a-4bac-4ebb-b022-aba8281467e3",
+   "name": "Tanzania Women vs Uganda Women, 12th Match, Womens T20I Quadrangular Series in Namibia 2026",
+   "matchType": "t20",
+   "status": "Tanzania Women awarded the match (opposition refused to play)",
+   "venue": "Namibia Cricket Ground, Windhoek",
+   "date": "2026-07-28",
+   "dateTimeGMT": "2026-07-28T12:00:00",
+   "teams": [
+    "Tanzania Women",
+    "Uganda Women"
+   ],
+   "teamInfo": [
+    {
+     "name": "Tanzania Women",
+     "shortname": "TAN-W",
+     "img": "https://g.cricapi.com/iapi/3614-638101761273860958.webp?w=48"
+    },
+    {
+     "name": "Uganda Women",
+     "shortname": "UGAW",
+     "img": "https://g.cricapi.com/iapi/1135-637877086844153505.webp?w=48"
+    }
+   ],
+   "score": [
+    {
+     "r": 116,
+     "w": 2,
+     "o": 16.4,
+     "inning": "Uganda Women Inning 1"
+    }
+   ],
+   "series_id": "3014a459-6e69-4f64-86eb-2f30a2cdbd0b",
+   "fantasyEnabled": true,
+   "bbbEnabled": false,
+   "hasSquad": false,
+   "matchStarted": true,
+   "matchEnded": false
+  },
+  {
+   "id": "2ede8246-e8e5-414b-98ac-72ae89232467",
+   "name": "Namibia Women vs Hong Kong, China Women, 11th Match, Womens T20I Quadrangular Series in Namibia 2026",
+   "matchType": "t20",
+   "status": "Namibia Women won by 8 wkts",
+   "venue": "Namibia Cricket Ground, Windhoek",
+   "date": "2026-07-28",
+   "dateTimeGMT": "2026-07-28T07:30:00",
+   "teams": [
+    "Namibia Women",
+    "Hong Kong"
+   ],
+   "teamInfo": [
+    {
+     "name": "Hong Kong",
+     "shortname": "HKG",
+     "img": "https://g.cricapi.com/iapi/611-637877089158155520.webp?w=48"
+    },
+    {
+     "name": "Namibia Women",
+     "shortname": "NAMW",
+     "img": "https://g.cricapi.com/iapi/1128-637877082812217889.webp?w=48"
+    }
+   ],
+   "score": [
+    {
+     "r": 120,
+     "w": 6,
+     "o": 20,
+     "inning": "Hong Kong Inning 1"
+    },
+    {
+     "r": 124,
+     "w": 2,
+     "o": 13.4,
+     "inning": "Namibia Women Inning 1"
+    }
+   ],
+   "series_id": "3014a459-6e69-4f64-86eb-2f30a2cdbd0b",
+   "fantasyEnabled": true,
+   "bbbEnabled": false,
+   "hasSquad": false,
+   "matchStarted": true,
+   "matchEnded": true
+  },
+  {
+   "id": "278a67eb-76f6-4881-aa6b-f164cffb6a90",
+   "name": "Namibia Women vs Uganda Women, 10th Match, Womens T20I Quadrangular Series in Namibia 2026",
+   "matchType": "t20",
+   "status": "Namibia Women won by 6 wkts",
+   "venue": "Namibia Cricket Ground, Windhoek",
+   "date": "2026-07-27",
+   "dateTimeGMT": "2026-07-27T12:00:00",
+   "teams": [
+    "Namibia Women",
+    "Uganda Women"
+   ],
+   "teamInfo": [
+    {
+     "name": "Namibia Women",
+     "shortname": "NAMW",
+     "img": "https://g.cricapi.com/iapi/1128-637877082812217889.webp?w=48"
+    },
+    {
+     "name": "Uganda Women",
+     "shortname": "UGAW",
+     "img": "https://g.cricapi.com/iapi/1135-637877086844153505.webp?w=48"
+    }
+   ],
+   "score": [
+    {
+     "r": 147,
+     "w": 4,
+     "o": 20,
+     "inning": "Uganda Women Inning 1"
+    },
+    {
+     "r": 148,
+     "w": 4,
+     "o": 18.5,
+     "inning": "Namibia Women Inning 1"
+    }
+   ],
+   "series_id": "3014a459-6e69-4f64-86eb-2f30a2cdbd0b",
+   "fantasyEnabled": true,
+   "bbbEnabled": false,
+   "hasSquad": false,
+   "matchStarted": true,
+   "matchEnded": true
+  },
+  {
+   "id": "d8418e67-7eb7-4502-8977-52956fbd1358",
+   "name": "Hong Kong, China Women vs Tanzania Women, 9th Match, Womens T20I Quadrangular Series in Namibia 2026",
+   "matchType": "t20",
+   "status": "Hong Kong, China Women won by 9 wkts",
+   "venue": "Namibia Cricket Ground, Windhoek",
+   "date": "2026-07-27",
+   "dateTimeGMT": "2026-07-27T07:30:00",
+   "teams": [
+    "Hong Kong"
+   ],
+   "teamInfo": [
+    {
+     "name": "Hong Kong",
+     "shortname": "HKG",
+     "img": "https://g.cricapi.com/iapi/611-637877089158155520.webp?w=48"
+    }
+   ],
+   "score": [
+    {
+     "r": 135,
+     "w": 5,
+     "o": 20,
+     "inning": "Hong Kong Inning 1"
+    },
+    {
+     "r": 138,
+     "w": 1,
+     "o": 18.3,
+     "inning": " Inning 1"
+    }
+   ],
+   "series_id": "3014a459-6e69-4f64-86eb-2f30a2cdbd0b",
+   "fantasyEnabled": true,
+   "bbbEnabled": false,
+   "hasSquad": false,
+   "matchStarted": true,
+   "matchEnded": true
+  },
+  {
+   "id": "685a5ac9-74f3-40af-99a7-7d06d05dba8a",
+   "name": "Hong Kong, China Women vs Uganda Women, 8th Match, Womens T20I Quadrangular Series in Namibia 2026",
+   "matchType": "t20",
+   "status": "Uganda Women won by 2 wkts",
+   "venue": "High Performance Oval, Windhoek",
+   "date": "2026-07-25",
+   "dateTimeGMT": "2026-07-25T12:00:00",
+   "teams": [
+    "Hong Kong"
+   ],
+   "teamInfo": [
+    {
+     "name": "Hong Kong",
+     "shortname": "HKG",
+     "img": "https://g.cricapi.com/iapi/611-637877089158155520.webp?w=48"
+    }
+   ],
+   "score": [
+    {
+     "r": 114,
+     "w": 7,
+     "o": 20,
+     "inning": "Hong Kong Inning 1"
+    },
+    {
+     "r": 115,
+     "w": 8,
+     "o": 17.4,
+     "inning": " Inning 1"
+    }
+   ],
+   "series_id": "3014a459-6e69-4f64-86eb-2f30a2cdbd0b",
+   "fantasyEnabled": true,
+   "bbbEnabled": false,
+   "hasSquad": false,
+   "matchStarted": true,
+   "matchEnded": true
+  }
+ ],
+ "status": "success",
+ "info": {
+  "hitsToday": 21,
+  "hitsUsed": 1,
+  "hitsLimit": 2000,
+  "credits": 0,
+  "server": 14,
+  "offsetRows": 0,
+  "totalRows": 15684,
+  "queryTime": 195.7212,
+  "s": 0,
+  "cache": 0
+ }
+}

@@ -100,12 +100,58 @@ def test_static_live_client_conforms():
     _assert_conforms(client, 99999)
 
 
-def test_both_implementations_agree_on_the_shared_conformance_suite_shape():
-    """Not a behavioral comparison (they replay different matches) - just
-    confirms both are accepted by the exact same function with no
+def test_cricketdata_client_conforms(test_db_url):
+    """The third implementation, added in Phase 2 session 2, runs through
+    `_assert_conforms` UNCHANGED - no assertion was relaxed to accommodate a
+    provider that supplies no ball-by-ball feed (Decision 1). The one
+    adjustment was widening Delivery's player IDs to Optional, which the
+    schema and the batch loader already required; this suite never asserted
+    they were non-null.
+
+    Uses the writable cricket_training_test database, not the real corpus -
+    the adapter inserts a matches row for the live match it tracks.
+    """
+    import json
+    from pathlib import Path
+
+    from ingest.cricketdata import CricketDataClient
+
+    fixture_dir = Path(__file__).resolve().parent.parent / "fixtures" / "cricketdata"
+
+    class _LiveifiedTransport:
+        def get(self, endpoint, params):
+            body = json.loads((fixture_dir / "current_matches.json").read_text(encoding="utf-8"))
+            body["data"] = body["data"][:1]
+            body["data"][0]["matchEnded"] = False
+            return body
+
+    write_conn = psycopg.connect(test_db_url, autocommit=True)
+    try:
+        with write_conn.cursor() as cur:
+            cur.execute("TRUNCATE matches, deliveries, match_states, teams, venues, "
+                        "team_aliases, venue_aliases, unresolved_entities RESTART IDENTITY CASCADE")
+            raw = json.loads((fixture_dir / "current_matches.json").read_text(encoding="utf-8"))["data"][0]
+            for name in raw["teams"]:
+                cur.execute("INSERT INTO teams (name) VALUES (%s) ON CONFLICT DO NOTHING", (name,))
+
+        client = CricketDataClient(write_conn, _LiveifiedTransport())
+        summaries = client.list_live_matches()
+        assert summaries, "fixture match should be trackable once its teams resolve"
+        _assert_conforms(client, summaries[0].match_id)
+    finally:
+        write_conn.close()
+
+
+def test_all_implementations_agree_on_the_shared_conformance_suite_shape():
+    """Not a behavioral comparison (they carry different matches) - just
+    confirms all three are accepted by the exact same function with no
     implementation-specific branching, which is the actual point."""
     import inspect
 
-    sig_replay = inspect.signature(ReplayClient.get_deliveries_since)
-    sig_static = inspect.signature(_StaticLiveClient.get_deliveries_since)
-    assert list(sig_replay.parameters) == list(sig_static.parameters)
+    from ingest.cricketdata import CricketDataClient
+
+    signatures = [
+        inspect.signature(cls.get_deliveries_since)
+        for cls in (ReplayClient, _StaticLiveClient, CricketDataClient)
+    ]
+    assert all(list(s.parameters) == list(signatures[0].parameters) for s in signatures)

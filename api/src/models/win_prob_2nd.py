@@ -50,9 +50,9 @@ SEED = 42
 PHASE_CODE = {"powerplay": 0, "middle": 1, "death": 2}
 
 # Order matters: phase_code is always last within STATE_FEATURES, and is
-# the only categorical column - its index (10) is passed to LightGBM's
-# categorical_feature regardless of variant, since state features always
-# occupy the same leading positions in every variant's matrix.
+# the only categorical column. Its column index is resolved by name at
+# training time (see train_lgb) rather than from this constant, because a
+# variant that drops earlier features shifts it.
 STATE_FEATURES = [
     "balls_remaining", "wickets_in_hand", "runs_required", "required_run_rate",
     "current_run_rate", "rrr_minus_crr", "target", "partnership_runs",
@@ -62,11 +62,21 @@ PHASE_CODE_INDEX = STATE_FEATURES.index("phase_code")
 VENUE_FEATURES = ["venue_chase_win_rate", "venue_avg_first_innings"]
 ELO_FEATURES = ["elo_diff"]
 
-Variant = Literal["state", "state_venue", "state_venue_elo"]
+# The three features snapshot reconstruction cannot supply reliably: they
+# depend on WHICH ball in a poll gap took the wicket, which a scorecard
+# snapshot doesn't say (Phase 2 session 2).
+PARTNERSHIP_FEATURES = ["partnership_runs", "partnership_balls", "balls_since_wicket"]
+
+Variant = Literal["state", "state_venue", "state_venue_elo", "state_venue_elo_no_partnership"]
 VARIANT_FEATURES: dict[Variant, list[str]] = {
     "state": STATE_FEATURES,
     "state_venue": STATE_FEATURES + VENUE_FEATURES,
     "state_venue_elo": STATE_FEATURES + VENUE_FEATURES + ELO_FEATURES,
+    # Serving variant for a snapshot-reconstructed feed: never give the
+    # model a feature the live path cannot actually deliver.
+    "state_venue_elo_no_partnership": [
+        f for f in STATE_FEATURES + VENUE_FEATURES + ELO_FEATURES if f not in PARTNERSHIP_FEATURES
+    ],
 }
 
 LGB_PARAMS = {
@@ -241,7 +251,12 @@ def train_lgb(
     y_val: np.ndarray,
     feature_names: list[str],
 ) -> lgb.Booster:
-    categorical = [PHASE_CODE_INDEX] if "phase_code" in feature_names else []
+    # Located by name, not by the constant: a variant that drops features
+    # ahead of phase_code shifts its column index, and a stale hardcoded 10
+    # would silently mark a venue feature categorical instead (Phase 2
+    # session 2's no-partnership variant is the first variant where these
+    # differ).
+    categorical = [feature_names.index("phase_code")] if "phase_code" in feature_names else []
     train_set = lgb.Dataset(X_train, label=y_train, feature_name=feature_names, categorical_feature=categorical)
     val_set = lgb.Dataset(X_val, label=y_val, feature_name=feature_names, categorical_feature=categorical,
                            reference=train_set)

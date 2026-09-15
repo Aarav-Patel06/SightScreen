@@ -1,0 +1,248 @@
+{
+ "apikey": "REDACTED",
+ "data": {
+  "id": "ae5ed385-d052-468d-84e9-55ccccb2e18f",
+  "name": "England Women vs West Indies Women, 3rd ODI",
+  "matchType": "odi",
+  "status": "England Women won by 9 wkts (Match reduced to 21 overs per side due to rain, DLS target 106)",
+  "venue": "The Cooper Associates County Ground, Taunton",
+  "date": "2025-06-07",
+  "dateTimeGMT": "2025-06-07T10:00:00",
+  "teams": [
+   "England Women",
+   "West Indies Women"
+  ],
+  "teamInfo": [
+   {
+    "name": "England Women",
+    "shortname": "ENGW",
+    "img": "https://g.cricapi.com/iapi/24-637877067109151578.webp?w=48"
+   },
+   {
+    "name": "West Indies Women",
+    "shortname": "WIW",
+    "img": "https://g.cricapi.com/iapi/102-637877078650138806.webp?w=48"
+   }
+  ],
+  "score": [
+   {
+    "r": 106,
+    "w": 8,
+    "o": 21,
+    "inning": "West Indies Women Inning 1"
+   },
+   {
+    "r": 109,
+    "w": 1,
+    "o": 10.5,
+    "inning": "England Women Inning 1"
+   }
+  ],
+  "tossWinner": "England Women",
+  "tossChoice": "bowl",
+  "matchWinner": "England Women",
+  "series_id": "94111d98-0f1f-470f-88b6-e55e737d7be3",
+  "bbb": [
+   {
+    "n": 1,
+    "inning": 0,
+    "over": 0,
+    "ball": 1,
+    "batsman": {
+     "id": "ab311730-9071-4253-bb51-af1e95af1a6d",
+     "name": "Realeanna Grimmond"
+    },
+    "bowler": {
+     "id": "e198c0f1-f1dd-4287-8216-145172202e09",
+     "name": "Kate Cross"
+    },
+    "runs": 0,
+    "penalty": "wide",
+    "extras": 1
+   },
+   {
+    "n": 2,
+    "inning": 0,
+    "over": 5,
+    "ball": 4,
+    "batsman": {
+     "id": "ba12be50-4d28-40bb-b060-d276d45a068a",
+     "name": "Shemaine Campbelle"
+    },
+    "bowler": {
+     "id": "461f5b8a-d9de-4a0c-b315-5a23f7c1dd55",
+     "name": "Em Arlott"
+    },
+    "runs": 0,
+    "penalty": "wide",
+    "extras": 1
+   },
+   {
+    "n": 3,
+    "inning": 0,
+    "over": 10,
+    "ball": 5,
+    "batsman": {
+     "id": "ba12be50-4d28-40bb-b060-d276d45a068a",
+     "name": "Shemaine Campbelle"
+    },
+    "bowler": {
+     "id": "b612050e-7e9e-4e4c-a1b8-548a4926f256",
+     "name": "Charlotte Dean"
+    },
+    "runs": 0,
+    "penalty": "wide",
+    "extras": 1
+   },
+   {
+    "n": 4,
+    "inning": 0,
+    "over": 14,
+    "ball": 5,
+    "batsman": {
+     "id": "ff29a168-9a46-4f25-8dfd-cadcd0f9822e",
+     "name": "Qiana Joseph"
+    },
+    "bowler": {
+     "id": "b612050e-7e9e-4e4c-a1b8-548a4926f256",
+     "name": "Charlotte Dean"
+    },
+    "runs": 0,
+    "penalty": "leg byes",
+    "extras": 1
+   },
+   {
+    "n": 5,
+    "inning": 0,
+    "over": 16,
+    "ball": 1,
+    "batsman": {
+     "id": "c7676ac7-4a8f-4ec8-8533-2ef363cb734f",
+     "name": "Aaliyah Alleyne"
+    },
+    "bowler": {
+     "id": "8c8546cf-214b-4bd3-83e7-b33215e48ccb",
+     "name": "Sarah Glenn"
+    },
+    "runs": 0,
+    "penalty": "wide",
+    "extras": 1
+   },
+   {
+    "n": 6,
+    "inning": 1,
+    "over": 0,
+    "ball": 3,
+    "batsman": {
+     "id": "cf2ff365-5a0b-44a1-9ced-09b5863f5419",
+     "name": "Sophia Dunkley"
+    },
+    "bowler": {
+     "id": "4527eae8-1f55-44ef-b9b9-0ba35d30c8ef",
+     "name": "Zaida James"
+    },
+    "runs": 0,
+    "penalty": "wide",
+    "extras": 1
+   },
+   {
+    "n": 7,
+    "inning": 1,
+    "over": 2,
+    "ball": 6,
+    "batsman": {
+     "id": "cf2ff365-5a0b-44a1-9ced-09b5863f5419",
+     "name": "Sophia Dunkley"
+    },
+    "bowler": {
+     "id": "4527eae8-1f55-44ef-b9b9-0ba35d30c8ef",
+     "name": "Zaida James"
+    },
+    "runs": 0,
+    "penalty": "wide",
+    "extras": 1
+   },
+   {
+    "n": 8,
+    "inning": 1,
+    "over": 4,
+    "ball": 4,
+    "batsman": {
+     "id": "cf2ff365-5a0b-44a1-9ced-09b5863f5419",
+     "name": "Sophia Dunkley"
+    },
+    "bowler": {
+     "id": "ae4bbdca-606f-4c04-a994-d2c5fc820c9b",
+     "name": "Jahzara Claxton"
+    },
+    "runs": 0,
+    "penalty": "wide",
+    "extras": 1
+   },
+   {
+    "n": 9,
+    "inning": 1,
+    "over": 4,
+    "ball": 5,
+    "batsman": {
+     "id": "cf2ff365-5a0b-44a1-9ced-09b5863f5419",
+     "name": "Sophia Dunkley"
+    },
+    "bowler": {
+     "id": "ae4bbdca-606f-4c04-a994-d2c5fc820c9b",
+     "name": "Jahzara Claxton"
+    },
+    "runs": 0,
+    "penalty": "wide",
+    "extras": 1
+   },
+   {
+    "n": 10,
+    "inning": 1,
+    "over": 4,
+    "ball": 5,
+    "batsman": {
+     "id": "cf2ff365-5a0b-44a1-9ced-09b5863f5419",
+     "name": "Sophia Dunkley"
+    },
+    "bowler": {
+     "id": "ae4bbdca-606f-4c04-a994-d2c5fc820c9b",
+     "name": "Jahzara Claxton"
+    },
+    "runs": 0,
+    "penalty": "wide",
+    "extras": 1
+   },
+   {
+    "n": 11,
+    "inning": 1,
+    "over": 6,
+    "ball": 5,
+    "batsman": {
+     "id": "d13dc284-cb98-49c4-8b14-2ed7a0562612",
+     "name": "Nat Sciver-Brunt"
+    },
+    "bowler": {
+     "id": "ae4bbdca-606f-4c04-a994-d2c5fc820c9b",
+     "name": "Jahzara Claxton"
+    },
+    "runs": 0,
+    "penalty": "wide",
+    "extras": 1
+   }
+  ],
+  "matchStarted": true,
+  "matchEnded": true
+ },
+ "status": "success",
+ "info": {
+  "hitsToday": 22,
+  "hitsUsed": 1,
+  "hitsLimit": 2000,
+  "credits": 0,
+  "server": 11,
+  "queryTime": 29.4014,
+  "s": 0,
+  "cache": 0
+ }
+}

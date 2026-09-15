@@ -339,3 +339,40 @@ def test_same_surname_different_registry_ids_never_queue(conn):
     with conn.cursor() as cur:
         cur.execute("SELECT count(*) FROM unresolved_entities WHERE entity_kind='player'")
         assert cur.fetchone()[0] == 0
+
+
+# 22-24. allow_create=False (Phase 2 session 2): the live worker must never
+# mint a canonical entity with no human in the loop. The default stays True
+# so every path above behaves exactly as it did in Phase 0.
+def test_live_path_queues_instead_of_creating_an_unknown_team(conn):
+    result = resolve_team(conn, "cricketdata", "Some Brand New Franchise", allow_create=False)
+
+    assert result.outcome == "queued"
+    assert result.entity_id is None
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM teams")
+        assert cur.fetchone()[0] == 0
+        cur.execute("SELECT reason FROM unresolved_entities WHERE entity_kind='team'")
+        assert cur.fetchone()[0] == "create_suppressed"
+
+
+def test_live_path_still_auto_resolves_a_confident_match(conn):
+    """Suppressing creation must not suppress recognition - an existing
+    entity the fuzzy path is confident about still resolves."""
+    team_id = _insert_team(conn, "Barbados Tridents")
+    result = resolve_team(conn, "cricketdata", "Barbados Tridents", allow_create=False)
+
+    assert result.outcome == "auto_resolved"
+    assert result.entity_id == team_id
+
+
+def test_a_present_source_id_cannot_smuggle_in_a_creation_when_suppressed(conn):
+    """The registry-ID short-circuit is terminal and bypasses every other
+    check, so allow_create=False has to gate it too - otherwise passing a
+    provider's own UUID would mint a duplicate for every entity on sight."""
+    result = resolve_team(conn, "cricketdata", "Unknown XI", source_id="provider-uuid-1", allow_create=False)
+
+    assert result.outcome == "queued"
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM teams")
+        assert cur.fetchone()[0] == 0

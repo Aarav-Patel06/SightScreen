@@ -355,6 +355,7 @@ def _resolve(
     match_date: date | None = None,
     squad_names: list[str] | None = None,
     extra_columns: dict[str, object] | None = None,
+    allow_create: bool = True,
 ) -> ResolutionResult:
     existing = _lookup_alias(conn, config, source, source_name, source_id)
     if existing is not None:
@@ -370,7 +371,7 @@ def _resolve(
     # substitute for an ID when there isn't one. Confirmed as the actual
     # cause of a 2,000-match sample's entire player queue (100% of queued
     # players had a registry ID present - see the session 5 diagnosis).
-    if source_id is not None:
+    if source_id is not None and allow_create:
         new_id = _create_new_entity_and_alias(conn, config, source, source_name, source_id, extra_columns)
         return ResolutionResult(entity_id=new_id, outcome="auto_created")
 
@@ -408,12 +409,17 @@ def _resolve(
         return ResolutionResult(entity_id=top.entity_id, outcome="auto_resolved", method="fuzzy")
 
     auto_create_ceiling = AUTO_CREATE_CEILING if config.kind == "player" else TEAM_VENUE_AUTO_CREATE_CEILING
-    if collision_reason is None and (top is None or top.score < auto_create_ceiling):
+    would_auto_create = collision_reason is None and (top is None or top.score < auto_create_ceiling)
+    if would_auto_create and allow_create:
         new_id = _create_new_entity_and_alias(conn, config, source, source_name, source_id, extra_columns)
         return ResolutionResult(entity_id=new_id, outcome="auto_created")
 
     if collision_reason is not None:
         reason = collision_reason
+    elif would_auto_create:
+        # allow_create=False only: minting a canonical entity is exactly the
+        # unsupervised guess a live worker must not make (Phase 2 session 2).
+        reason = "create_suppressed"
     elif top is not None and top.score >= AUTO_RESOLVE_FLOOR:
         reason = "ambiguous_margin"
     else:
@@ -434,12 +440,18 @@ def resolve_player(
     team_id: int | None = None,
     match_date: date | None = None,
     squad_names: list[str] | None = None,
+    allow_create: bool = True,
 ) -> ResolutionResult:
     """squad_names should be every other name in this delivery's match for
     the same team, as raw source names - Cricsheet's own info.players[team]
     block. Required for the same-surname-in-same-squad guard to work;
     without it, two same-surname squadmates could otherwise both look
     individually unambiguous.
+
+    allow_create=False suppresses every auto-create path, queueing instead
+    (reason `create_suppressed`). The live worker passes False: creating a
+    canonical entity with no human in the loop is the unsupervised guess a
+    serving path must never make.
     """
     return _resolve(
         conn,
@@ -452,10 +464,17 @@ def resolve_player(
         match_id=match_id,
         match_date=match_date,
         squad_names=squad_names,
+        allow_create=allow_create,
     )
 
 
-def resolve_team(conn, source: str, source_name: str, source_id: str | None = None) -> ResolutionResult:
+def resolve_team(
+    conn,
+    source: str,
+    source_name: str,
+    source_id: str | None = None,
+    allow_create: bool = True,
+) -> ResolutionResult:
     return _resolve(
         conn,
         TEAM_CONFIG,
@@ -464,6 +483,7 @@ def resolve_team(conn, source: str, source_name: str, source_id: str | None = No
         source_id,
         comparison_query=source_name,
         candidates_fn=_team_candidates,
+        allow_create=allow_create,
     )
 
 
@@ -473,6 +493,7 @@ def resolve_venue(
     source_name: str,
     source_id: str | None = None,
     city: str | None = None,
+    allow_create: bool = True,
 ) -> ResolutionResult:
     """Comparison text combines name + city (when known) so two different
     venues sharing a generic name in different cities don't collapse into
@@ -488,4 +509,5 @@ def resolve_venue(
         comparison_query=comparison_query,
         candidates_fn=_venue_candidates,
         extra_columns={"city": city} if city else None,
+        allow_create=allow_create,
     )

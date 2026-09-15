@@ -28,6 +28,22 @@ from enum import Enum
 from typing import Protocol
 
 
+class ReconstructionConfidence(str, Enum):
+    """How a Delivery came to exist (Phase 2 session 2).
+
+    A provider with a real ball-by-ball feed always yields CONFIRMED. A
+    provider we can only poll for scorecard snapshots yields CONFIRMED when
+    exactly one ball landed between two polls (so runs and any wicket
+    attribute unambiguously to it) and INFERRED when several did and the
+    split between them had to be assumed. Never silently attributed - the
+    flag travels with the ball so anything downstream can tell the
+    difference.
+    """
+
+    CONFIRMED = "confirmed"
+    INFERRED = "inferred"
+
+
 class PhaseTransitionEvent(str, Enum):
     """SPEC.md section 7.2's exact event names - the worker's own event
     stream, distinct from `predictions.match_phase`'s snapshot-label
@@ -44,21 +60,33 @@ class PhaseTransitionEvent(str, Enum):
 @dataclass(frozen=True)
 class Delivery:
     """One ball, exactly what a provider could plausibly expose - the raw
-    event, not any derived state."""
+    event, not any derived state.
+
+    The three player IDs are Optional (Phase 2 session 2). They were
+    non-optional in session 1, which was stricter than reality on both
+    sides: `deliveries.batter_id`/`non_striker_id`/`bowler_id` are all
+    nullable in the schema, and `ingest/cricsheet.py` already writes None
+    into them when a player resolution queues. A provider that supplies no
+    per-ball player identity at all (CricketData, via snapshot
+    reconstruction) is the third case the original type couldn't express.
+    Widening here, rather than relaxing any conformance assertion, is why
+    tests/ingest/test_live_client.py stays untouched.
+    """
 
     innings: int
     over_num: int
     ball_in_over: int
     legal_ball_num: int
-    batter_id: int
-    non_striker_id: int
-    bowler_id: int
+    batter_id: int | None
+    non_striker_id: int | None
+    bowler_id: int | None
     runs_batter: int
     runs_extras: int
     extra_type: str | None
     wicket_type: str | None
     player_out_id: int | None
     wicket_count: int = 1  # rare double-dismissal ball; matches deliveries.wicket_count's default
+    confidence: ReconstructionConfidence = ReconstructionConfidence.CONFIRMED
 
 
 @dataclass(frozen=True)

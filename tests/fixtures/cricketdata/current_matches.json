@@ -1,0 +1,150 @@
+{
+ "apikey": "REDACTED",
+ "data": [
+  {
+   "id": "b16673ec-cf45-4dc0-b700-1981e9cb6745",
+   "name": "Barbados Tridents vs Guyana Amazon Warriors, 35th Match, Caribbean Premier League 2026",
+   "matchType": "t20",
+   "status": "Barbados Tridents won by 6 wkts",
+   "venue": "Kensington Oval, Bridgetown, Barbados",
+   "date": "2026-09-13",
+   "dateTimeGMT": "2026-09-13T23:00:00",
+   "teams": [
+    "Barbados Tridents",
+    "Guyana Amazon Warriors"
+   ],
+   "teamInfo": [
+    {
+     "name": "Barbados Tridents",
+     "img": "https://h.cricapi.com/img/icon512.png"
+    },
+    {
+     "name": "Guyana Amazon Warriors",
+     "shortname": "GAW",
+     "img": "https://g.cricapi.com/iapi/174-637945408285271060.webp?w=48"
+    }
+   ],
+   "score": [
+    {
+     "r": 99,
+     "w": 10,
+     "o": 18.1,
+     "inning": "Guyana Amazon Warriors Inning 1"
+    },
+    {
+     "r": 100,
+     "w": 4,
+     "o": 14.5,
+     "inning": "Barbados Tridents Inning 1"
+    }
+   ],
+   "series_id": "929c36f6-9ed6-4cec-a2ad-910a2ee4f701",
+   "fantasyEnabled": false,
+   "bbbEnabled": false,
+   "hasSquad": true,
+   "matchStarted": true,
+   "matchEnded": true
+  },
+  {
+   "id": "5bc47185-5931-4737-9fad-9d254a6ecbbe",
+   "name": "Barbados Tridents vs Jamaica Kingsmen, 34th Match, Caribbean Premier League 2026",
+   "matchType": "t20",
+   "status": "Barbados Tridents won by 2 wkts",
+   "venue": "Kensington Oval, Bridgetown, Barbados",
+   "date": "2026-09-12",
+   "dateTimeGMT": "2026-09-12T00:00:00",
+   "teams": [
+    "Barbados Tridents",
+    "Jamaica Kingsmen"
+   ],
+   "teamInfo": [
+    {
+     "name": "Barbados Tridents",
+     "img": "https://h.cricapi.com/img/icon512.png"
+    },
+    {
+     "name": "Jamaica Kingsmen",
+     "img": "https://h.cricapi.com/img/icon512.png"
+    }
+   ],
+   "score": [
+    {
+     "r": 150,
+     "w": 9,
+     "o": 20,
+     "inning": "Jamaica Kingsmen Inning 1"
+    },
+    {
+     "r": 151,
+     "w": 8,
+     "o": 20,
+     "inning": "Barbados Tridents Inning 1"
+    }
+   ],
+   "series_id": "929c36f6-9ed6-4cec-a2ad-910a2ee4f701",
+   "fantasyEnabled": false,
+   "bbbEnabled": false,
+   "hasSquad": true,
+   "matchStarted": true,
+   "matchEnded": true
+  },
+  {
+   "id": "2519e9f2-5fe8-482e-906b-d85ab9d6a5d1",
+   "name": "Guyana Amazon Warriors vs Trinbago Knight Riders, 33rd Match, Caribbean Premier League 2026",
+   "matchType": "t20",
+   "status": "Guyana Amazon Warriors won by 6 wkts",
+   "venue": "Providence Stadium, Guyana",
+   "date": "2026-09-11",
+   "dateTimeGMT": "2026-09-11T23:00:00",
+   "teams": [
+    "Guyana Amazon Warriors",
+    "Trinbago Knight Riders"
+   ],
+   "teamInfo": [
+    {
+     "name": "Guyana Amazon Warriors",
+     "shortname": "GAW",
+     "img": "https://g.cricapi.com/iapi/174-637945408285271060.webp?w=48"
+    },
+    {
+     "name": "Trinbago Knight Riders",
+     "shortname": "TKR",
+     "img": "https://g.cricapi.com/iapi/293-637932465560269082.png?w=48"
+    }
+   ],
+   "score": [
+    {
+     "r": 126,
+     "w": 8,
+     "o": 20,
+     "inning": "Trinbago Knight Riders Inning 1"
+    },
+    {
+     "r": 127,
+     "w": 4,
+     "o": 18.4,
+     "inning": "Guyana Amazon Warriors Inning 1"
+    }
+   ],
+   "series_id": "929c36f6-9ed6-4cec-a2ad-910a2ee4f701",
+   "fantasyEnabled": false,
+   "bbbEnabled": false,
+   "hasSquad": true,
+   "matchStarted": true,
+   "matchEnded": true
+  }
+ ],
+ "status": "success",
+ "info": {
+  "hitsToday": 19,
+  "hitsUsed": 1,
+  "hitsLimit": 2000,
+  "credits": 0,
+  "server": 8,
+  "offsetRows": 0,
+  "totalRows": 3,
+  "queryTime": 20.1989,
+  "s": 0,
+  "cache": 0
+ }
+}
