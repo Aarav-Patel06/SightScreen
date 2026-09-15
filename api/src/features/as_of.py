@@ -103,15 +103,32 @@ def assert_reference_fresh(
        and detectable from this connection alone: it catches a partial or
        failed sync, a truncation, a manual edit, corruption.
 
-    2. CORPUS FRESHNESS. The newest breakpoint in the summaries, versus
-       today. This is the only signal for "rebuilt locally, sync never run" -
-       and it is a proxy, not a proof. A worker that can see only Supabase
-       CANNOT prove the sync ran, because stale data and its stale hash are
-       mutually consistent. It infers staleness from the fact that matches
-       are played almost daily. Said plainly here rather than implied.
+    2. SYNC FRESHNESS. How long ago reference_sync_state says the sync last
+       pushed to THIS database. Still a proxy rather than a proof - a worker
+       reading only Supabase cannot prove the local copy hasn't moved since,
+       because stale data and its stale hash are mutually consistent - but it
+       measures the right clock.
+
+       CORRECTED 2026-09-15 (Phase 2 session 4). This check originally used
+       max(effective_date), the newest MATCH date in the summaries, on the
+       reasoning that "cricket is played almost daily". That conflated two
+       different clocks. The corpus is a periodically-refreshed archive, so
+       its newest match is routinely weeks old even when the sync ran minutes
+       ago. Caught by the first real container start: data synced 14 hours
+       earlier was refused as "22 days old" and the deployment could not
+       proceed. synced_at answers the question actually being asked - is this
+       database's copy current - and does not false-positive between Cricsheet
+       refreshes. The corpus age is still reported, because it is worth
+       seeing; it just no longer refuses.
     """
     today = today or date.today()
-    report: dict = {"hashes": {}, "newest_breakpoint": None, "age_days": None}
+    report: dict = {
+        "hashes": {},
+        "newest_breakpoint": None,
+        "corpus_age_days": None,
+        "synced_at": None,
+        "age_days": None,
+    }
 
     for table in DERIVED_TABLES:
         with conn.cursor() as cur:
@@ -137,27 +154,36 @@ def assert_reference_fresh(
     newest = _newest_breakpoint(conn)
     if newest is None:
         raise StaleReferenceData("the as-of summaries are empty - nothing to serve from")
-    age_days = (today - newest).days
     report["newest_breakpoint"] = newest
+    report["corpus_age_days"] = (today - newest).days
+
+    synced_at = _oldest_sync(conn)
+    if synced_at is None:
+        raise StaleReferenceData(
+            "reference_sync_state has no synced_at - the summaries were rebuilt but "
+            "never pushed. Run `python -m ingest.sync_reference_tables`."
+        )
+    age_days = (today - synced_at).days
+    report["synced_at"] = synced_at
     report["age_days"] = age_days
 
     if age_days > max_age_days:
         raise StaleReferenceData(
-            f"newest as-of breakpoint is {newest} ({age_days} days old, limit "
+            f"reference tables were last synced {synced_at} ({age_days} days ago, limit "
             f"{max_age_days}). Rebuild the summaries locally and re-run "
             f"ingest.sync_reference_tables."
         )
     if age_days > warn_age_days:
         print(
-            f"WARNING: as-of summaries are {age_days} days old (newest breakpoint "
-            f"{newest}); they become unservable at {max_age_days} days."
+            f"WARNING: reference tables were last synced {age_days} days ago "
+            f"({synced_at}); they become unservable at {max_age_days} days."
         )
     return report
 
 
 def _newest_breakpoint(conn) -> date | None:
     """The OLDER of the two summaries' newest dates, so that either one
-    falling behind trips the check rather than being masked by the other."""
+    falling behind is not masked by the other. Reported, not enforced."""
     newest: list[date] = []
     for table in DERIVED_TABLES:
         with conn.cursor() as cur:
@@ -167,6 +193,18 @@ def _newest_breakpoint(conn) -> date | None:
             return None
         newest.append(value)
     return min(newest)
+
+
+def _oldest_sync(conn) -> date | None:
+    """The OLDEST synced_at across the derived tables - same principle: one
+    table falling behind must trip the check, not be averaged away."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT min(synced_at) FROM reference_sync_state WHERE table_name = ANY(%s)",
+            ([table.name for table in DERIVED_TABLES],),
+        )
+        value = cur.fetchone()[0]
+    return value.date() if value is not None else None
 
 
 __all__ = [

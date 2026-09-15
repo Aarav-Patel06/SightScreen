@@ -36,6 +36,9 @@ accidentally leak data:
 | `LIVE_API_PROVIDER` | Which `LiveClient` implementation to load | One of `cricketdata`/`sportmonks`/`roanuz` | Railway (Phase 2) |
 | `LIVE_API_KEY` | Live provider credential | Chosen provider's dashboard | Railway (Phase 2) |
 | `PORT` | FastAPI bind port | Usually auto-injected | Railway |
+| `SERVICE_ROLE` | Which process the container starts: `api` or `worker` | Set per Railway service; defaults to `api` | Railway |
+| `MODEL_VERSION` | The model this container is pinned to, e.g. `winprob2-20260910` | Must match Supabase's active `model_versions` row | Railway |
+| `MODEL_CACHE_DIR` | Where the downloaded artifact is cached | Defaults to `/app/artifacts` in the image | Railway (optional) |
 | `NEXT_PUBLIC_SUPABASE_URL` | Public Supabase URL | Supabase dashboard → Project Settings → API | Vercel |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Public key, safe in the browser | Supabase dashboard → API keys | Vercel |
 | `API_BASE_URL` | FastAPI service URL, for agent tool calls | Your Railway service URL | Vercel (Phase 6) |
@@ -84,6 +87,75 @@ This only reads the host and port out of each URL — it never touches or prints
 username/password portion. A `FAILED to resolve` result on a Supabase URL almost always
 means a direct connection string (`db.<ref>.supabase.co`) slipped in instead of a pooler
 string.
+
+## Deployment
+
+Two Railway services, one Docker image, one repository. Vercel deploys `web/`;
+Railway deploys `api/`. The always-on worker is a deliberate cost — a process
+that polls every 15 seconds for four hours cannot run on serverless, and no
+configuration makes it work (SPEC.md section 2.2).
+
+| Service | `SERVICE_ROLE` | What it does |
+|---|---|---|
+| `api` | `api` | FastAPI prediction service — `GET /health`, `POST /predict/win-prob` |
+| `worker` | `worker` | Always-on live poller (SPEC.md section 7.1), idling at 600s |
+
+Both run `python -m serving.entrypoint`, which dispatches on `SERVICE_ROLE`.
+One image because the two share ~100% of their dependencies; two services
+because their lifecycles differ — the API is request-scoped and scalable, the
+worker is a singleton whose per-match in-memory state two replicas would
+corrupt.
+
+Set every variable in the Railway dashboard. Nothing is committed; `.env` is
+gitignored and excluded from the build context. **`LOCAL_DATABASE_URL` must
+NOT be set on Railway** — a container that can see it refuses to start, by
+design (SPEC.md section 2.1), and there is a test proving it does.
+
+Publishing a model is a separate, deliberate step, not a side effect of
+training. A serving container pulls its artifact from a GitHub Release and
+verifies the bytes before loading them:
+
+```powershell
+# 1. create a GitHub Release tagged with the model version and upload the .pkl
+# 2. register it on Supabase (verifies the download and its sha256 first)
+cd api/src
+python -m models.publish_model_version winprob2-20260910 `
+  --url https://github.com/Aarav6000/SightScreen/releases/download/winprob2-20260910/winprob2-20260910.pkl
+```
+
+The digest is appended to the stored URL as a `#sha256=` fragment, so the
+location and the expected bytes cannot drift apart. If `MODEL_VERSION`
+disagrees with Supabase's active row, the container refuses to start rather
+than serving predictions that would be attributed to the wrong model.
+
+To redeploy:
+
+```powershell
+npx @railway/cli login
+npx @railway/cli link            # project "giving-comfort", environment "production"
+npx @railway/cli up --service api
+npx @railway/cli up --service worker
+curl https://<your-api-service>.up.railway.app/health
+```
+
+`/health` reports what the process actually resolved rather than what it was
+told — the pooler host, the resolved IP and address family, the loaded model's
+sha256, and how many days ago the reference tables were synced. The address
+family matters: a direct Supabase host resolves IPv6-only and is unreachable
+from Railway, and it fails as a DNS error rather than a connection error
+(SPEC.md section 2.4).
+
+Two operational notes worth knowing before they bite:
+
+- The worker refuses to serve if the reference tables were last synced more
+  than 14 days ago. That sync is still a manual ritual (see
+  `supabase/SCHEMA.md`), so a fortnight of not running it takes the worker
+  down deliberately rather than letting it serve stale features.
+- Supabase's free tier pauses a project after ~7 days idle. The worker logs
+  `Supabase project appears PAUSED` and retries with backoff instead of
+  crash-looping. A genuine credentials failure is the one case that exits
+  immediately — retrying a wrong password forever is a silent outage.
+
 
 ## Data sources
 

@@ -27,6 +27,27 @@ import joblib
 import psycopg
 from dotenv import dotenv_values
 
+# KNOWN TRAIN/SERVE SKEW - open until the next retrain (SPEC.md section 15,
+# 2026-09-15). Recorded here because this is the module someone is looking at
+# when they promote a version, and the retrain is what closes it.
+#
+#   winprob2-20260910 was trained against the pre-fix elo_as_of, which
+#   resolved same-date Elo ties by heap order and returned the EARLIER
+#   match's rating for 137 of 372 tied groups. Serving now uses the fixed
+#   end-of-day ordering. 162 of 12,916 matches (1.25%) have a different
+#   elo_diff, mean 9.2 Elo points, max 24.2, on a feature Phase 1 measured as
+#   individually non-significant.
+#
+# This was NOT closed by retraining on the finding alone - the effect is small
+# and an unplanned retrain would confound the next scheduled comparison. The
+# next retrain must close it DELIBERATELY and say so in its report, rather
+# than closing it as a side effect nobody notices.
+KNOWN_SKEW = (
+    "winprob2-20260910 trained against the pre-fix elo_as_of tie ordering; "
+    "serving uses the fixed one. 1.25% of matches, ~9.2 Elo points. Closed by "
+    "the next retrain - see SPEC.md section 15 (2026-09-15)."
+)
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 ENV_PATH = REPO_ROOT / "api" / ".env"
 ARTIFACT_DIR = REPO_ROOT / "api" / "data" / "models" / "win_prob_2nd"

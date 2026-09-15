@@ -177,12 +177,37 @@ def _seed_summaries(conn, newest: date) -> None:
         record_sync_state(conn, table, synced=True)
 
 
+def _backdate_sync(conn, days: int) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE reference_sync_state SET synced_at = now() - %s * INTERVAL '1 day'",
+            (days,),
+        )
+
+
 def test_fresh_reference_data_is_accepted(conn):
     today = date(2026, 9, 15)
     _seed_summaries(conn, newest=today - timedelta(days=1))
     report = assert_reference_fresh(conn, today=today)
-    assert report["age_days"] == 1
+    assert report["age_days"] == 0  # synced just now
+    assert report["corpus_age_days"] == 1
     assert set(report["hashes"]) == {t.name for t in DERIVED_TABLES}
+
+
+def test_a_current_sync_of_an_older_corpus_is_accepted(conn):
+    """The regression that blocked the first real container start.
+
+    The corpus is a periodically-refreshed archive, so its newest MATCH is
+    routinely weeks old while the sync itself ran minutes ago. Enforcing on
+    max(effective_date) refused data that was as current as it could possibly
+    be - measured, not hypothesised: synced 14 hours earlier, rejected as
+    "22 days old". Freshness now measures synced_at.
+    """
+    today = date(2026, 9, 15)
+    _seed_summaries(conn, newest=today - timedelta(days=22))
+    report = assert_reference_fresh(conn, today=today)
+    assert report["age_days"] == 0
+    assert report["corpus_age_days"] == 22
 
 
 def test_a_missing_sync_state_row_refuses_to_serve(conn):
@@ -215,27 +240,38 @@ def test_a_dropped_summary_row_refuses_to_serve(conn):
         assert_reference_fresh(conn, today=today)
 
 
-def test_summaries_older_than_the_age_budget_refuse_to_serve(conn):
-    """The "sync never ran" proxy. Matches are played almost daily, so a
-    newest breakpoint two weeks back means the ritual was skipped."""
+def test_summaries_synced_longer_ago_than_the_budget_refuse_to_serve(conn):
+    """The "sync never ran" proxy, measured on the sync's own clock."""
     today = date(2026, 9, 15)
-    _seed_summaries(conn, newest=today - timedelta(days=30))
-    with pytest.raises(StaleReferenceData, match="newest as-of breakpoint"):
+    _seed_summaries(conn, newest=today)
+    _backdate_sync(conn, 30)
+    with pytest.raises(StaleReferenceData, match="last synced"):
         assert_reference_fresh(conn, today=today)
 
 
-def test_one_summary_falling_behind_is_not_masked_by_the_other(conn):
-    """The freshness bound takes the OLDER of the two tables' newest dates.
-    A stale Elo rebuild alongside a current venue rebuild must still fail."""
+def test_one_table_falling_behind_is_not_masked_by_the_other(conn):
+    """The bound takes the OLDEST synced_at, so one table lagging fails even
+    when the other was pushed seconds ago."""
     today = date(2026, 9, 15)
     _seed_summaries(conn, newest=today)
     with conn.cursor() as cur:
         cur.execute(
-            "UPDATE elo_asof_summary SET effective_date = %s", (today - timedelta(days=60),)
+            "UPDATE reference_sync_state SET synced_at = now() - INTERVAL '60 days' "
+            "WHERE table_name = %s",
+            (ELO_SUMMARY.name,),
         )
+    with pytest.raises(StaleReferenceData, match="last synced"):
+        assert_reference_fresh(conn, today=today)
+
+
+def test_rebuilt_but_never_synced_refuses_to_serve(conn):
+    """record_sync_state(synced=False) is what a local rebuild writes. A
+    database holding that has summaries nobody has pushed."""
+    today = date(2026, 9, 15)
+    _seed_summaries(conn, newest=today)
     for table in DERIVED_TABLES:
-        record_sync_state(conn, table, synced=True)  # re-hash, so only age is wrong
-    with pytest.raises(StaleReferenceData, match="newest as-of breakpoint"):
+        record_sync_state(conn, table, synced=False)
+    with pytest.raises(StaleReferenceData, match="never pushed"):
         assert_reference_fresh(conn, today=today)
 
 

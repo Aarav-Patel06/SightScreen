@@ -8,10 +8,11 @@ tightened to required as those phases land (see README's env var table).
 import re
 from urllib.parse import urlparse
 
-from pydantic import Field, ValidationInfo, field_validator, model_validator
+from pydantic import Field, ValidationError, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from db.defaults import LOCAL_DB_PORT as LOCAL_DB_EXPECTED_PORT
+from db.defaults import running_on_railway
 
 # LOCAL_DB_EXPECTED_PORT comes from db/defaults.py - the single source of
 # truth for the local Postgres connection defaults, also used by ci.yml.
@@ -26,6 +27,9 @@ _PLACEHOLDER_MARKERS = ("changeme", "your-project", "...")
 # Supavisor pooler logins are "postgres.<PROJECT_REF>", not bare "postgres" -
 # see SPEC.md section 2.4.
 _POOLER_USERNAME_RE = re.compile(r"^postgres\.[^:@/]+$")
+
+# The two Railway services share one image; SERVICE_ROLE picks the process.
+SERVICE_ROLES = frozenset({"api", "worker"})
 
 # Fields whose phase is active as of Phase 0. Fields for phases not yet
 # built (Phase 2 live pipeline, Phase 6 agent) are intentionally excluded -
@@ -49,9 +53,12 @@ def _looks_like_placeholder(value: str) -> bool:
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # Phase 0 - data foundation
-    local_database_url: str = Field(alias="LOCAL_DATABASE_URL")
-    cricsheet_data_dir: str = Field(alias="CRICSHEET_DATA_DIR")
+    # Phase 0 - data foundation. Optional at the field level and re-required
+    # for local runs by _enforce_database_boundary below, because a Railway
+    # container must NOT have them - see SPEC.md section 2.1. Declaring them
+    # required here would make the serving image unstartable.
+    local_database_url: str | None = Field(default=None, alias="LOCAL_DATABASE_URL")
+    cricsheet_data_dir: str | None = Field(default=None, alias="CRICSHEET_DATA_DIR")
 
     # Phase 0/2 - Supabase (serving DB)
     supabase_url: str = Field(alias="SUPABASE_URL")
@@ -71,6 +78,13 @@ class Settings(BaseSettings):
     live_api_key: str | None = Field(default=None, alias="LIVE_API_KEY")
     port: int = Field(default=8000, alias="PORT")
 
+    # Phase 2 session 4 - deployment. One image serves both Railway services;
+    # SERVICE_ROLE picks which process starts (see serving/entrypoint.py).
+    service_role: str = Field(default="api", alias="SERVICE_ROLE")
+    # The model version this container is pinned to. Checked against
+    # Supabase's active row at startup; a mismatch refuses to serve.
+    model_version: str | None = Field(default=None, alias="MODEL_VERSION")
+
     # Phase 6 - agent
     agent_sql_role_db_url: str | None = Field(default=None, alias="AGENT_SQL_ROLE_DB_URL")
     agent_tool_shared_secret: str | None = Field(default=None, alias="AGENT_TOOL_SHARED_SECRET")
@@ -78,7 +92,9 @@ class Settings(BaseSettings):
 
     @field_validator("local_database_url")
     @classmethod
-    def _check_local_db_port(cls, value: str) -> str:
+    def _check_local_db_port(cls, value: str | None) -> str | None:
+        if not value:
+            return value
         port = urlparse(value).port
         if port != LOCAL_DB_EXPECTED_PORT:
             raise ValueError(
@@ -138,6 +154,61 @@ class Settings(BaseSettings):
             )
         return value
 
+    @field_validator("service_role")
+    @classmethod
+    def _check_service_role(cls, value: str) -> str:
+        if value not in SERVICE_ROLES:
+            raise ValueError(
+                f"SERVICE_ROLE must be one of {sorted(SERVICE_ROLES)}, got {value!r}"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _enforce_database_boundary(self) -> "Settings":
+        """SPEC.md section 2.1, enforced rather than trusted.
+
+        "Training never touches Supabase; serving never touches local
+        Postgres." That has been a convention held up by nothing since Phase
+        0. A deployed container that can see LOCAL_DATABASE_URL is one
+        careless variable away from a serving path reading the training
+        corpus - or, worse, a training script writing to Supabase.
+
+        Same shape as _require_pooler_host above: default-deny, a specific
+        diagnostic for the mistake someone will actually make, and a citation
+        so the reader can check the rule rather than trust the message.
+        """
+        if running_on_railway():
+            if self.local_database_url:
+                raise ValueError(
+                    "LOCAL_DATABASE_URL is set in a Railway environment. Serving never "
+                    "touches local Postgres (SPEC.md section 2.1), and a laptop's "
+                    "Postgres is unreachable from Railway regardless - so this variable "
+                    "can only mislead. Delete it from the Railway service's variables."
+                )
+            if not self.supabase_session_pooler_url:
+                raise ValueError(
+                    "SUPABASE_SESSION_POOLER_URL is required on Railway - it is the only "
+                    "database a deployed service may use (SPEC.md sections 2.1 and 2.4)."
+                )
+            if not self.model_version:
+                raise ValueError(
+                    "MODEL_VERSION is required on Railway. A serving container must be "
+                    "pinned to an explicit model version so its predictions can be "
+                    "attributed; see SPEC.md section 2.1."
+                )
+        else:
+            missing = [
+                type(self).model_fields[name].alias or name
+                for name in ("local_database_url", "cricsheet_data_dir")
+                if not getattr(self, name)
+            ]
+            if missing:
+                raise ValueError(
+                    f"{', '.join(missing)} must be set outside Railway - local tooling "
+                    "and training need them. (On Railway they are forbidden instead.)"
+                )
+        return self
+
     @model_validator(mode="after")
     def _reject_placeholder_values(self) -> "Settings":
         for field_name in _ACTIVE_PLACEHOLDER_FIELDS:
@@ -151,4 +222,27 @@ class Settings(BaseSettings):
         return self
 
 
-settings = Settings()
+def _load_settings() -> "Settings":
+    """Instantiate Settings, but never let a failure print the environment.
+
+    pydantic's ValidationError repr embeds `input_value`, which for a
+    BaseSettings failure is the entire collected environment - SUPABASE_SECRET_KEY
+    and LIVE_API_KEY included. Railway captures deploy output, so an
+    unsanitised failure would write live credentials into a log that outlives
+    the container. Found by running the section 2.1 boundary check in a real
+    container and reading what it printed.
+
+    Direct construction (`Settings(...)`) is deliberately left raising
+    ValidationError, which is what tests/test_config.py asserts on.
+    """
+    try:
+        return Settings()
+    except ValidationError as exc:
+        problems = "; ".join(
+            f"{'.'.join(str(part) for part in error['loc']) or 'settings'}: {error['msg']}"
+            for error in exc.errors()
+        )
+        raise SystemExit(f"configuration rejected - {problems}") from None
+
+
+settings = _load_settings()

@@ -1,0 +1,19 @@
+# Secrets - must never enter the build context. If api/.env reached the image
+# it would carry LOCAL_DATABASE_URL and config.py's section 2.1 boundary
+# check would refuse to start the container (see api/Dockerfile).
+.env
+.env.*
+
+# The local virtualenv exists on disk and is large and platform-wrong.
+.venv/
+**/__pycache__/
+*.pyc
+*.egg-info/
+
+# Training data, model artifacts, reports. The serving container pulls its
+# model from a GitHub Release (models/artifact.py); baking one in would make
+# the image the source of truth instead of model_versions.
+data/
+
+# Docs and tests are not needed to run either service.
+../docs/
