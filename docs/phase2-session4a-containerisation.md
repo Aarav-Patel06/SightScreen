@@ -48,14 +48,28 @@ ever run on a laptop, and rewriting them would be unrelated churn.
 Two of those deserve their reasoning rather than a verdict.
 
 **`match_states` looks like the scariest case and is the one I did not
-convert.** Those four columns are model *features*. But the live worker's only
-Supabase write is `INSERT INTO matches` — grep-verified, it is the sole
-serving-side insert in the codebase — so nothing writes `match_states` on the
-Supabase side and the values never make the round trip. Converting would mean
+convert.** Those four columns are model *features*. But no serving path writes
+`match_states` at all: the three writes a deployed process makes are
+`matches` (the live adapter's `_ensure_match_row`), `predictions`
+(`serving/app.py`), and `unresolved_entities` (resolution queuing). So the
+values never make the round trip. Converting would mean
 altering 3.78M local rows *and* handing `Decimal` instead of `float` to
 `eval/splits.py`'s numpy arrays: a training dtype change wearing a deployment
 fix's clothing. **If Session 5 starts writing live `match_states` to Supabase,
 convert first.**
+
+That reasoning is now *enforced*, not just recorded.
+`tests/db/test_float_boundary.py` scans the serving-authored modules
+(`serving/*`, `ingest/cricketdata.py`) and fails if any of them writes
+`match_states` or `deliveries` - scoped to code that actually runs in a
+container rather than the import closure, because `serving/app.py` imports
+`features/match_state.py` for `MatchStateRow` and that module also holds
+`REBUILD_SQL`, which only `rebuild()` ever executes. A third test closes the
+subtler hole: serving code must not *call* `recompute_format`,
+`rebuild_venue_summary` and friends either, since they all accept a `conn` and
+config.py's boundary check only forbids `LOCAL_DATABASE_URL`. Verified
+non-vacuous by injecting an `INSERT INTO match_states` into `serving/app.py`
+and confirming the failure names the file.
 
 **`matches.target_overs` is benign for a checkable reason.** Its values carry
 at most three significant digits, so float4's text output is identical at
@@ -194,24 +208,47 @@ explicitly with the reason rather than deleted or worked around.
 ## Verification
 
 ```
-246 passed, 3 skipped, 5 deselected     (was 183; the 3 skipped are the
-                                         smoke tests, awaiting a base URL)
+249 passed, 3 skipped, 5 deselected     (was 183). The 3 skipped are the
+                                        smoke tests, which need SMOKE_BASE_URL;
+                                        with it set they pass - 252 total.
 docker build                            clean
 docker run + LOCAL_DATABASE_URL         refuses, exit 1, no secrets in output
-docker run, clean env, SERVICE_ROLE=api     startup checks pass through
-docker run, clean env, SERVICE_ROLE=worker  startup checks pass through
-pooler host + resolved IPv4             printed, not assumed
+docker run, SERVICE_ROLE=api            healthy in 11s
+docker run, SERVICE_ROLE=worker         startup checks pass, dispatch correct
+artifact from the real GitHub Release   downloaded, sha256 verified, loaded
+smoke test vs the local container       3 passed, 12 predictions read back
+                                        out of Supabase on a separate connection
 ```
+
+`/health` from the running container:
+
+```json
+{ "service_role": "api",
+  "db_host": "aws-0-ap-south-1.pooler.supabase.com:5432",
+  "db_resolved_ip": "65.0.195.55",
+  "db_address_family": "AF_INET",
+  "server_version": "17.6",
+  "reference_age_days": 0,
+  "reference_newest": "2026-08-24",
+  "model_version": "winprob2-20260910",
+  "model_sha256": "8c4f012a46f10c633aa242c95de424a22eaf5e9d4073ca52c69dbeb5206ee183",
+  "model_notes": "KNOWN TRAIN/SERVE SKEW (open until the next retrain) ...",
+  "status": "ok" }
+```
+
+`reference_age_days: 0` beside `reference_newest: 2026-08-24` is the bug from
+the findings above, fixed: current data, an archive three weeks old, correctly
+accepted. And the skew note reaching `/health` is the point of putting it in
+`model_versions.notes` - it is visible from the serving side, not only in
+SPEC.md.
 
 ## Carried to 4b
 
 - `railway login`, link, deploy both services, re-run every check above
   against the deployed containers.
-- **The GitHub Release upload is the one thing blocking two 4a items**: the
-  artifact download against a real release, and the smoke test against a
-  locally-run container (which cannot start until a model is published). Tag
-  `winprob2-20260910`, asset `winprob2-20260910.pkl`, 623,498 bytes, sha256
-  `8c4f012a46f10c633aa242c95de424a22eaf5e9d4073ca52c69dbeb5206ee183`.
+- Nothing is blocked. `winprob2-20260910` is published to Supabase with the
+  release URL and digest in `artifact_path`; the container pulls and verifies
+  it.
 - Decision 4's real pause test, last, because restoring a paused project takes
   minutes and the whole database is unavailable meanwhile.
 
@@ -231,3 +268,39 @@ pooler host + resolved IPv4             printed, not assumed
 - **The 18 training modules still cannot run in a container.** Deliberate —
   they are laptop-only — but it means `python -m features.elo rebuild` will
   never work on Railway, which is the correct outcome and worth stating.
+
+## Things a future session would get wrong
+
+Carried forward into the Phase 2 closeout, in the convention
+`docs/phase0-closeout.md` and `docs/phase1-closeout.md` already use.
+
+**Exercise the FAILURE path of anything that touches config, not just the
+success path.** This session's boundary check worked on the first try; what
+did not was what it *printed*. pydantic's `ValidationError` repr embeds
+`input_value`, which for a `BaseSettings` failure is the whole collected
+environment, and Railway captures deploy output - so the refusal that proved
+the boundary also wrote `SUPABASE_SECRET_KEY` and `LIVE_API_KEY` into a log
+that would have outlived the container. No amount of reading `config.py`
+finds that. Only running the failing case does. The rule generalises past
+config: whenever a component's job is to refuse, the refusal is a code path
+with its own behaviour, and testing only that it *refuses* is half the test.
+
+**A test scoped to the import graph is not a test scoped to what runs.**
+`serving/app.py` imports `features/match_state.py` for a dataclass; that
+module also contains `INSERT INTO match_states`. Both the import-graph check
+and the first serving-write guard flagged it, and both were wrong to - the
+statement is a module constant only `rebuild()` executes. Scope structural
+tests to the code that actually runs, and say in the test why the wider scope
+was rejected, or the next person will "fix" it by widening it again.
+
+**Prove a guard catches the thing it names.** The serving-write guard was
+verified by injecting an `INSERT INTO match_states` into `serving/app.py` and
+confirming it failed with that filename. A guard nobody has seen fail is a
+guard nobody knows works.
+
+**A freshness check must measure the clock you mean.** Session 3's refused on
+`max(effective_date)` - how recently a MATCH was played - while the question
+was how recently the SYNC ran. Those differ by weeks for a periodically
+refreshed archive, and the justification ("cricket is played almost daily")
+was true and irrelevant. Before enforcing on a timestamp, say out loud which
+process advances it.

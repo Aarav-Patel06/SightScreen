@@ -23,6 +23,8 @@ corpus.
 
 from __future__ import annotations
 
+import ast
+import re
 from pathlib import Path
 
 import psycopg
@@ -143,3 +145,144 @@ def test_target_overs_renders_identically_at_both_float_settings(conn):
         "column to NUMERIC."
     )
     print(f"\n{len(at_one)} distinct target_overs values, identical at both settings")
+
+
+# --- the fact the match_states exemption rests on -------------------------
+
+SRC = REPO_ROOT / "api" / "src"
+
+# Modules whose code RUNS inside a deployed container. Not the import
+# closure: serving/app.py imports features/match_state.py for MatchStateRow,
+# and that module also holds REBUILD_SQL - an INSERT INTO match_states that
+# only rebuild() ever executes, against local Postgres. An import-graph scan
+# flags it and is wrong to; what matters is which functions execute.
+SERVING_AUTHORED = ("serving", "ingest/cricketdata.py")
+
+# Tables a serving process may write on Supabase. Adding one is a decision -
+# see the assertion messages.
+ALLOWED_SERVING_WRITES = {
+    "matches",              # cricketdata.py's _ensure_match_row, for a live match
+    "predictions",          # serving/app.py, one row per prediction
+    "unresolved_entities",  # entity_resolution queues rather than auto-creating
+}
+
+# Functions that mutate corpus or derived tables. Serving code must not call
+# them: they all take a `conn`, so config.py's section 2.1 check - which only
+# forbids LOCAL_DATABASE_URL - would not stop one being handed the Supabase
+# connection. This is the subtler version of the same mistake.
+CORPUS_MUTATORS = (
+    "REBUILD_SQL",
+    "recompute_format",
+    "rebuild_venue_summary",
+    "rebuild_elo_summary",
+    "rebuild_all",
+)
+
+_WRITE_PATTERNS = (
+    re.compile(r"INSERT\s+INTO\s+([a-z_][a-z0-9_]*)", re.I),
+    re.compile(r"UPDATE\s+([a-z_][a-z0-9_]*)\s+SET", re.I),
+    re.compile(r"DELETE\s+FROM\s+([a-z_][a-z0-9_]*)", re.I),
+    re.compile(r"TRUNCATE\s+(?:TABLE\s+)?([a-z_][a-z0-9_]*)", re.I),
+)
+
+
+def _serving_sources() -> dict[str, str]:
+    files: dict[str, str] = {}
+    for entry in SERVING_AUTHORED:
+        target = SRC / entry
+        paths = sorted(target.rglob("*.py")) if target.is_dir() else [target]
+        for path in paths:
+            files[str(path.relative_to(SRC)).replace("\\", "/")] = path.read_text(encoding="utf-8")
+    return files
+
+
+def _real_tables(conn) -> set[str]:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
+        )
+        return {row[0] for row in cur.fetchall()}
+
+
+def _write_targets(source: str, tables: set[str]) -> set[str]:
+    """Matched tokens intersected with real table names.
+
+    The intersection is what removes prose false positives - an argparse help
+    string reading "truncate and rebuild match_states" otherwise reports a
+    table called `and`.
+    """
+    found: set[str] = set()
+    for pattern in _WRITE_PATTERNS:
+        found.update(match.group(1).lower() for match in pattern.finditer(source))
+    return found & tables
+
+
+def test_no_serving_code_writes_match_states_or_deliveries(conn):
+    """The fact the match_states exemption rests on, enforced.
+
+    match_states keeps its REAL columns ONLY because nothing on a serving path
+    writes it, so those values never round-trip through a pooler whose
+    extra_float_digits differs from local Postgres'. That was a property of
+    the code when the sweep was done, not a rule - and Session 5, which adds
+    live match_states and deliveries for the UI, is exactly when someone adds
+    the second write without remembering why it mattered. The failure would be
+    silent rounding in model features, which no metric would surface.
+
+    If this fails: convert match_states' current_run_rate, required_run_rate,
+    rrr_minus_crr and dls_resources_pct to NUMERIC first (3.78M local rows,
+    and eval/splits.py starts receiving Decimal), then move the table out of
+    EXEMPT above - or revert the write.
+    """
+    tables = _real_tables(conn)
+    offenders = {
+        name: sorted(targets)
+        for name, source in _serving_sources().items()
+        if (targets := _write_targets(source, tables) & {"match_states", "deliveries"})
+    }
+    assert not offenders, (
+        f"serving code now writes corpus tables: {offenders}. See "
+        "supabase/migrations/20260915000002_numeric_metrics.sql for why that breaks the "
+        "match_states exemption."
+    )
+
+
+def test_the_full_set_of_serving_writes_is_reviewed(conn):
+    """Any new write target in serving code fails here, so it is a decision
+    rather than something inherited."""
+    tables = _real_tables(conn)
+    found = {
+        name: targets
+        for name, source in _serving_sources().items()
+        if (targets := _write_targets(source, tables))
+    }
+    all_targets: set[str] = set().union(*found.values()) if found else set()
+    unreviewed = all_targets - ALLOWED_SERVING_WRITES
+    assert not unreviewed, (
+        f"unreviewed serving-side write targets {sorted(unreviewed)} (in {found}). "
+        "Decide whether a deployed container should write these at all, then add them "
+        "to ALLOWED_SERVING_WRITES with the reason."
+    )
+    assert "matches" in all_targets, (
+        "no write to matches found, so this test is vacuous - cricketdata.py's "
+        "_ensure_match_row should be in the scanned set"
+    )
+
+
+def test_serving_code_does_not_call_the_corpus_rebuilders():
+    """Closes the hole the write-scan cannot see.
+
+    recompute_format, rebuild_venue_summary and friends all take a `conn`.
+    Nothing stops one being handed the Supabase connection from serving code,
+    and config.py's boundary check would not notice - it only forbids
+    LOCAL_DATABASE_URL.
+    """
+    offenders = {
+        name: sorted(found)
+        for name, source in _serving_sources().items()
+        if (found := {mutator for mutator in CORPUS_MUTATORS if mutator in source})
+    }
+    assert not offenders, (
+        f"serving code references corpus rebuilders {offenders}. Those functions accept "
+        "any connection, so calling one from a serving process would rebuild against "
+        "Supabase - training never touches Supabase (SPEC.md section 2.1)."
+    )
