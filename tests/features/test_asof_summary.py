@@ -186,7 +186,12 @@ def _backdate_sync(conn, days: int) -> None:
 
 
 def test_fresh_reference_data_is_accepted(conn):
-    today = date(2026, 9, 15)
+    # date.today(), not a fixed date: _seed_summaries records synced_at from
+    # the database's own now(), so pinning `today` to a literal makes the
+    # assertion depend on the calendar. Written with a literal on 2026-09-15
+    # and passing only because the dates happened to coincide; it reported
+    # age_days == -1 the next morning.
+    today = date.today()
     _seed_summaries(conn, newest=today - timedelta(days=1))
     report = assert_reference_fresh(conn, today=today)
     assert report["age_days"] == 0  # synced just now
@@ -203,7 +208,7 @@ def test_a_current_sync_of_an_older_corpus_is_accepted(conn):
     be - measured, not hypothesised: synced 14 hours earlier, rejected as
     "22 days old". Freshness now measures synced_at.
     """
-    today = date(2026, 9, 15)
+    today = date.today()
     _seed_summaries(conn, newest=today - timedelta(days=22))
     report = assert_reference_fresh(conn, today=today)
     assert report["age_days"] == 0

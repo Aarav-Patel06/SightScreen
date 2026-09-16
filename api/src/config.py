@@ -154,6 +154,53 @@ class Settings(BaseSettings):
             )
         return value
 
+    # Populated by _strip_and_record_whitespace below. Reported by
+    # serving/startup.py's banner and by /health, because a warning printed
+    # once at boot scrolls out of a log within minutes.
+    whitespace_stripped: tuple[str, ...] = ()
+    # Set but empty - treated as absent, and named so the cause is findable.
+    blank_variables: tuple[str, ...] = ()
+
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_and_record_whitespace(cls, values):
+        """Strip surrounding whitespace from every setting, and remember which
+        ones needed it.
+
+        A value pasted into a dashboard field picks up a trailing newline or a
+        leading space astonishingly easily, and the failure is invisible: a
+        connection string with a trailing space presents as an authentication
+        failure, which sends you looking at the password. Silent acceptance is
+        the thing to avoid - stripping is safe, pretending it did not happen
+        is not.
+        """
+        if not isinstance(values, dict):
+            return values
+        cleaned, affected, blank = {}, [], []
+        for key, value in values.items():
+            if not isinstance(value, str):
+                cleaned[key] = value
+                continue
+            stripped = value.strip()
+            if stripped != value:
+                affected.append(str(key))
+            if stripped == "":
+                # A blank variable is ABSENT, not present-and-empty. Without
+                # this, SUPABASE_URL="" satisfies "Field required" and the
+                # service starts with an unusable value - which is exactly
+                # what an unresolved ${{shared.NAME}} reference produces on
+                # Railway. Found on the first real deploy: six references
+                # resolved to empty strings and two of them sailed through
+                # validation.
+                blank.append(str(key))
+                continue
+            cleaned[key] = stripped
+        if affected:
+            cleaned["whitespace_stripped"] = tuple(sorted(affected))
+        if blank:
+            cleaned["blank_variables"] = tuple(sorted(blank))
+        return cleaned
+
     @field_validator("service_role")
     @classmethod
     def _check_service_role(cls, value: str) -> str:
@@ -186,9 +233,15 @@ class Settings(BaseSettings):
                     "can only mislead. Delete it from the Railway service's variables."
                 )
             if not self.supabase_session_pooler_url:
+                blank_hint = (
+                    f" Set but blank: {', '.join(self.blank_variables)}. An unresolved "
+                    "${{shared.NAME}} reference resolves to an empty string."
+                    if self.blank_variables
+                    else ""
+                )
                 raise ValueError(
                     "SUPABASE_SESSION_POOLER_URL is required on Railway - it is the only "
-                    "database a deployed service may use (SPEC.md sections 2.1 and 2.4)."
+                    f"database a deployed service may use (SPEC.md sections 2.1 and 2.4).{blank_hint}"
                 )
             if not self.model_version:
                 raise ValueError(

@@ -57,13 +57,34 @@ def banner(role: str, log=print) -> dict:
         "service_role": role,
         "on_railway": running_on_railway(),
         "db_host": f"{endpoint['host']}:{endpoint['port']}",
+        # Parsed, not assumed. config.py rejects a non-pooler host outright,
+        # but a deployed service should still be able to SHOW that the value
+        # it received parses the way SPEC.md section 2.4 requires - otherwise
+        # "it validated at boot" is something you have to take on trust.
+        "db_host_is_pooler": endpoint["host"].endswith(".pooler.supabase.com"),
+        "db_port_is_5432": endpoint["port"] == 5432,
         "db_resolved_ip": endpoint["resolved"],
         "db_address_family": endpoint["family"],
         "model_version_pin": settings.model_version,
         "cache_dir": str(cache_dir()),
+        # Names only, never values. A pasted secret with a trailing newline
+        # presents as an auth failure and sends you looking at the password.
+        "config_whitespace_stripped": list(settings.whitespace_stripped),
     }
     for key, value in facts.items():
-        log(f"  {key:<20} {value}")
+        log(f"  {key:<26} {value}")
+    if settings.whitespace_stripped:
+        log(
+            "  WARNING: surrounding whitespace was stripped from "
+            f"{', '.join(settings.whitespace_stripped)} - fix the value at its source; "
+            "a trailing newline in a connection string presents as an auth failure."
+        )
+    if not (facts["db_host_is_pooler"] and facts["db_port_is_5432"]):
+        raise RuntimeError(
+            f"SUPABASE_SESSION_POOLER_URL resolved to {facts['db_host']}, which is not "
+            "a Supavisor session-mode endpoint (*.pooler.supabase.com:5432). "
+            "See SPEC.md section 2.4."
+        )
     return facts
 
 

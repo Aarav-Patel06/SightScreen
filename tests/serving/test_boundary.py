@@ -122,3 +122,70 @@ def test_the_2_4_pooler_allowlist_still_fires_on_railway(monkeypatch):
             MODEL_VERSION="v",
             SUPABASE_SESSION_POOLER_URL="postgresql://postgres.ab:pw@db.ab.supabase.co:5432/postgres",
         )
+
+
+# --- values that arrive damaged rather than absent -------------------------
+# Found on the first real Railway deploy, not by review.
+
+
+def test_a_blank_variable_is_treated_as_absent(monkeypatch):
+    """An unresolved ${{shared.NAME}} reference resolves to an EMPTY STRING,
+    not to nothing.
+
+    That is the bug this test exists for: `SUPABASE_URL=""` satisfied
+    pydantic's "Field required", so two of the six references sailed through
+    validation and the service only failed later, on a different variable,
+    with a misleading message. A blank variable is absent.
+    """
+    monkeypatch.delenv("RAILWAY_PROJECT_ID", raising=False)
+    with pytest.raises(ValidationError, match="Field required"):
+        Settings(
+            _env_file=None,
+            SUPABASE_URL="",
+            SUPABASE_SECRET_KEY="",
+            SUPABASE_SESSION_POOLER_URL="",
+            LOCAL_DATABASE_URL=LOCAL_DB,
+            CRICSHEET_DATA_DIR="./d",
+        )
+
+
+def test_blank_variables_are_named_in_the_boundary_error(monkeypatch):
+    """The name, never the value - and the hint about where empty strings
+    come from, because that is the non-obvious part."""
+    monkeypatch.setenv("RAILWAY_PROJECT_ID", "p1")
+    with pytest.raises(ValidationError) as exc:
+        Settings(
+            _env_file=None,
+            SUPABASE_URL=SUPABASE["SUPABASE_URL"],
+            SUPABASE_SECRET_KEY=SUPABASE["SUPABASE_SECRET_KEY"],
+            SUPABASE_SESSION_POOLER_URL="",
+            MODEL_VERSION="winprob2-20260910",
+        )
+    message = str(exc.value)
+    assert "SUPABASE_SESSION_POOLER_URL" in message
+    assert "shared.NAME" in message
+
+
+@pytest.mark.parametrize("raw", ["  https://abcdefgh.supabase.co", "https://abcdefgh.supabase.co\n"])
+def test_surrounding_whitespace_is_stripped_and_recorded(monkeypatch, raw):
+    """A pasted value picks up a trailing newline astonishingly easily, and a
+    connection string with one presents as an AUTH failure - which sends you
+    looking at the password. Stripping is safe; silence is not."""
+    monkeypatch.delenv("RAILWAY_PROJECT_ID", raising=False)
+    settings = Settings(
+        _env_file=None,
+        SUPABASE_URL=raw,
+        SUPABASE_SECRET_KEY=SUPABASE["SUPABASE_SECRET_KEY"],
+        SUPABASE_SESSION_POOLER_URL=SUPABASE["SUPABASE_SESSION_POOLER_URL"],
+        LOCAL_DATABASE_URL=LOCAL_DB,
+        CRICSHEET_DATA_DIR="./d",
+    )
+    assert settings.supabase_url == "https://abcdefgh.supabase.co"
+    assert "SUPABASE_URL" in settings.whitespace_stripped
+
+
+def test_clean_values_record_no_whitespace(monkeypatch):
+    monkeypatch.delenv("RAILWAY_PROJECT_ID", raising=False)
+    settings = _settings(LOCAL_DATABASE_URL=LOCAL_DB, CRICSHEET_DATA_DIR="./d")
+    assert settings.whitespace_stripped == ()
+    assert settings.blank_variables == ()
