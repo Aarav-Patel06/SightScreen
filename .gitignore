@@ -29,3 +29,6 @@ api/data/load_reports/
 api/data/backups/
 api/data/eval_reports/
 api/data/models/
+
+# Stray capture files from shell redirects with unset variables
+/.txt
