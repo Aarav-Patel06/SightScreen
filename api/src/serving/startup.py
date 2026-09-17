@@ -25,9 +25,9 @@ from pathlib import Path
 from config import settings
 from db.defaults import running_on_railway
 from db.env import env_value
-from features.as_of import assert_reference_fresh
+from features.as_of import StaleReferenceData, assert_reference_fresh
 from models.artifact import resolve_pinned_artifact
-from serving.db import connect_with_backoff, resolved_endpoint
+from serving.db import ReconnectingConnection, resolved_endpoint
 
 DEFAULT_CACHE_DIR = "/app/artifacts"
 
@@ -97,13 +97,23 @@ def run_checks(role: str, *, log=print) -> dict:
     log(f"sightscreen {role} starting")
     facts = banner(role, log=log)
 
-    conn = connect_with_backoff(supabase_url(), log=log, autocommit=True)
+    # A holder rather than a bare connection: a Supabase pause terminates the
+    # live connection, and a service that cannot rebuild one needs a redeploy
+    # to recover, which is not recovery. See serving/db.py.
+    database = ReconnectingConnection(supabase_url(), log=log, autocommit=True)
+    conn = database.get()
 
     with conn.cursor() as cur:
         cur.execute("SELECT current_setting('server_version'), current_database()")
-        server_version, database = cur.fetchone()
+        # NOT `database` - that name holds the ReconnectingConnection above, and
+        # rebinding it here shadowed the holder with the string "postgres". The
+        # dict returned below then carried a str where /health expected an
+        # object, so every /health call raised AttributeError. Caught by the
+        # deployed service, not by any test: nothing exercised /health between
+        # the fix and the deploy.
+        server_version, database_name = cur.fetchone()
     facts["server_version"] = server_version
-    facts["database"] = database
+    facts["database"] = database_name
     log(f"  {'server_version':<20} {server_version}")
 
     freshness = assert_reference_fresh(conn)
@@ -123,7 +133,7 @@ def run_checks(role: str, *, log=print) -> dict:
         log(f"  model_notes          {resolved['notes'][:120]}")
 
     log(f"sightscreen {role} ready")
-    return {"conn": conn, "facts": facts, "model": resolved}
+    return {"conn": conn, "database": database, "facts": facts, "model": resolved}
 
 
 def uptime_seconds() -> float:
@@ -143,3 +153,42 @@ def service_role() -> str:
         return explicit.strip().lower()
     railway_name = (os.environ.get("RAILWAY_SERVICE_NAME") or "").strip().lower()
     return railway_name if railway_name in ("api", "worker") else "api"
+
+
+# Re-checked periodically rather than once at boot. A container that has been
+# up for three weeks would otherwise still be reporting the reference age it
+# measured on the day it started - and the 14-day staleness limit would never
+# fire, because nothing re-evaluates it. Observed directly: after 20.5 hours
+# of uptime /health still said reference_age_days=1 when the real answer was
+# 2. Same family of defect as a health check that reports a startup fact.
+REFERENCE_RECHECK_SECONDS = 300.0
+
+_reference_checked_at = 0.0
+_reference_error: str | None = None
+
+
+def refresh_reference_state(conn, facts: dict, *, now: float | None = None) -> str | None:
+    """Re-evaluate reference freshness at most every REFERENCE_RECHECK_SECONDS.
+
+    Updates `facts` in place and returns None when healthy, or the staleness
+    message when not. Does not raise: this runs on a serving path where the
+    caller decides between degrading and refusing.
+    """
+    global _reference_checked_at, _reference_error
+    now = time.monotonic() if now is None else now
+    if now - _reference_checked_at < REFERENCE_RECHECK_SECONDS:
+        return _reference_error
+
+    _reference_checked_at = now
+    try:
+        freshness = assert_reference_fresh(conn)
+    except StaleReferenceData as exc:
+        _reference_error = str(exc)
+        facts["reference_stale"] = True
+        return _reference_error
+    _reference_error = None
+    facts["reference_stale"] = False
+    facts["reference_age_days"] = freshness["age_days"]
+    facts["reference_newest"] = str(freshness["newest_breakpoint"])
+    facts["reference_corpus_age_days"] = freshness["corpus_age_days"]
+    return None

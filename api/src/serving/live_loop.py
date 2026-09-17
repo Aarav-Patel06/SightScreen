@@ -38,6 +38,15 @@ from datetime import datetime, timezone
 
 from db.env import env_value
 from ingest.cricketdata import CricketDataClient, HttpTransport
+from serving.db import (
+    OTHER,
+    ConnectionCoolingDown,
+    PAUSED,
+    TIMEOUT,
+    UNREACHABLE,
+    classify_connection_error,
+    describe,
+)
 
 # config and serving.startup are imported inside run() rather than here.
 # config validates the whole environment at import time, so a module-level
@@ -47,6 +56,9 @@ from ingest.cricketdata import CricketDataClient, HttpTransport
 # tests exercise, and it needs neither.
 
 IDLE_INTERVAL_SECONDS = 600.0
+# Faster than idle while degraded, so recovery is noticed promptly, but
+# still slow enough that an hour of downtime costs ~60 provider calls.
+DEGRADED_INTERVAL_SECONDS = 60.0
 SLEEP_SLICE_SECONDS = 1.0
 IDLE_CALLS_PER_DAY = int(86_400 / IDLE_INTERVAL_SECONDS)
 
@@ -115,6 +127,7 @@ def run(*, max_iterations: int | None = None, log=_log) -> dict:
 
     state = startup.run_checks("worker", log=log)
     conn = state["conn"]
+    database = state["database"]
 
     api_key = env_value("LIVE_API_KEY")
     if not api_key:
@@ -136,8 +149,30 @@ def run(*, max_iterations: int | None = None, log=_log) -> dict:
         try:
             interval = run_once(client, tracked, log=log)
         except Exception as exc:  # noqa: BLE001 - a poll failure must not kill the worker
-            log(f"poll failed ({type(exc).__name__}: {exc}); backing off {IDLE_INTERVAL_SECONDS:.0f}s")
-            interval = IDLE_INTERVAL_SECONDS
+            # Name the cause rather than dumping the exception. A paused
+            # Supabase kills the live connection with AdminShutdown, which
+            # surfaced here as an unexplained "poll failed" during the real
+            # pause test - the classification exists precisely so this line
+            # says "paused" instead.
+            kind = classify_connection_error(exc)
+            log(
+                f"poll failed - {describe(kind)} ({type(exc).__name__}); "
+                f"retrying in {DEGRADED_INTERVAL_SECONDS:.0f}s"
+            )
+            if kind in (PAUSED, UNREACHABLE, TIMEOUT, OTHER):
+                # Rebuild the connection on the next pass. Without this the
+                # worker holds a dead connection forever and only a redeploy
+                # brings it back, which is not recovery.
+                database.discard(exc)
+                try:
+                    conn = database.get(max_attempts=1)
+                    client._conn = conn
+                    log("reconnected to Supabase")
+                except ConnectionCoolingDown:
+                    pass  # nothing attempted; the cooldown will expire
+                except Exception:  # noqa: BLE001 - still down; try again next pass
+                    pass
+            interval = DEGRADED_INTERVAL_SECONDS
         if max_iterations is None or iterations < max_iterations:
             sleep_in_slices(interval, shutdown)
 

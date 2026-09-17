@@ -22,13 +22,14 @@ import json
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from features.as_of import compute_as_of_features
 from features.match_state import MatchStateRow
 from ingest.replay import predict_win_prob
 from serving import startup
+from serving.db import ConnectionCoolingDown, describe
 
 _state: dict = {}
 
@@ -80,11 +81,48 @@ class WinProbResponse(BaseModel):
 
 
 @app.get("/health")
-def health() -> dict:
+def health(response: Response) -> dict:
+    """Ask the database, do not report a fact cached at boot.
+
+    The first version returned `status: ok` throughout a real Supabase pause,
+    because every value in it was collected at startup and nothing here
+    touched the connection. A monitor would have seen green while the database
+    was gone - which is worse than no health check, because it is trusted.
+    """
     if not _state:
         raise HTTPException(status_code=503, detail="startup checks have not completed")
-    facts = dict(_state["facts"])
+
+    # Refresh the SHARED facts, then copy for the response. Refreshing a copy
+    # would mean the periodic re-check wrote into a dict that is thrown away,
+    # so every cached call would keep serving the startup values - the exact
+    # staleness this re-check exists to remove.
+    shared = _state["facts"]
+    facts = dict(shared)
     facts["uptime_seconds"] = round(startup.uptime_seconds(), 1)
+
+    reachable, kind, detail = _state["database"].probe()
+    facts["db_reachable"] = reachable
+    facts["db_status"] = kind or ("ok" if reachable else "unknown")
+    if not reachable:
+        kind = kind or _state["database"].last_kind
+        facts["db_status"] = kind or "unknown"
+        facts["db_detail"] = describe(kind) if kind else detail
+        facts["status"] = "degraded"
+        response.status_code = 503
+        return facts
+
+    # Reference freshness re-checked here, not trusted from boot. See
+    # serving/startup.py's REFERENCE_RECHECK_SECONDS.
+    stale = startup.refresh_reference_state(_state["conn"], shared)
+    facts.update(
+        {k: v for k, v in shared.items() if k.startswith("reference_")}
+    )
+    if stale:
+        facts["status"] = "degraded"
+        facts["db_detail"] = stale
+        response.status_code = 503
+        return facts
+
     facts["status"] = "ok"
     return facts
 
@@ -99,7 +137,29 @@ def predict(request: WinProbRequest) -> WinProbResponse:
             detail="only innings 2 is modelled; the first-innings score projection is Phase 4",
         )
 
-    conn = _state["conn"]
+    # Establish that the connection is LIVE before using it, then reconnect if
+    # it is not. A Supabase pause terminates the connection server-side, and
+    # psycopg only discovers that on the next query - so `closed` is still
+    # False and a plain get() would hand back a corpse. Without this the
+    # service returned 500s until someone redeployed.
+    database = _state["database"]
+    reachable, _, _ = database.probe()
+    if not reachable:
+        database.discard()
+    try:
+        # max_attempts=1: fail fast rather than sleeping inside a request. The
+        # holder's own cooldown, not a retry here, is what keeps a paused
+        # project from being hammered.
+        conn = database.get(max_attempts=1)
+    except ConnectionCoolingDown as exc:
+        # Nothing was attempted; report the last real cause.
+        raise HTTPException(
+            status_code=503, detail=describe(database.last_kind or "other")
+        ) from exc
+    except Exception as exc:  # noqa: BLE001 - reported to the caller below
+        kind = database.discard(exc)
+        raise HTTPException(status_code=503, detail=describe(kind or "other")) from exc
+    _state["conn"] = conn
     model = _state["model"]
 
     # As-of features come from Supabase's summaries via the SAME helper
@@ -134,7 +194,11 @@ def predict(request: WinProbRequest) -> WinProbResponse:
         batter_balls_faced=0,
     )
 
-    probability = predict_win_prob(model["artifact"], row, as_of)
+    try:
+        probability = predict_win_prob(model["artifact"], row, as_of)
+    except Exception as exc:  # noqa: BLE001 - a dead connection must not 500
+        kind = _state["database"].discard(exc)
+        raise HTTPException(status_code=503, detail=describe(kind or "other")) from exc
     if probability is None:
         raise HTTPException(status_code=400, detail="no prediction produced for this state")
 

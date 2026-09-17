@@ -69,14 +69,18 @@ def base_url() -> str:
 
 @pytest.fixture(scope="module")
 def local_conn():
-    connection = psycopg.connect(_env()["LOCAL_DATABASE_URL"], autocommit=True)
+    # connect_timeout is not optional here: without it this fixture blocked
+    # for 20.5 hours against an unreachable Supabase before anyone noticed.
+    connection = psycopg.connect(_env()["LOCAL_DATABASE_URL"], autocommit=True, connect_timeout=20)
     yield connection
     connection.close()
 
 
 @pytest.fixture(scope="module")
 def supabase_conn():
-    connection = psycopg.connect(_env()["SUPABASE_SESSION_POOLER_URL"], autocommit=True)
+    connection = psycopg.connect(
+        _env()["SUPABASE_SESSION_POOLER_URL"], autocommit=True, connect_timeout=20
+    )
     yield connection
     connection.close()
 

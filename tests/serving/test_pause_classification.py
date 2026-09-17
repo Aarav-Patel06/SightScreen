@@ -20,8 +20,13 @@ import pytest
 
 from serving.db import (
     AUTH,
+    PROBE_CACHE_SECONDS,
+    RECONNECT_COOLDOWN_CAP_SECONDS,
+    ConnectionCoolingDown,
+    ReconnectingConnection,
     OTHER,
     PAUSED,
+    TIMEOUT,
     UNREACHABLE,
     AuthenticationFailed,
     backoff_delay,
@@ -30,9 +35,20 @@ from serving.db import (
     describe,
 )
 
-# The paused text is verbatim Supavisor. docs/phase1-closeout.md:170-174
-# records this costing real debugging time once already.
-PAUSED_TEXT = 'connection failed: FATAL:  Tenant or user not found'
+# The text a genuinely paused project returns, captured on 2026-09-16 by
+# pausing the real Supabase project. Note it is NOT the phrasing
+# docs/phase1-closeout.md:170-174 recorded ("Tenant or user not found") - the
+# real reply uses a slash and interpolates the username. The literal from the
+# docs never matched, so a paused project classified as OTHER and logged
+# "Supabase connection failed" instead of naming the pause, defeating the
+# whole point of SPEC.md section 13's requirement. Only pausing the project
+# could have found that; the code faithfully implemented a misremembered
+# string.
+PAUSED_TEXT = (
+    'connection failed: connection to server at "3.111.105.85", port 5432 failed: '
+    "FATAL:  (ENOTFOUND) tenant/user postgres.xrvgmjmvgmtepgryyulk not found"
+)
+LEGACY_PAUSED_TEXT = "connection failed: FATAL:  Tenant or user not found"
 AUTH_TEXT = 'connection failed: FATAL:  password authentication failed for user "postgres.abc"'
 DNS_TEXT = 'connection failed: could not translate host name "aws-0-x.pooler.supabase.com"'
 TIMEOUT_TEXT = "connection timeout expired"
@@ -42,12 +58,14 @@ TIMEOUT_TEXT = "connection timeout expired"
     "text,expected",
     [
         (PAUSED_TEXT, PAUSED),
+        (LEGACY_PAUSED_TEXT, PAUSED),
         ("Project is paused", PAUSED),
         (AUTH_TEXT, AUTH),
         ('FATAL:  no pg_hba.conf entry for host "1.2.3.4"', AUTH),
         (DNS_TEXT, UNREACHABLE),
-        (TIMEOUT_TEXT, UNREACHABLE),
         ("connection refused", UNREACHABLE),
+        (TIMEOUT_TEXT, TIMEOUT),
+        ("connection timed out", TIMEOUT),
         ("something nobody has seen before", OTHER),
     ],
 )
@@ -135,3 +153,301 @@ def test_max_attempts_gives_up_when_asked(monkeypatch):
             "postgresql://x", max_attempts=3, sleep=lambda _s: None, log=lambda _m: None
         )
     assert boom.calls == 3
+
+
+def test_the_four_causes_are_mutually_distinguishable():
+    """SPEC.md section 13 asks for a paused project to be distinguishable.
+    These are the four things that actually present as a failed connection,
+    and each must land in its own class - otherwise the log sends you to the
+    wrong place.
+
+    Only AUTH exits. A pause, a network fault and a timeout are all things
+    that resolve themselves; a wrong password is not, and retrying it forever
+    is a silent outage.
+    """
+    causes = {
+        "pause": PAUSED_TEXT,
+        "wrong password": AUTH_TEXT,
+        "network failure": DNS_TEXT,
+        "genuine timeout": TIMEOUT_TEXT,
+    }
+    classes = {name: classify_connection_error(OSError(t)) for name, t in causes.items()}
+    assert len(set(classes.values())) == 4, f"causes collapsed together: {classes}"
+    assert classes["wrong password"] == AUTH
+    assert [c for c in classes.values() if c == AUTH] == [AUTH], "exactly one cause may exit"
+
+
+# --- the health endpoint must ask, not remember ----------------------------
+
+
+class _FakeDatabase:
+    """Stands in for ReconnectingConnection in the two states that matter."""
+
+    def __init__(self, reachable, kind=None):
+        self._reachable = reachable
+        self._kind = kind
+
+    def probe(self):
+        return (True, None, None) if self._reachable else (False, self._kind, "boom")
+
+
+def test_health_reports_degraded_when_the_database_is_gone():
+    """The defect this covers was observed live, not imagined.
+
+    During the real Supabase pause the deployed /health returned
+    `status: ok` with an uptime of 2427s, because every value in the response
+    was collected at startup and nothing in the handler touched the
+    connection. A monitor would have shown green for the whole outage - worse
+    than having no health check, because a health check is trusted.
+
+    Cannot be re-triggered against the live service without pausing the
+    project again, so it is pinned here.
+    """
+    from fastapi import Response
+
+    from serving import app as app_module
+
+    saved = dict(app_module._state)
+    try:
+        app_module._state.clear()
+        app_module._state.update(
+            {
+                "facts": {"service_role": "api", "model_version": "winprob2-20260910"},
+                "database": _FakeDatabase(reachable=False, kind=PAUSED),
+                "model": {},
+            }
+        )
+        response = Response()
+        body = app_module.health(response)
+        assert response.status_code == 503, "a dead database must not report HTTP 200"
+        assert body["status"] == "degraded"
+        assert body["db_reachable"] is False
+        assert body["db_status"] == PAUSED
+        assert "PAUSED" in body["db_detail"].upper()
+    finally:
+        app_module._state.clear()
+        app_module._state.update(saved)
+
+
+def test_health_reports_ok_when_the_database_answers(monkeypatch):
+    from fastapi import Response
+
+    from serving import app as app_module
+
+    # The reference re-check needs a live connection; it has its own tests.
+    monkeypatch.setattr(app_module.startup, "refresh_reference_state", lambda *_a, **_k: None)
+
+    saved = dict(app_module._state)
+    try:
+        app_module._state.clear()
+        app_module._state.update(
+            {
+                "facts": {"service_role": "api"},
+                "database": _FakeDatabase(reachable=True),
+                "conn": object(),
+                "model": {},
+            }
+        )
+        response = Response()
+        body = app_module.health(response)
+        assert body["status"] == "ok"
+        assert body["db_reachable"] is True
+        assert response.status_code in (None, 200)
+    finally:
+        app_module._state.clear()
+        app_module._state.update(saved)
+
+
+# --- the two concerns raised before the second pause -----------------------
+
+
+def _always_fails(text=PAUSED_TEXT):
+    state = {"calls": 0}
+
+    def connect(*_a, **_k):
+        state["calls"] += 1
+        raise OSError(text)
+
+    return connect, state
+
+
+def test_reconnect_does_not_storm_a_paused_project(monkeypatch):
+    """Traffic arriving during an outage must not become connection attempts.
+
+    Without the holder's own cooldown, every request would open a fresh
+    attempt against a project that cannot serve it. Railway's health checker
+    polls frequently on its own, and SPEC.md section 2.4 warns the free-tier
+    pool ceiling is low and shared - so speculative connections are expensive
+    even when they succeed.
+    """
+    connect, state = _always_fails()
+    monkeypatch.setattr("serving.db.psycopg.connect", connect)
+    holder = ReconnectingConnection("postgresql://x", log=lambda _m: None)
+
+    refused = 0
+    for _ in range(50):
+        try:
+            holder.get(max_attempts=1)
+        except ConnectionCoolingDown:
+            refused += 1
+        except Exception:
+            pass
+
+    assert state["calls"] == 1, f"50 requests produced {state['calls']} connection attempts"
+    assert refused == 49
+    assert holder.last_kind == PAUSED, "the real cause must survive the cooldown"
+
+
+def test_the_cooldown_grows_and_is_capped(monkeypatch):
+    connect, _ = _always_fails()
+    monkeypatch.setattr("serving.db.psycopg.connect", connect)
+    holder = ReconnectingConnection("postgresql://x", log=lambda _m: None)
+
+    seen = []
+    for _ in range(10):
+        holder._next_attempt_at = 0.0  # let each attempt through
+        try:
+            holder.get(max_attempts=1)
+        except Exception:
+            pass
+        seen.append(holder._cooldown())
+
+    assert seen[0] < seen[2] < seen[4], f"cooldown must grow: {seen}"
+    assert max(seen) <= RECONNECT_COOLDOWN_CAP_SECONDS
+    assert seen[-1] == RECONNECT_COOLDOWN_CAP_SECONDS, "must reach and hold the cap"
+
+
+def test_the_two_backoff_layers_add_rather_than_multiply(monkeypatch):
+    """The holder's cooldown and a caller's retry loop must not compound.
+
+    With max_attempts=1 the holder does not sleep at all - it raises and lets
+    the caller decide when to come back. So the worst case per worker cycle is
+    the loop's own interval plus one connection attempt, not the product of
+    the two.
+    """
+    connect, state = _always_fails()
+    monkeypatch.setattr("serving.db.psycopg.connect", connect)
+    holder = ReconnectingConnection("postgresql://x", log=lambda _m: None)
+    slept = []
+    monkeypatch.setattr("serving.db.time.sleep", slept.append)
+
+    try:
+        holder.get(max_attempts=1)
+    except Exception:
+        pass
+    assert slept == [], "max_attempts=1 must not sleep inside the holder"
+    assert state["calls"] == 1
+
+
+def test_probe_reuses_the_connection_and_never_opens_one(monkeypatch):
+    """SPEC.md section 2.4: do not open connections speculatively. A health
+    endpoint that opens one per call can exhaust the pool it is reporting on -
+    its own outage."""
+    connect, state = _always_fails()
+    monkeypatch.setattr("serving.db.psycopg.connect", connect)
+    holder = ReconnectingConnection("postgresql://x", log=lambda _m: None)
+
+    for _ in range(20):
+        reachable, _, detail = holder.probe(now=0.0)
+        assert reachable is False
+        assert detail == "no open connection"
+    assert state["calls"] == 0, "probe must never open a connection"
+
+
+def test_probe_caches_so_a_burst_costs_one_round_trip():
+    class _Conn:
+        closed = False
+
+        def __init__(self):
+            self.queries = 0
+
+        def cursor(self):
+            outer = self
+
+            class _Cur:
+                def __enter__(self_inner):
+                    return self_inner
+
+                def __exit__(self_inner, *_a):
+                    return False
+
+                def execute(self_inner, _sql):
+                    outer.queries += 1
+
+            return _Cur()
+
+    holder = ReconnectingConnection("postgresql://x", log=lambda _m: None)
+    fake = _Conn()
+    holder._conn = fake
+
+    for _ in range(25):
+        assert holder.probe(now=100.0)[0] is True
+    assert fake.queries == 1, f"25 health checks cost {fake.queries} round trips"
+
+    # Past the cache window it asks again.
+    holder.probe(now=100.0 + PROBE_CACHE_SECONDS + 0.1)
+    assert fake.queries == 2
+
+
+def test_health_reports_degraded_when_reference_data_goes_stale(monkeypatch):
+    """Freshness is re-checked on a timer, not trusted from boot.
+
+    A container up for 20.5 hours was still reporting the reference age it
+    measured at startup - so the 14-day staleness limit could never fire on a
+    long-running service. Observed on the deployed api, which said
+    reference_age_days=1 when the real answer was 2.
+    """
+    from fastapi import Response
+
+    from serving import app as app_module
+
+    monkeypatch.setattr(
+        app_module.startup,
+        "refresh_reference_state",
+        lambda *_a, **_k: "reference tables were last synced 2026-09-01 (20 days ago, limit 14)",
+    )
+    saved = dict(app_module._state)
+    try:
+        app_module._state.clear()
+        app_module._state.update(
+            {
+                "facts": {"service_role": "api"},
+                "database": _FakeDatabase(reachable=True),
+                "conn": object(),
+                "model": {},
+            }
+        )
+        response = Response()
+        body = app_module.health(response)
+        assert response.status_code == 503
+        assert body["status"] == "degraded"
+        assert "20 days ago" in body["db_detail"]
+    finally:
+        app_module._state.clear()
+        app_module._state.update(saved)
+
+
+def test_the_reference_recheck_is_rate_limited(monkeypatch):
+    """It must not hit the database on every health call - Railway's checker
+    polls frequently and SPEC.md section 2.4's pool is small."""
+    from serving import startup as startup_module
+
+    calls = {"n": 0}
+
+    def fake_fresh(_conn):
+        calls["n"] += 1
+        return {"age_days": 1, "newest_breakpoint": "2026-08-24", "corpus_age_days": 24}
+
+    monkeypatch.setattr(startup_module, "assert_reference_fresh", fake_fresh)
+    monkeypatch.setattr(startup_module, "_reference_checked_at", 0.0)
+    monkeypatch.setattr(startup_module, "_reference_error", None)
+
+    facts: dict = {}
+    for i in range(30):
+        startup_module.refresh_reference_state(object(), facts, now=1000.0 + i)
+    assert calls["n"] == 1, f"30 health calls caused {calls['n']} freshness queries"
+
+    startup_module.refresh_reference_state(
+        object(), facts, now=1000.0 + startup_module.REFERENCE_RECHECK_SECONDS + 1
+    )
+    assert calls["n"] == 2
