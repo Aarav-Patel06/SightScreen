@@ -319,7 +319,9 @@ class ReconnectingConnection:
             self._conn = None
         return kind
 
-    def probe(self, *, now: float | None = None) -> tuple[bool, str | None, str | None]:
+    def probe(
+        self, *, now: float | None = None, allow_reconnect: bool = False
+    ) -> tuple[bool, str | None, str | None]:
         """(reachable, classification, detail) using a real round trip.
 
         Two deliberate properties, both because of SPEC.md section 2.4's
@@ -342,14 +344,37 @@ class ReconnectingConnection:
 
         conn = self._conn
         if conn is None or conn.closed:
-            result = (False, None, "no open connection")
-        else:
-            try:
-                with conn.cursor() as cur:
-                    cur.execute("SELECT 1")
-                result = (True, None, None)
-            except Exception as exc:  # noqa: BLE001 - classified for the caller
-                result = (False, classify_connection_error(exc), str(exc).strip()[:200])
+            # `allow_reconnect` exists because of a measured defect: with the
+            # database restored and no traffic, /health reported 503 degraded
+            # indefinitely - probe() never reconnects and /predict was the
+            # only caller of get(). A monitor showed the service down long
+            # after it could have served. One attempt, governed by the same
+            # cooldown, so healing cannot become a storm.
+            if allow_reconnect:
+                try:
+                    self.get(max_attempts=1)
+                    conn = self._conn
+                except Exception:  # noqa: BLE001 - still down; report it below
+                    conn = None
+            if conn is None or conn.closed:
+                # last_kind, not None: the classification must survive a closed
+                # connection, or the diagnostic degrades exactly when needed.
+                result = (False, self.last_kind, "no open connection")
+                self._probe_cached = result
+                self._probe_cached_at = now
+                return result
+
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+            result = (True, None, None)
+        except Exception as exc:  # noqa: BLE001 - classified for the caller
+            kind = classify_connection_error(exc)
+            # Record it here rather than relying on a caller to invoke
+            # discard(). /health alone previously lost the classification and
+            # reported db_status=unknown once the connection closed.
+            self.last_kind = kind
+            result = (False, kind, str(exc).strip()[:200])
         self._probe_cached = result
         self._probe_cached_at = now
         return result

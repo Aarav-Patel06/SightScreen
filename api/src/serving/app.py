@@ -29,6 +29,7 @@ from features.as_of import compute_as_of_features
 from features.match_state import MatchStateRow
 from ingest.replay import predict_win_prob
 from serving import startup
+from models.artifact import ModelVersionMismatch
 from serving.db import ConnectionCoolingDown, describe
 
 _state: dict = {}
@@ -100,7 +101,7 @@ def health(response: Response) -> dict:
     facts = dict(shared)
     facts["uptime_seconds"] = round(startup.uptime_seconds(), 1)
 
-    reachable, kind, detail = _state["database"].probe()
+    reachable, kind, detail = _state["database"].probe(allow_reconnect=True)
     facts["db_reachable"] = reachable
     facts["db_status"] = kind or ("ok" if reachable else "unknown")
     if not reachable:
@@ -113,9 +114,14 @@ def health(response: Response) -> dict:
 
     # Reference freshness re-checked here, not trusted from boot. See
     # serving/startup.py's REFERENCE_RECHECK_SECONDS.
+    startup.refresh_endpoint_state(shared)
     stale = startup.refresh_reference_state(_state["conn"], shared)
     facts.update(
-        {k: v for k, v in shared.items() if k.startswith("reference_")}
+        {
+            k: v
+            for k, v in shared.items()
+            if k.startswith(("reference_", "db_resolved", "db_address", "facts_measured"))
+        }
     )
     if stale:
         facts["status"] = "degraded"
@@ -161,6 +167,17 @@ def predict(request: WinProbRequest) -> WinProbResponse:
         raise HTTPException(status_code=503, detail=describe(kind or "other")) from exc
     _state["conn"] = conn
     model = _state["model"]
+
+    # Confirm the pin is still the active version BEFORE producing a number.
+    # A promotion (SPEC.md section 8.4) while this container is alive would
+    # otherwise have it write rows tagged with a model that did not produce
+    # them, which is what Phase 3's accuracy page groups calibration by.
+    # Refuse rather than guess: the probability came from the old artifact, so
+    # neither label would be true.
+    try:
+        _state["version_guard"].confirm(conn)
+    except ModelVersionMismatch as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     # As-of features come from Supabase's summaries via the SAME helper
     # training calls (session 3, Decision 3). The only difference between

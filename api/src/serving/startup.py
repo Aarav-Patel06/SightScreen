@@ -26,7 +26,7 @@ from config import settings
 from db.defaults import running_on_railway
 from db.env import env_value
 from features.as_of import StaleReferenceData, assert_reference_fresh
-from models.artifact import resolve_pinned_artifact
+from models.artifact import ActiveVersionGuard, resolve_pinned_artifact
 from serving.db import ReconnectingConnection, resolved_endpoint
 
 DEFAULT_CACHE_DIR = "/app/artifacts"
@@ -133,7 +133,16 @@ def run_checks(role: str, *, log=print) -> dict:
         log(f"  model_notes          {resolved['notes'][:120]}")
 
     log(f"sightscreen {role} ready")
-    return {"conn": conn, "database": database, "facts": facts, "model": resolved}
+    return {
+        "conn": conn,
+        "database": database,
+        "facts": facts,
+        "model": resolved,
+        # Re-confirms the pin on the PREDICTION path, not just here. See
+        # models/artifact.py::ActiveVersionGuard for why a staleness bound
+        # on /health is not sufficient.
+        "version_guard": ActiveVersionGuard(resolved["model_version"]),
+    }
 
 
 def uptime_seconds() -> float:
@@ -165,6 +174,32 @@ REFERENCE_RECHECK_SECONDS = 300.0
 
 _reference_checked_at = 0.0
 _reference_error: str | None = None
+_endpoint_checked_at = 0.0
+
+
+def refresh_endpoint_state(facts: dict, *, now: float | None = None) -> None:
+    """Re-resolve DNS and re-read the server version on the same timer.
+
+    Category rule, not two more special cases: a value that can change must be
+    read when asked, or carry an explicit and visible staleness bound.
+    `db_resolved_ip` and `db_address_family` were resolved once at startup, so
+    a container running for days reported an address that may no longer be
+    the one it is using - in precisely the field SPEC.md section 2.4 makes
+    diagnostic. `server_version` moves when Supabase upgrades.
+
+    Lower stakes than the model pin, so a bound is sufficient here rather than
+    a read-per-request. The bound is stated in the response
+    (`facts_measured_age_seconds`) so a reader can see how old it is instead
+    of assuming it is current.
+    """
+    global _endpoint_checked_at
+    now = time.monotonic() if now is None else now
+    if now - _endpoint_checked_at >= REFERENCE_RECHECK_SECONDS:
+        _endpoint_checked_at = now
+        endpoint = resolved_endpoint(supabase_url())
+        facts["db_resolved_ip"] = endpoint["resolved"]
+        facts["db_address_family"] = endpoint["family"]
+    facts["facts_measured_age_seconds"] = round(now - _endpoint_checked_at, 1)
 
 
 def refresh_reference_state(conn, facts: dict, *, now: float | None = None) -> str | None:

@@ -222,3 +222,76 @@ def resolve_pinned_artifact(conn, pinned_version: str, cache_dir: Path) -> dict:
         "notes": notes,
         "path": str(path),
     }
+
+
+# How long a confirmed-active version may be trusted before re-reading it.
+# NOT a staleness bound on the report - a bound on how long a prediction may
+# be written without the pin having been confirmed.
+ACTIVE_VERSION_CACHE_SECONDS = 15.0
+
+
+class ActiveVersionGuard:
+    """Confirms, on the prediction path, that the pinned version is still active.
+
+    Why this is not a /health concern. SPEC.md section 8.4 promotes models
+    while containers are alive, and section 5.4's `predictions.model_version`
+    is what Phase 3's accuracy page groups calibration by. A container that
+    keeps serving after a promotion writes rows tagged with a version that is
+    no longer active - and the audit trail looks clean, because every row has
+    a plausible version on it. Phase 1's whole evaluation apparatus would
+    attribute those predictions to the wrong model and never know.
+
+    So the check moved from startup to the request path. The trade:
+
+      read-per-prediction is safest and costs a round trip per call, against
+      a pooler whose free-tier ceiling SPEC.md section 2.4 warns is low;
+
+      a 15s cache costs at most 15s of exposure and one query per 15s.
+
+    15s is chosen because a promotion is a deliberate, infrequent act, and the
+    window only has to be short enough that the misattributed rows are few
+    enough to find and fix. Not 300s: that is minutes of silently wrong
+    attribution, which is the thing being prevented.
+
+    On mismatch the request is REFUSED, never guessed. An in-flight prediction
+    cannot be relabelled - the probability came from the old artifact, so
+    writing it under the new version would be a lie about which model produced
+    it, and writing it under the old version is the misattribution itself. The
+    only honest outcome is to decline and let the caller retry against a
+    container that has been restarted onto the new pin.
+    """
+
+    def __init__(self, pinned_version: str, *, cache_seconds: float = ACTIVE_VERSION_CACHE_SECONDS):
+        self.pinned_version = pinned_version
+        self._cache_seconds = cache_seconds
+        self._confirmed_at = 0.0
+        self.mismatch: str | None = None
+
+    def confirm(self, conn, *, now: float | None = None) -> None:
+        """Raises ModelVersionMismatch if Supabase's active version has moved.
+
+        Once a mismatch is seen it is sticky: the cache is invalidated and
+        every subsequent call re-raises without another query. A container
+        serving the wrong model does not get to recover by waiting - it has to
+        be restarted onto the right pin.
+        """
+        import time as _time
+
+        now = _time.monotonic() if now is None else now
+        if self.mismatch is not None:
+            raise ModelVersionMismatch(self.mismatch)
+        if now - self._confirmed_at < self._cache_seconds:
+            return
+
+        version, _artifact_path, _notes = active_model_row(conn)
+        if version != self.pinned_version:
+            self.mismatch = (
+                f"Supabase's active model is now {version!r} but this container is pinned to "
+                f"{self.pinned_version!r} and is serving that artifact. Refusing to predict: a "
+                f"row written now would be tagged with a version that did not produce it, and "
+                f"Phase 3's accuracy page groups calibration by model_version. Restart this "
+                f"container so it loads {version!r}."
+            )
+            self._confirmed_at = 0.0
+            raise ModelVersionMismatch(self.mismatch)
+        self._confirmed_at = now

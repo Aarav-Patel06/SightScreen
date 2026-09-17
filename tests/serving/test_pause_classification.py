@@ -187,11 +187,13 @@ class _FakeDatabase:
         self._reachable = reachable
         self._kind = kind
 
-    def probe(self):
+    def probe(self, **_kwargs):
         return (True, None, None) if self._reachable else (False, self._kind, "boom")
 
+    last_kind = None
 
-def test_health_reports_degraded_when_the_database_is_gone():
+
+def test_health_reports_degraded_when_the_database_is_gone(monkeypatch):
     """The defect this covers was observed live, not imagined.
 
     During the real Supabase pause the deployed /health returned
@@ -207,6 +209,7 @@ def test_health_reports_degraded_when_the_database_is_gone():
 
     from serving import app as app_module
 
+    monkeypatch.setattr(app_module.startup, "refresh_endpoint_state", lambda *_a, **_k: None)
     saved = dict(app_module._state)
     try:
         app_module._state.clear()
@@ -236,6 +239,7 @@ def test_health_reports_ok_when_the_database_answers(monkeypatch):
 
     # The reference re-check needs a live connection; it has its own tests.
     monkeypatch.setattr(app_module.startup, "refresh_reference_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(app_module.startup, "refresh_endpoint_state", lambda *_a, **_k: None)
 
     saved = dict(app_module._state)
     try:
@@ -406,6 +410,7 @@ def test_health_reports_degraded_when_reference_data_goes_stale(monkeypatch):
         "refresh_reference_state",
         lambda *_a, **_k: "reference tables were last synced 2026-09-01 (20 days ago, limit 14)",
     )
+    monkeypatch.setattr(app_module.startup, "refresh_endpoint_state", lambda *_a, **_k: None)
     saved = dict(app_module._state)
     try:
         app_module._state.clear()
@@ -451,3 +456,191 @@ def test_the_reference_recheck_is_rate_limited(monkeypatch):
         object(), facts, now=1000.0 + startup_module.REFERENCE_RECHECK_SECONDS + 1
     )
     assert calls["n"] == 2
+
+
+# --- fixes for the defects the second pause exposed ------------------------
+
+
+def test_probe_records_the_classification_itself(monkeypatch):
+    """Measured defect: at t+6.5s into a real pause /health reported
+    db_status=unknown, because once psycopg closed the connection probe()
+    returned "no open connection" with no classification, and only /predict's
+    discard() ever set last_kind. A diagnostic that degrades exactly when it
+    is needed is the same failure shape as cached-at-startup."""
+
+    class _Dead:
+        closed = False
+
+        def cursor(self):
+            raise OSError(PAUSED_TEXT)
+
+    holder = ReconnectingConnection("postgresql://x", log=lambda _m: None)
+    holder._conn = _Dead()
+
+    reachable, kind, _ = holder.probe(now=0.0)
+    assert reachable is False
+    assert kind == PAUSED
+    assert holder.last_kind == PAUSED, "probe must record the cause, not rely on a caller"
+
+    # Now the connection is gone entirely: the classification must survive.
+    holder._conn = None
+    reachable, kind, detail = holder.probe(now=100.0)
+    assert reachable is False
+    assert kind == PAUSED, f"classification lost once the connection closed: {kind}"
+
+
+def test_probe_can_heal_on_demand_but_only_within_the_cooldown(monkeypatch):
+    """Measured defect: with the database restored and no traffic, /health
+    reported 503 degraded indefinitely - probe() never reconnected and
+    /predict was the only caller of get(). One bounded attempt, governed by
+    the same cooldown, so healing cannot become a storm."""
+    attempts = {"n": 0}
+
+    class _Live:
+        closed = False
+
+        def cursor(self):
+            class _Cur:
+                def __enter__(self_inner):
+                    return self_inner
+
+                def __exit__(self_inner, *_a):
+                    return False
+
+                def execute(self_inner, _sql):
+                    return None
+
+            return _Cur()
+
+    def connect(*_a, **_k):
+        attempts["n"] += 1
+        return _Live()
+
+    monkeypatch.setattr("serving.db.psycopg.connect", connect)
+    holder = ReconnectingConnection("postgresql://x", log=lambda _m: None)
+
+    assert holder.probe(now=0.0)[0] is False, "no connection yet, and not asked to heal"
+    assert attempts["n"] == 0, "probe must not reconnect unless asked"
+
+    reachable, _, _ = holder.probe(now=10.0, allow_reconnect=True)
+    assert reachable is True
+    assert attempts["n"] == 1
+
+
+def test_probe_healing_respects_the_cooldown(monkeypatch):
+    connect, state = _always_fails()
+    monkeypatch.setattr("serving.db.psycopg.connect", connect)
+    holder = ReconnectingConnection("postgresql://x", log=lambda _m: None)
+    for i in range(30):
+        holder.probe(now=float(i), allow_reconnect=True)
+    assert state["calls"] == 1, f"healing storm: {state['calls']} attempts in 30 probes"
+
+
+# --- the model pin on the prediction path ---------------------------------
+
+
+def test_the_version_guard_refuses_after_a_promotion():
+    """SPEC.md section 8.4 promotes models while containers are alive, and
+    section 5.4's predictions.model_version is what Phase 3's accuracy page
+    groups calibration by. A container that keeps serving after a promotion
+    writes rows attributed to a model that did not produce them, with an audit
+    trail that looks clean."""
+    from models.artifact import ActiveVersionGuard, ModelVersionMismatch
+
+    active = {"version": "winprob2-20260910"}
+
+    class _Conn:
+        def cursor(self):
+            class _Cur:
+                def __enter__(self_inner):
+                    return self_inner
+
+                def __exit__(self_inner, *_a):
+                    return False
+
+                def execute(self_inner, _sql, _params=None):
+                    return None
+
+                def fetchone(self_inner):
+                    return (active["version"], "https://h/a.pkl#sha256=x", None)
+
+            return _Cur()
+
+    guard = ActiveVersionGuard("winprob2-20260910", cache_seconds=0.0)
+    conn = _Conn()
+    guard.confirm(conn, now=0.0)  # still active: fine
+
+    active["version"] = "winprob2-20261001"  # promoted underneath us
+    with pytest.raises(ModelVersionMismatch, match="Restart this container"):
+        guard.confirm(conn, now=1.0)
+
+
+def test_the_version_guard_mismatch_is_sticky():
+    """Once a container knows it is serving the wrong model it does not get to
+    recover by waiting - the artifact in memory is still the old one."""
+    from models.artifact import ActiveVersionGuard, ModelVersionMismatch
+
+    queries = {"n": 0}
+
+    class _Conn:
+        def cursor(self):
+            class _Cur:
+                def __enter__(self_inner):
+                    return self_inner
+
+                def __exit__(self_inner, *_a):
+                    return False
+
+                def execute(self_inner, _sql, _params=None):
+                    queries["n"] += 1
+
+                def fetchone(self_inner):
+                    return ("winprob2-NEWER", "https://h/a.pkl#sha256=x", None)
+
+            return _Cur()
+
+    guard = ActiveVersionGuard("winprob2-20260910")
+    conn = _Conn()
+    with pytest.raises(ModelVersionMismatch):
+        guard.confirm(conn)
+    before = queries["n"]
+    for _ in range(10):
+        with pytest.raises(ModelVersionMismatch):
+            guard.confirm(conn)
+    assert queries["n"] == before, "a known mismatch must not re-query, just refuse"
+
+
+def test_the_version_guard_caches_so_it_is_not_a_query_per_prediction():
+    """The trade: read-per-prediction is safest but costs a round trip per
+    call against a pooler whose free-tier ceiling is low (SPEC.md 2.4). 15s
+    bounds the exposure to a handful of rows rather than minutes of them."""
+    from models.artifact import ACTIVE_VERSION_CACHE_SECONDS, ActiveVersionGuard
+
+    queries = {"n": 0}
+
+    class _Conn:
+        def cursor(self):
+            class _Cur:
+                def __enter__(self_inner):
+                    return self_inner
+
+                def __exit__(self_inner, *_a):
+                    return False
+
+                def execute(self_inner, _sql, _params=None):
+                    queries["n"] += 1
+
+                def fetchone(self_inner):
+                    return ("winprob2-20260910", "https://h/a.pkl#sha256=x", None)
+
+            return _Cur()
+
+    guard = ActiveVersionGuard("winprob2-20260910")
+    conn = _Conn()
+    for i in range(100):
+        guard.confirm(conn, now=1000.0 + i * 0.1)   # 10 seconds of traffic
+    assert queries["n"] == 1, f"100 predictions caused {queries['n']} version queries"
+
+    guard.confirm(conn, now=1000.0 + ACTIVE_VERSION_CACHE_SECONDS + 1)
+    assert queries["n"] == 2
+    assert ACTIVE_VERSION_CACHE_SECONDS <= 15.0, "exposure window must stay small"
