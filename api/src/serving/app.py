@@ -219,11 +219,27 @@ def predict(request: WinProbRequest) -> WinProbResponse:
     if probability is None:
         raise HTTPException(status_code=400, detail="no prediction produced for this state")
 
+    # Enriched so the match page needs nothing but `predictions`, `matches`
+    # and the reference tables (Phase 2 session 5, Decision on match_states).
+    #
+    # The browser cannot read `match_states` at all - it has no anon grant and,
+    # since 20260918000001, RLS enabled with no policy. Carrying the state the
+    # header needs in the payload avoids writing corpus tables to Supabase,
+    # which would in turn force `match_states`' four REAL columns to NUMERIC
+    # (see docs/phase2-session4b-railway.md's open items). `phase` matters
+    # doubly: `match_phase` is the literal 'innings2' for every row, so the
+    # real powerplay/middle/death phase is otherwise never persisted, and
+    # SPEC.md 12.2's confidence labelling needs it.
     payload = {
         "p": probability,
         "innings": request.innings,
         "balls_bowled": request.balls_bowled,
+        "balls_remaining": request.balls_remaining,
         "runs_required": request.runs_required,
+        "score": request.score,
+        "wickets": request.wickets,
+        "target": request.target,
+        "phase": request.phase,
     }
     with conn.cursor() as cur:
         cur.execute(

@@ -12,7 +12,7 @@ from pydantic import Field, ValidationError, ValidationInfo, field_validator, mo
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from db.defaults import LOCAL_DB_PORT as LOCAL_DB_EXPECTED_PORT
-from db.defaults import running_on_railway
+from db.defaults import SESSION_POOLER_PORT, TRANSACTION_POOLER_PORT, running_on_railway
 
 # LOCAL_DB_EXPECTED_PORT comes from db/defaults.py - the single source of
 # truth for the local Postgres connection defaults, also used by ci.yml.
@@ -139,6 +139,49 @@ class Settings(BaseSettings):
             f"{env_name}'s host ({host!r}) isn't a Supavisor pooler host "
             "(*.pooler.supabase.com) - see SPEC.md section 2.4."
         )
+
+    @field_validator("supabase_session_pooler_url", "supabase_transaction_pooler_url")
+    @classmethod
+    def _check_pooler_port(cls, value: str | None, info: ValidationInfo) -> str | None:
+        """Session mode is 5432, transaction mode is 6543 - and they are not
+        interchangeable (SPEC.md section 2.4).
+
+        Until 2026-09-18 only the HOST was checked, so the two URLs were
+        swappable as far as validation was concerned, and
+        tests/test_config.py actively asserted that a port-5432 string was
+        valid in the transaction-mode field.
+
+        Both directions of the mistake fail under load rather than in dev,
+        which is why this is enforced rather than documented:
+
+          6543 where 5432 belongs - transaction mode does not reliably reset
+          session state between clients, so SET, temp tables and multi-
+          statement transactions break intermittently. Migrations and the
+          Railway services need session mode.
+
+          5432 where 6543 belongs - a serverless function holds a real
+          backend for the life of the connection instead of the life of a
+          query, and the free tier's small shared pool is exhausted by
+          concurrency that a single developer never reproduces.
+        """
+        if not value:
+            return value
+        env_name = cls.model_fields[info.field_name].alias or info.field_name
+        expected = (
+            SESSION_POOLER_PORT
+            if info.field_name == "supabase_session_pooler_url"
+            else TRANSACTION_POOLER_PORT
+        )
+        mode = "session" if expected == SESSION_POOLER_PORT else "transaction"
+        port = urlparse(value).port
+        if port != expected:
+            raise ValueError(
+                f"{env_name} must use port {expected} ({mode} mode), got {port!r}. "
+                "Session mode (5432) is for Railway and migrations; transaction mode "
+                "(6543) is for Vercel and anything serverless. Swapping them fails "
+                "under concurrency, not in development. See SPEC.md section 2.4."
+            )
+        return value
 
     @field_validator("supabase_session_pooler_url", "supabase_transaction_pooler_url")
     @classmethod

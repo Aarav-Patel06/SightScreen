@@ -31,6 +31,16 @@ LOCAL_DB_DEFAULT_URL = (
     f"/{LOCAL_DB_NAME}?sslmode={LOCAL_DB_SSLMODE}"
 )
 
+# Supavisor pooler ports, per SPEC.md section 2.4. Session mode holds a
+# backend for the life of the client connection (Railway, migrations, admin
+# scripts); transaction mode holds one only for the life of a query (Vercel,
+# anything serverless) and has no prepared statements. Named here rather than
+# inline in config.py for the same reason LOCAL_DB_PORT is - one place, so a
+# validator and a doc cannot drift.
+SESSION_POOLER_PORT = 5432
+TRANSACTION_POOLER_PORT = 6543
+
+
 # Railway injects these into every deployment. Any one of them means "this
 # process is running on Railway", which is the condition SPEC.md section
 # 2.1's boundary turns on: serving never touches local Postgres.

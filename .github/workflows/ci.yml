@@ -82,3 +82,13 @@ jobs:
       - run: npm install
       - run: npm run typecheck
       - run: npm test
+      # The build is the only check that exercises the App Router's own
+      # type generation and the server/client component boundary - tsc
+      # alone will happily typecheck a client component that imports a
+      # server-only module. Env vars are placeholders: every page is
+      # force-dynamic, so nothing is prerendered and nothing connects.
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+          SUPABASE_SECRET_KEY: sb_secret_ci_placeholder

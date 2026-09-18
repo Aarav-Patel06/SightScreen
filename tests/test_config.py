@@ -86,18 +86,52 @@ def test_settings_ignores_placeholder_values_on_not_yet_active_phases():
     assert settings.live_api_key == "changeme"
 
 
-VALID_POOLER_URL = (
-    "postgresql://postgres.abcxyzref:pw@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
-)
+def _pooler_url(port: int) -> str:
+    return f"postgresql://postgres.abcxyzref:pw@aws-0-ap-south-1.pooler.supabase.com:{port}/postgres"
+
+
+# Session mode and transaction mode are DIFFERENT ports and are not
+# interchangeable (SPEC.md section 2.4). Until 2026-09-18 this file used a
+# single VALID_POOLER_URL on port 5432 and asserted it was valid in the
+# TRANSACTION field - so the test suite actively enforced the wrong thing
+# while the validator checked only the host.
+VALID_POOLER_URL = _pooler_url(5432)
+SESSION_POOLER_URL = _pooler_url(5432)
+TRANSACTION_POOLER_URL = _pooler_url(6543)
 
 
 @pytest.mark.parametrize(
-    "field", ["supabase_session_pooler_url", "supabase_transaction_pooler_url", "agent_sql_role_db_url"]
+    "field,url",
+    [
+        ("supabase_session_pooler_url", SESSION_POOLER_URL),
+        ("supabase_transaction_pooler_url", TRANSACTION_POOLER_URL),
+        # agent_sql_role_db_url has no port rule - Phase 6 has not decided
+        # which mode its read-only role uses, and inventing one here would
+        # be enforcing a decision nobody has made.
+        ("agent_sql_role_db_url", SESSION_POOLER_URL),
+    ],
 )
-def test_settings_accepts_a_real_pooler_url(field):
-    kwargs = {**REQUIRED_KWARGS, field: VALID_POOLER_URL}
+def test_settings_accepts_a_real_pooler_url(field, url):
+    kwargs = {**REQUIRED_KWARGS, field: url}
     settings = Settings(_env_file=None, **kwargs)
-    assert getattr(settings, field) == VALID_POOLER_URL
+    assert getattr(settings, field) == url
+
+
+@pytest.mark.parametrize(
+    "field,wrong_url,expected_port",
+    [
+        ("supabase_session_pooler_url", TRANSACTION_POOLER_URL, 5432),
+        ("supabase_transaction_pooler_url", SESSION_POOLER_URL, 6543),
+    ],
+)
+def test_settings_rejects_the_wrong_pooler_port(field, wrong_url, expected_port):
+    """Both directions, because both are real mistakes and neither shows up
+    in development - session mode in a serverless function exhausts the pool
+    under concurrency, and transaction mode in the worker breaks SET and temp
+    tables intermittently."""
+    kwargs = {**REQUIRED_KWARGS, field: wrong_url}
+    with pytest.raises(ValidationError, match=str(expected_port)):
+        Settings(_env_file=None, **kwargs)
 
 
 @pytest.mark.parametrize(
@@ -121,10 +155,16 @@ def test_settings_rejects_non_pooler_host(field):
 
 
 @pytest.mark.parametrize(
-    "field", ["supabase_session_pooler_url", "supabase_transaction_pooler_url"]
+    "field,port",
+    [("supabase_session_pooler_url", 5432), ("supabase_transaction_pooler_url", 6543)],
 )
-def test_settings_rejects_bare_postgres_username_on_pooler_urls(field):
-    bare_username_url = "postgresql://postgres:pw@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
+def test_settings_rejects_bare_postgres_username_on_pooler_urls(field, port):
+    # The port must be the CORRECT one for the field, so that the username
+    # check is what fires. With a wrong port the port validator rejects first
+    # and this test passes for the wrong reason.
+    bare_username_url = (
+        f"postgresql://postgres:pw@aws-0-ap-south-1.pooler.supabase.com:{port}/postgres"
+    )
     kwargs = {**REQUIRED_KWARGS, field: bare_username_url}
     with pytest.raises(ValidationError, match="postgres.<PROJECT_REF>"):
         Settings(_env_file=None, **kwargs)

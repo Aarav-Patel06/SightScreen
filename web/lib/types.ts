@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.17"
+    PostgrestVersion: "14.5"
   }
   graphql_public: {
     Tables: {
@@ -152,6 +152,35 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "players"
             referencedColumns: ["player_id"]
+          },
+        ]
+      }
+      elo_asof_summary: {
+        Row: {
+          effective_date: string
+          format: string
+          rating: number
+          team_id: number
+        }
+        Insert: {
+          effective_date: string
+          format: string
+          rating: number
+          team_id: number
+        }
+        Update: {
+          effective_date?: string
+          format?: string
+          rating?: number
+          team_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "elo_asof_summary_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["team_id"]
           },
         ]
       }
@@ -383,6 +412,7 @@ export type Database = {
           is_shadow: boolean
           model_type: string
           model_version: string
+          notes: string | null
           test_brier: number | null
           test_log_loss: number | null
           train_end_date: string
@@ -394,6 +424,7 @@ export type Database = {
           is_shadow?: boolean
           model_type: string
           model_version: string
+          notes?: string | null
           test_brier?: number | null
           test_log_loss?: number | null
           train_end_date: string
@@ -405,6 +436,7 @@ export type Database = {
           is_shadow?: boolean
           model_type?: string
           model_version?: string
+          notes?: string | null
           test_brier?: number | null
           test_log_loss?: number | null
           train_end_date?: string
@@ -599,6 +631,30 @@ export type Database = {
           },
         ]
       }
+      reference_sync_state: {
+        Row: {
+          content_hash: string
+          rebuilt_at: string
+          row_count: number
+          synced_at: string | null
+          table_name: string
+        }
+        Insert: {
+          content_hash: string
+          rebuilt_at: string
+          row_count: number
+          synced_at?: string | null
+          table_name: string
+        }
+        Update: {
+          content_hash?: string
+          rebuilt_at?: string
+          row_count?: number
+          synced_at?: string | null
+          table_name?: string
+        }
+        Relationships: []
+      }
       team_aliases: {
         Row: {
           alias_id: number
@@ -728,6 +784,41 @@ export type Database = {
           },
         ]
       }
+      venue_asof_summary: {
+        Row: {
+          chase_n: number
+          chase_wins: number
+          effective_date: string
+          first_inns_n: number
+          first_inns_runs: number
+          venue_id: number
+        }
+        Insert: {
+          chase_n: number
+          chase_wins: number
+          effective_date: string
+          first_inns_n: number
+          first_inns_runs: number
+          venue_id: number
+        }
+        Update: {
+          chase_n?: number
+          chase_wins?: number
+          effective_date?: string
+          first_inns_n?: number
+          first_inns_runs?: number
+          venue_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "venue_asof_summary_venue_id_fkey"
+            columns: ["venue_id"]
+            isOneToOne: false
+            referencedRelation: "venues"
+            referencedColumns: ["venue_id"]
+          },
+        ]
+      }
       venues: {
         Row: {
           city: string | null
@@ -773,12 +864,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -802,11 +893,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -827,11 +918,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -852,11 +943,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -869,11 +960,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

@@ -1,0 +1,72 @@
+/* Mobile-first, per SPEC.md 12.2 - most cricket viewing is second-screen. */
+:root {
+  --bg: #0f1113;
+  --panel: #171a1d;
+  --line: #262b30;
+  --text: #e8eaed;
+  --muted: #9aa3ab;
+  --bat: #4ea1ff;
+  --bowl: #ff7a59;
+  --warn: #f0b429;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+main { max-width: 720px; margin: 0 auto; padding: 16px; }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.tiny { font-size: 12px; }
+
+h1 { font-size: 19px; margin: 0 0 4px; }
+h2 { font-size: 15px; margin: 0 0 10px; font-weight: 600; }
+
+a { color: var(--bat); }
+
+.row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+
+.wp-number { font-size: 34px; font-weight: 650; letter-spacing: -0.5px; }
+
+.wp-bar {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--bowl);
+  overflow: hidden;
+  margin: 10px 0 6px;
+}
+.wp-bar > span { display: block; height: 100%; background: var(--bat); }
+
+.chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--muted);
+}
+.chip-low { border-color: var(--warn); color: var(--warn); }
+
+.strip { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.strip .cell {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.strip .cell.absent { color: var(--muted); border-style: dashed; }
