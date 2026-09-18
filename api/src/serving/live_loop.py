@@ -140,12 +140,40 @@ def run(*, max_iterations: int | None = None, log=_log) -> dict:
     shutdown = Shutdown().install()
     tracked: dict = {}
     iterations = 0
+    # True once a cycle has failed on the database, so the next cycle asks
+    # Postgres before paying the provider. Cleared on reconnection.
+    degraded = False
 
     log(f"worker polling; idle cadence {IDLE_INTERVAL_SECONDS:.0f}s ({IDLE_CALLS_PER_DAY}/day)")
     while not shutdown.requested:
         if max_iterations is not None and iterations >= max_iterations:
             break
         iterations += 1
+        # Check the DATABASE before calling the provider, while degraded.
+        #
+        # run_once -> list_live_matches -> _fetch_snapshots makes the
+        # CricketData HTTP request BEFORE it touches Postgres, so every
+        # degraded cycle paid for a poll whose result could not be persisted.
+        # Measured over a 3.3-hour outage: 189 cycles, and the provider's own
+        # counter showed hitsToday=942 of 2000 against ~144 for a normal idle
+        # day. At a 60s degraded interval a full-day outage would burn ~1,440
+        # calls, 72% of the quota, on discarded work. The database is the thing
+        # actually blocking and probing it is free, so ask it first.
+        if degraded:
+            reachable, _, _ = database.probe(allow_reconnect=True)
+            if not reachable:
+                log(
+                    f"still degraded - {describe(database.last_kind or OTHER)}; "
+                    f"skipping the provider poll to preserve quota; "
+                    f"next check in {DEGRADED_INTERVAL_SECONDS:.0f}s"
+                )
+                sleep_in_slices(DEGRADED_INTERVAL_SECONDS, shutdown)
+                continue
+            conn = database.get()
+            client._conn = conn
+            degraded = False
+            log("reconnected to Supabase; resuming normal polling")
+
         try:
             interval = run_once(client, tracked, log=log)
         except Exception as exc:  # noqa: BLE001 - a poll failure must not kill the worker
@@ -154,7 +182,19 @@ def run(*, max_iterations: int | None = None, log=_log) -> dict:
             # surfaced here as an unexplained "poll failed" during the real
             # pause test - the classification exists precisely so this line
             # says "paused" instead.
-            kind = classify_connection_error(exc)
+            # Prefer the REMEMBERED cause over a fresh classification.
+            #
+            # Measured over the third pause: cycle 1 correctly said
+            # "PAUSED ... (AdminShutdown)" and every cycle after it said
+            # "Supabase connection failed (OperationalError)". Once discard()
+            # drops the connection, the next cycle fails on a CLOSED
+            # connection, whose text matches no PAUSED pattern - so the
+            # operator sees the true cause once and a generic message
+            # thereafter. Arrive at the logs ten minutes in and the pause is
+            # invisible. Same failure shape as /health losing its
+            # classification, in the one place that fix was not applied.
+            fresh = classify_connection_error(exc)
+            kind = fresh if fresh != OTHER else (database.last_kind or OTHER)
             log(
                 f"poll failed - {describe(kind)} ({type(exc).__name__}); "
                 f"retrying in {DEGRADED_INTERVAL_SECONDS:.0f}s"
@@ -164,9 +204,11 @@ def run(*, max_iterations: int | None = None, log=_log) -> dict:
                 # worker holds a dead connection forever and only a redeploy
                 # brings it back, which is not recovery.
                 database.discard(exc)
+                degraded = True
                 try:
                     conn = database.get(max_attempts=1)
                     client._conn = conn
+                    degraded = False
                     log("reconnected to Supabase")
                 except ConnectionCoolingDown:
                     pass  # nothing attempted; the cooldown will expire

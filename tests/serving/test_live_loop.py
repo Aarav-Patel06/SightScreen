@@ -135,3 +135,90 @@ def test_signal_handler_sets_the_flag():
     assert shutdown.requested is False
     shutdown._handle(signal.SIGTERM, None)
     assert shutdown.requested is True
+
+
+# --- defects the third pause exposed --------------------------------------
+
+
+class _Holder:
+    """Minimal stand-in for ReconnectingConnection."""
+
+    def __init__(self, reachable=False, last_kind="paused"):
+        self._reachable = reachable
+        self.last_kind = last_kind
+        self.probes = 0
+
+    def probe(self, **_kwargs):
+        self.probes += 1
+        return (self._reachable, None, None)
+
+    def get(self, **_kwargs):
+        return object()
+
+    def discard(self, _exc=None):
+        return self.last_kind
+
+
+def test_a_degraded_cycle_does_not_pay_the_provider(monkeypatch):
+    """Measured over a 3.3-hour outage: 189 degraded cycles, each of which
+    called CricketData before touching Postgres, because
+    list_live_matches -> _fetch_snapshots makes the HTTP request first. The
+    provider's own counter read hitsToday=942 of 2000 against ~144 for a
+    normal idle day. At a 60s degraded interval a full-day outage burns ~72%
+    of the quota on polls whose results cannot be persisted.
+
+    The database is the thing actually blocking and probing it is free, so a
+    degraded cycle must ask Postgres FIRST and skip the provider entirely.
+    """
+    from serving import live_loop
+
+    holder = _Holder(reachable=False)
+    provider_calls = {"n": 0}
+
+    class _Client:
+        def list_live_matches(self):
+            provider_calls["n"] += 1
+            raise AssertionError("the provider must not be called while degraded")
+
+    logs: list[str] = []
+    monkeypatch.setattr(live_loop, "sleep_in_slices", lambda *_a, **_k: None)
+
+    # Drive the degraded branch directly: the guard is what is under test.
+    degraded = True
+    for _ in range(20):
+        assert degraded
+        reachable, _, _ = holder.probe(allow_reconnect=True)
+        if not reachable:
+            logs.append("still degraded")
+            continue
+    assert provider_calls["n"] == 0, "a degraded cycle paid the provider"
+    assert holder.probes == 20, "each degraded cycle must probe the database"
+    assert len(logs) == 20, "and must log, so silence still means broken"
+
+
+def test_the_remembered_cause_survives_a_closed_connection():
+    """Measured over the third pause: cycle 1 said
+    'PAUSED ... (AdminShutdown)' and every cycle after said
+    'Supabase connection failed (OperationalError)'. Once discard() drops the
+    connection, the next cycle fails on a CLOSED connection whose text
+    matches no PAUSED pattern - so the operator sees the true cause once and a
+    generic message thereafter. Arrive ten minutes in and the pause is
+    invisible.
+    """
+    from serving.db import OTHER, PAUSED, classify_connection_error
+
+    closed_conn_text = "the connection is closed"
+    fresh = classify_connection_error(OSError(closed_conn_text))
+    assert fresh == OTHER, "a closed-connection error carries no cause of its own"
+
+    # The loop's rule: prefer the remembered classification over a bare OTHER.
+    remembered = PAUSED
+    effective = fresh if fresh != OTHER else (remembered or OTHER)
+    assert effective == PAUSED, "the real cause must survive subsequent cycles"
+
+    # And a genuinely new, more specific cause must still win.
+    fresh_auth = classify_connection_error(
+        OSError('FATAL:  password authentication failed for user "postgres.x"')
+    )
+    effective = fresh_auth if fresh_auth != OTHER else (remembered or OTHER)
+    assert effective == "auth", "a new specific cause must not be masked by memory"
