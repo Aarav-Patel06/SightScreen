@@ -23,7 +23,7 @@ get a container that starts fine and fails at 3am.
 
 Usage (from api/src, with api/.env configured):
     python -m models.publish_model_version winprob2-20260910 \
-        --url https://github.com/Aarav6000/SightScreen/releases/download/winprob2-20260910/winprob2-20260910.pkl
+        --url https://github.com/Aarav-Patel06/SightScreen/releases/download/winprob2-20260910/winprob2-20260910.pkl
 """
 
 from __future__ import annotations

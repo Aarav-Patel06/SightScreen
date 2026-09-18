@@ -120,7 +120,7 @@ verifies the bytes before loading them:
 # 2. register it on Supabase (verifies the download and its sha256 first)
 cd api/src
 python -m models.publish_model_version winprob2-20260910 `
-  --url https://github.com/Aarav6000/SightScreen/releases/download/winprob2-20260910/winprob2-20260910.pkl
+  --url https://github.com/Aarav-Patel06/SightScreen/releases/download/winprob2-20260910/winprob2-20260910.pkl
 ```
 
 The digest is appended to the stored URL as a `#sha256=` fragment, so the

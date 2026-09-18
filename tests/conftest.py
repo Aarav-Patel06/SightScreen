@@ -105,3 +105,51 @@ def conn(test_db_url):
         cur.execute(f"TRUNCATE {', '.join(TABLES_TO_RESET)} RESTART IDENTITY CASCADE")
     yield connection
     connection.close()
+
+
+# --- Settings tests must not inherit the ambient environment --------------
+# Found by CI, ten runs late (Phase 2 session 5).
+#
+# tests/test_config.py and tests/serving/test_boundary.py construct Settings
+# directly with _env_file=None, and their docstrings say that is what stops
+# api/.env supplying values behind the test's back. It is - but pydantic
+# -settings reads os.environ too, and _env_file does nothing about that. On a
+# laptop LOCAL_DATABASE_URL is not exported, so the tests passed; ci.yml
+# writes it to GITHUB_ENV, so in CI it IS exported, and seven boundary tests
+# failed on a Railway-simulating case that then saw a local database URL it
+# never passed. Ten consecutive red runs, and the staleness check downstream
+# of them never ran again.
+#
+# Opt in with `pytestmark = pytest.mark.usefixtures("settings_env_isolated")`.
+SETTINGS_ENV_VARS = (
+    "AGENT_SQL_ROLE_DB_URL",
+    "AGENT_TOOL_SHARED_SECRET",
+    "ANTHROPIC_API_KEY",
+    "CRICSHEET_DATA_DIR",
+    "LIVE_API_KEY",
+    "LIVE_API_PROVIDER",
+    "LOCAL_DATABASE_URL",
+    "MODEL_VERSION",
+    "PORT",
+    "SERVICE_ROLE",
+    "SUPABASE_SECRET_KEY",
+    "SUPABASE_SESSION_POOLER_URL",
+    "SUPABASE_TRANSACTION_POOLER_URL",
+    "SUPABASE_URL",
+)
+
+# Deployment markers: the tests turn these on and off themselves, so they
+# must start off regardless of what the shell happens to have.
+_RAILWAY_VARS = (
+    "RAILWAY_ENVIRONMENT_NAME",
+    "RAILWAY_PROJECT_ID",
+    "RAILWAY_SERVICE_ID",
+    "RAILWAY_SERVICE_NAME",
+)
+
+
+@pytest.fixture()
+def settings_env_isolated(monkeypatch):
+    """Remove every variable Settings reads, so a test sees only what it passes."""
+    for name in SETTINGS_ENV_VARS + _RAILWAY_VARS:
+        monkeypatch.delenv(name, raising=False)

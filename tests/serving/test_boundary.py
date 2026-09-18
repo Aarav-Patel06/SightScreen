@@ -19,6 +19,11 @@ from pydantic import ValidationError
 from config import Settings
 from db.defaults import RAILWAY_ENV_MARKERS, running_on_railway
 
+# Settings reads os.environ as well as the env file, and _env_file=None does
+# nothing about the former. ci.yml exports LOCAL_DATABASE_URL into the job,
+# which is why these passed on a laptop and failed in CI for ten runs.
+pytestmark = pytest.mark.usefixtures("settings_env_isolated")
+
 SUPABASE = {
     "SUPABASE_URL": "https://abcdefgh.supabase.co",
     "SUPABASE_SECRET_KEY": "sb_secret_notaplaceholder",
@@ -189,3 +194,14 @@ def test_clean_values_record_no_whitespace(monkeypatch):
     settings = _settings(LOCAL_DATABASE_URL=LOCAL_DB, CRICSHEET_DATA_DIR="./d")
     assert settings.whitespace_stripped == ()
     assert settings.blank_variables == ()
+
+
+def test_the_isolation_fixture_covers_every_settings_field():
+    """The fixture is only as good as its list, and a list is exactly the
+    kind of thing that goes stale the next time a field is added. Derived
+    fields are computed by validators, never read from the environment."""
+    derived = {"BLANK_VARIABLES", "WHITESPACE_STRIPPED"}
+    from conftest import SETTINGS_ENV_VARS
+
+    from_environment = {name.upper() for name in Settings.model_fields} - derived
+    assert from_environment == set(SETTINGS_ENV_VARS)

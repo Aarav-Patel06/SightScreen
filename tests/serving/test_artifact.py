@@ -91,7 +91,7 @@ def test_plain_http_is_rejected():
 
 def test_a_release_url_is_accepted():
     url = (
-        "https://github.com/Aarav6000/SightScreen/releases/download/"
+        "https://github.com/Aarav-Patel06/SightScreen/releases/download/"
         "winprob2-20260910/winprob2-20260910.pkl#sha256=abc123"
     )
     assert assert_artifact_url(url) == url

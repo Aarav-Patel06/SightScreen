@@ -51,6 +51,20 @@ jobs:
         run: npx supabase db push --db-url "$LOCAL_DATABASE_URL"
       - name: Run tests
         run: pytest tests
+  # Its OWN job, as of Phase 2 session 5, and that is the whole point.
+  # It used to be the last step of `api`, behind a 14-minute pytest run. It
+  # fired correctly on two pushes in session 3, went unread, and then a test
+  # failure in session 4a moved the red earlier - so for ten consecutive runs
+  # this check was reported as `skipped` while the file drifted four
+  # migrations out of date. A cheap check that can be masked by an expensive
+  # one is a check you will eventually stop having.
+  types:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - name: Check web/lib/types.ts is not stale
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}

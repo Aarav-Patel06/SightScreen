@@ -13,6 +13,12 @@ from pydantic import ValidationError
 from config import Settings
 from db.defaults import LOCAL_DB_DEFAULT_URL
 
+# Settings reads os.environ as well as the env file, and _env_file=None does
+# nothing about the former. ci.yml exports LOCAL_DATABASE_URL into the job,
+# which is why these passed on a laptop and failed in CI for ten runs.
+pytestmark = pytest.mark.usefixtures("settings_env_isolated")
+
+
 REQUIRED_KWARGS = {
     "local_database_url": "postgresql://postgres:postgres@localhost:5433/cricket_training",
     "cricsheet_data_dir": "./data/cricsheet",
