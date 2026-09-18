@@ -188,7 +188,7 @@ def mirror_match_row(local_url: str, supabase_url: str, match_id: int) -> None:
         conn.commit()
 
 
-def post_ball(base_url: str, ball: dict) -> tuple[bool, str]:
+def post_ball(base_url: str, ball: dict) -> tuple[bool, str, int | None]:
     request = urllib.request.Request(
         f"{base_url}/predict/win-prob",
         data=json.dumps(ball).encode(),
@@ -198,17 +198,17 @@ def post_ball(base_url: str, ball: dict) -> tuple[bool, str]:
     try:
         with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT) as response:
             body = json.loads(response.read())
-        return True, f"p={body['win_probability']:.3f}"
+        return True, f"p={body['win_probability']:.3f}", body["prediction_id"]
     except urllib.error.HTTPError as exc:
         # One bad ball must not end the replay - a 503 mid-run is exactly the
         # degraded-Supabase path session 4b built, and the demo should show it
         # recovering rather than stopping.
-        return False, f"HTTP {exc.code} {exc.read().decode()[:120]}"
+        return False, f"HTTP {exc.code} {exc.read().decode()[:120]}", None
     except Exception as exc:  # noqa: BLE001 - network flake, keep going
-        return False, f"{type(exc).__name__}: {exc}"
+        return False, f"{type(exc).__name__}: {exc}", None
 
 
-def run(match_id: int, speed: str, base_url: str) -> int:
+def run(match_id: int, speed: str, base_url: str, timing_log: Path | None = None) -> int:
     env = _env()
     local_url = env["LOCAL_DATABASE_URL"]
     balls = load_balls(local_url, match_id)
@@ -220,9 +220,23 @@ def run(match_id: int, speed: str, base_url: str) -> int:
         f"({interval}s/ball), target {base_url}"
     )
     sent = failed = 0
+    # One line per ball, so the browser-side watcher can be paired with the
+    # posts it is watching for. Wall-clock ms, because the thing being
+    # measured spans two processes on this machine.
+    timings: list[dict] = []
     started = time.monotonic()
     for index, ball in enumerate(balls, start=1):
-        ok, detail = post_ball(base_url, ball)
+        ok, detail, prediction_id = post_ball(base_url, ball)
+        if timing_log is not None:
+            timings.append(
+                {
+                    "index": index,
+                    "balls_bowled": ball["balls_bowled"],
+                    "prediction_id": prediction_id,
+                    "responded_at_ms": round(time.time() * 1000),
+                    "ok": ok,
+                }
+            )
         if ok:
             sent += 1
         else:
@@ -237,6 +251,9 @@ def run(match_id: int, speed: str, base_url: str) -> int:
 
     elapsed = time.monotonic() - started
     print(f"\n{sent} posted OK, {failed} reported failed, {elapsed:.0f}s elapsed")
+    if timing_log is not None:
+        timing_log.write_text(json.dumps(timings), encoding="utf-8")
+        print(f"timing log written to {timing_log}")
 
     # Count what actually landed. A client-side failure does not mean the
     # server failed to commit, and a success does not mean it committed once:
@@ -279,6 +296,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--list", action="store_true", help="show close finishes worth demoing, then exit"
     )
+    parser.add_argument(
+        "--timing-log",
+        type=Path,
+        default=None,
+        help="write per-ball post timestamps here, to pair against a browser-side watcher",
+    )
     args = parser.parse_args(argv)
 
     if args.list:
@@ -286,7 +309,9 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.match_id is None:
         parser.error("--match-id is required (or use --list to pick one)")
-    raise SystemExit(run(args.match_id, args.speed, args.base_url.rstrip("/")))
+    raise SystemExit(
+        run(args.match_id, args.speed, args.base_url.rstrip("/"), args.timing_log)
+    )
 
 
 if __name__ == "__main__":
