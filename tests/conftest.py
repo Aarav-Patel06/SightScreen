@@ -81,6 +81,11 @@ def test_db_url() -> str:
 
 TABLES_TO_RESET = (
     "unresolved_entities",
+    # Before `predictions`, whose rows it references. Missing from this list
+    # until Phase 3 session 1 gave the table its first writer - outcome rows
+    # would have survived between tests, and an idempotency test would then
+    # pass on its second run for the wrong reason.
+    "prediction_outcomes",
     "predictions",
     "reference_sync_state",
     "venue_asof_summary",

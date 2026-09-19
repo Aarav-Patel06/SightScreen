@@ -69,6 +69,11 @@ class WinProbRequest(BaseModel):
     phase: str
     batting_team_id: int
     bowling_team_id: int
+    # The ball key (Phase 3 session 1). Optional so a caller predating the
+    # prediction log still works, but a request without it writes a row the
+    # unique index cannot protect - the replay logger always sends it.
+    over_num: int | None = None
+    ball_in_over: int | None = None
     venue_id: int | None = None
     format: str = "T20"
     match_date: str = Field(description="ISO date; the as-of key (SPEC.md section 6.2)")
@@ -79,6 +84,11 @@ class WinProbResponse(BaseModel):
     model_version: str
     win_probability: float
     features_used: dict
+    # False when the ball key already existed, i.e. this POST was a retry of
+    # one that had already committed. The caller needs to be able to tell the
+    # difference; the old endpoint could not, which is how 125 posts became
+    # 128 rows.
+    logged: bool = True
 
 
 @app.get("/health")
@@ -241,13 +251,34 @@ def predict(request: WinProbRequest) -> WinProbResponse:
         "target": request.target,
         "phase": request.phase,
     }
+    # All three key columns or none of them. A partial key would sit inside
+    # the partial index with a NULL in it, and NULLs never conflict, so it
+    # would be silently unprotected - worse than having no key at all,
+    # because the column list would suggest otherwise.
+    has_ball_key = request.over_num is not None and request.ball_in_over is not None
+    key = (
+        (request.innings, request.over_num, request.ball_in_over)
+        if has_ball_key
+        else (None, None, None)
+    )
+
+    # ON CONFLICT DO NOTHING against the ball key (Phase 3 session 1,
+    # migration 20260918000003). The endpoint is retried by the transport -
+    # measured: 125 posts, 128 rows - and a duplicate is harmless on the
+    # curve but double-counts in a calibration bin. DO NOTHING rather than
+    # DO UPDATE: the first row for a ball is the one that was served, and
+    # rewriting it would quietly change a prediction that has already been
+    # shown to someone.
     with conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO predictions
                 (match_id, delivery_id, model_version, prediction_type, payload,
-                 match_phase, created_at)
-            VALUES (%s, NULL, %s, 'win_prob', %s, 'innings2', %s)
+                 match_phase, created_at, innings, over_num, ball_in_over)
+            VALUES (%s, NULL, %s, 'win_prob', %s, 'innings2', %s, %s, %s, %s)
+            ON CONFLICT (match_id, model_version, prediction_type, innings, over_num, ball_in_over)
+                WHERE innings IS NOT NULL
+                DO NOTHING
             RETURNING prediction_id
             """,
             (
@@ -255,13 +286,39 @@ def predict(request: WinProbRequest) -> WinProbResponse:
                 model["model_version"],
                 json.dumps(payload),
                 datetime.now(timezone.utc),
+                *key,
             ),
         )
-        prediction_id = cur.fetchone()[0]
+        row = cur.fetchone()
+
+    logged = row is not None
+    if logged:
+        prediction_id = row[0]
+    else:
+        # The key already existed, so this POST is a retry of one that
+        # committed. Return the existing row rather than a 409: the caller
+        # asked for this ball to be scored and logged, and it is.
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT prediction_id FROM predictions
+                WHERE match_id = %s AND model_version = %s AND prediction_type = 'win_prob'
+                  AND innings = %s AND over_num = %s AND ball_in_over = %s
+                """,
+                (
+                    request.match_id,
+                    model["model_version"],
+                    request.innings,
+                    request.over_num,
+                    request.ball_in_over,
+                ),
+            )
+            prediction_id = cur.fetchone()[0]
 
     return WinProbResponse(
         prediction_id=prediction_id,
         model_version=model["model_version"],
         win_probability=probability,
         features_used=as_of,
+        logged=logged,
     )

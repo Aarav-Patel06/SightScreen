@@ -193,6 +193,14 @@ class InningsSnapshot:
     runs: int
     wickets: int
     balls: int
+    # Who is batting in this innings, as the provider names them (Phase 3
+    # session 1). CricketData labels each score entry "<Team> Inning <n>",
+    # and until now the parser threw that away - which left the live worker
+    # unable to say which side was chasing, and therefore unable to compute
+    # the as-of features a win probability needs. `Delivery` carries no team
+    # identity and `currentMatches` carries no toss, so this string is the
+    # ONLY place the provider says it. None when the label does not parse.
+    batting_team: str | None = None
 
 
 @dataclass(frozen=True)
@@ -221,6 +229,24 @@ class MatchSnapshot:
         return len(self.innings) if self.innings else None
 
 
+# "Guyana Amazon Warriors Inning 1" -> "Guyana Amazon Warriors". Anchored at
+# the end so a team whose own name contains the word survives intact.
+_INNING_LABEL_RE = re.compile(r"^(?P<team>.+?)\s+inning\s*\d+\s*$", re.I)
+
+
+def _batting_team(label: str | None) -> str | None:
+    """The batting side from a provider innings label, or None.
+
+    None rather than a guess: a caller that cannot name the batting team
+    must decline to predict, and a wrong team id would silently swap the
+    two Elo ratings that feed elo_diff.
+    """
+    if not label:
+        return None
+    match = _INNING_LABEL_RE.match(label.strip())
+    return match.group("team").strip() if match else None
+
+
 def parse_match(raw: dict, observed_at: datetime | None = None) -> MatchSnapshot:
     status = raw.get("status") or ""
     reduced = _REDUCED_OVERS_RE.search(status)
@@ -230,6 +256,7 @@ def parse_match(raw: dict, observed_at: datetime | None = None) -> MatchSnapshot
             runs=int(s.get("r") or 0),
             wickets=int(s.get("w") or 0),
             balls=overs_to_balls(float(s.get("o") or 0)),
+            batting_team=_batting_team(s.get("inning")),
         )
         for s in (raw.get("score") or [])
     )
@@ -377,6 +404,43 @@ def reconstruct_innings(
             )
         )
     return deliveries
+
+
+def _renumber_within_over(existing: list[Delivery], fresh: list[Delivery]) -> list[Delivery]:
+    """Give every delivery its position within the over, counting extras.
+
+    `reconstruct` derives ball_in_over from the LEGAL ball count, so a wide
+    and the legal ball after it both come out as ball 3 of the over. The
+    corpus uses the other convention - supabase/SCHEMA.md spells out why:
+    "the legal-ball x.y notation would collide with the UNIQUE(match_id,
+    innings, over_num, ball_in_over) constraint on every over with an
+    illegal delivery." It predicted this exact collision.
+
+    Found in Phase 3 session 1 by a live match: the ball key on
+    `predictions` is (innings, over_num, ball_in_over), so a colliding pair
+    meant the delivery after every extra was silently discarded by ON
+    CONFLICT DO NOTHING - a live win-probability curve quietly missing a
+    ball, which is the failure mode the key exists to prevent, arriving
+    through the key itself.
+
+    Renumbering here rather than inside `reconstruct` keeps that function a
+    pure delta between two snapshots; the position within an over is a fact
+    about the accumulated stream, which only the caller holds.
+    """
+    if not fresh:
+        return fresh
+    counts: dict[tuple[int, int], int] = {}
+    for delivery in existing:
+        key = (delivery.innings, delivery.over_num)
+        counts[key] = counts.get(key, 0) + 1
+    renumbered = []
+    for delivery in fresh:
+        key = (delivery.innings, delivery.over_num)
+        counts[key] = counts.get(key, 0) + 1
+        renumbered.append(
+            Delivery(**{**delivery.__dict__, "ball_in_over": counts[key]})
+        )
+    return renumbered
 
 
 def reconstruct(prev: MatchSnapshot | None, nxt: MatchSnapshot) -> list[Delivery]:
@@ -545,10 +609,11 @@ class CricketDataClient:
 
         with self._conn.cursor() as cur:
             cur.execute(
-                "SELECT venue_id, format, team_a, team_b FROM matches WHERE match_id = %s",
+                "SELECT venue_id, format, team_a, team_b, start_time::date "
+                "FROM matches WHERE match_id = %s",
                 (match_id,),
             )
-            venue_id, format_, team_a, team_b = cur.fetchone()
+            venue_id, format_, team_a, team_b, match_date = cur.fetchone()
 
         status = "complete" if snapshot.ended else ("live" if snapshot.started else "scheduled")
         return MatchState(
@@ -565,7 +630,36 @@ class CricketDataClient:
             toss_winner=None,  # absent from currentMatches
             toss_decision=None,
             winner=None,
+            match_date=match_date,
         )
+
+    def current_teams(self, match_id: int) -> tuple[int | None, int | None]:
+        """(batting_team_id, bowling_team_id) for the innings in progress.
+
+        (None, None) when the provider has not said. That is a real and
+        common case, not an error: `currentMatches` carries no toss, and
+        `Delivery` carries no team, so the innings label parsed into
+        InningsSnapshot.batting_team is the only signal. A caller must
+        decline to predict rather than pick one - getting this backwards
+        swaps the two Elo ratings feeding elo_diff and produces a confident
+        number about the wrong team.
+        """
+        snapshot = self._snapshots.get(match_id)
+        if snapshot is None or not snapshot.innings:
+            return None, None
+        batting_name = snapshot.innings[-1].batting_team
+        if batting_name is None or len(snapshot.teams) != 2:
+            return None, None
+        others = [t for t in snapshot.teams if t != batting_name]
+        if len(others) != 1:
+            # The label did not match either team name we were given - a
+            # provider rename mid-match, or a parse that looked fine and is
+            # not. Refusing beats resolving a name nobody listed.
+            return None, None
+        try:
+            return self._resolve_team(batting_name), self._resolve_team(others[0])
+        except UnsupportedMatch:
+            return None, None
 
     def get_deliveries_since(self, match_id: int, last_ball: int) -> list[Delivery]:
         return list(self._deliveries.get(match_id, [])[last_ball:])
@@ -600,7 +694,9 @@ class CricketDataClient:
                 Delivery(**{**d.__dict__, "confidence": ReconstructionConfidence.INFERRED})
                 for d in new_deliveries
             ]
-        self._deliveries.setdefault(match_id, []).extend(new_deliveries)
+        self._deliveries.setdefault(match_id, []).extend(
+            _renumber_within_over(self._deliveries.get(match_id, []), new_deliveries)
+        )
         self._snapshots[match_id] = snapshot
         self._provider_ids[match_id] = snapshot.provider_id
         return verdict

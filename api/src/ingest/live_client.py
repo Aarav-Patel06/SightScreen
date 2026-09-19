@@ -110,6 +110,13 @@ class MatchState:
     toss_winner: int | None
     toss_decision: str | None
     winner: int | None
+    # The as-of key (SPEC.md section 6.2), added Phase 3 session 1 so a
+    # scoring caller does not have to assume "today". For a live match today
+    # is usually right; for a replay of a 2026 match it is emphatically not,
+    # and the as-of features would be computed against a corpus that already
+    # contains the match being predicted. Optional so a provider that cannot
+    # supply it still conforms.
+    match_date: date | None = None
 
 
 @dataclass(frozen=True)

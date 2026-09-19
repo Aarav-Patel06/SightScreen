@@ -575,33 +575,42 @@ export type Database = {
       }
       predictions: {
         Row: {
+          ball_in_over: number | null
           created_at: string
           delivery_id: number | null
+          innings: number | null
           match_id: number
           match_phase: string
           model_version: string
+          over_num: number | null
           payload: Json
           prediction_id: number
           prediction_type: string
           subject_id: number | null
         }
         Insert: {
+          ball_in_over?: number | null
           created_at?: string
           delivery_id?: number | null
+          innings?: number | null
           match_id: number
           match_phase: string
           model_version: string
+          over_num?: number | null
           payload: Json
           prediction_id?: number
           prediction_type: string
           subject_id?: number | null
         }
         Update: {
+          ball_in_over?: number | null
           created_at?: string
           delivery_id?: number | null
+          innings?: number | null
           match_id?: number
           match_phase?: string
           model_version?: string
+          over_num?: number | null
           payload?: Json
           prediction_id?: number
           prediction_type?: string

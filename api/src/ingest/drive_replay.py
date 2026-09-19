@@ -57,6 +57,8 @@ from pathlib import Path
 import psycopg
 from dotenv import dotenv_values
 
+from eval.splits import second_innings_predicate
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 ENV_PATH = REPO_ROOT / "api" / ".env"
 
@@ -77,12 +79,9 @@ _BALLS_QUERY = """
     FROM match_states ms
     JOIN matches m ON m.match_id = ms.match_id
     JOIN deliveries d ON d.delivery_id = ms.delivery_id
-    WHERE ms.match_id = %(match_id)s
-      AND ms.innings = 2
-      AND ms.required_run_rate IS NOT NULL
-      AND NOT ms.has_reconciliation_anomaly
+    WHERE ms.match_id = %(match_id)s AND {predicate}
     ORDER BY ms.balls_bowled
-"""
+""".format(predicate=second_innings_predicate("ms"))
 
 # Candidates worth demoing: a completed chase that went to the wire. A curve
 # that sits at 0.95 for 120 balls demonstrates nothing.
@@ -93,8 +92,7 @@ _CANDIDATES_QUERY = """
                min(ms.runs_required) FILTER (WHERE ms.balls_remaining <= 12) AS runs_at_death,
                bool_or(ms.batting_team_won) AS chase_won
         FROM match_states ms
-        WHERE ms.innings = 2 AND ms.required_run_rate IS NOT NULL
-          AND NOT ms.has_reconciliation_anomaly
+        WHERE {predicate}
         GROUP BY ms.match_id
         HAVING count(*) >= 100
     )
@@ -105,7 +103,7 @@ _CANDIDATES_QUERY = """
     WHERE f.runs_at_death BETWEEN 1 AND 12 AND m.venue_id IS NOT NULL
     ORDER BY m.start_time DESC
     LIMIT 15
-"""
+""".format(predicate=second_innings_predicate("ms"))
 
 
 def _env() -> dict:
@@ -188,6 +186,10 @@ def mirror_match_row(local_url: str, supabase_url: str, match_id: int) -> None:
         conn.commit()
 
 
+class ModelVersionRefused(RuntimeError):
+    """The service refused because its model pin moved mid-run."""
+
+
 def post_ball(base_url: str, ball: dict) -> tuple[bool, str, int | None]:
     request = urllib.request.Request(
         f"{base_url}/predict/win-prob",
@@ -200,10 +202,19 @@ def post_ball(base_url: str, ball: dict) -> tuple[bool, str, int | None]:
             body = json.loads(response.read())
         return True, f"p={body['win_probability']:.3f}", body["prediction_id"]
     except urllib.error.HTTPError as exc:
-        # One bad ball must not end the replay - a 503 mid-run is exactly the
-        # degraded-Supabase path session 4b built, and the demo should show it
-        # recovering rather than stopping.
-        return False, f"HTTP {exc.code} {exc.read().decode()[:120]}", None
+        detail = exc.read().decode()[:200]
+        if exc.code == 409:
+            # A 409 is ActiveVersionGuard refusing because the container's
+            # pin no longer matches Supabase's active model. Treating that
+            # as "one bad ball" and carrying on is how a prediction log ends
+            # up split across two model versions - which the accuracy page
+            # groups by, so the result is a reliability diagram that is
+            # wrong and renders perfectly. Stop.
+            raise ModelVersionRefused(detail)
+        # Any other HTTP error IS one bad ball. A 503 mid-run is the
+        # degraded-Supabase path session 4b built, and the demo should show
+        # it recovering rather than stopping.
+        return False, f"HTTP {exc.code} {detail[:120]}", None
     except Exception as exc:  # noqa: BLE001 - network flake, keep going
         return False, f"{type(exc).__name__}: {exc}", None
 
@@ -226,7 +237,18 @@ def run(match_id: int, speed: str, base_url: str, timing_log: Path | None = None
     timings: list[dict] = []
     started = time.monotonic()
     for index, ball in enumerate(balls, start=1):
-        ok, detail, prediction_id = post_ball(base_url, ball)
+        try:
+            ok, detail, prediction_id = post_ball(base_url, ball)
+        except ModelVersionRefused as exc:
+            print("")
+            print(f"  ABORTED at ball {index} of {len(balls)}: the service refused with 409.")
+            print(f"  {exc}")
+            print(
+                f"  {sent} ball(s) were written before the refusal and the rest were "
+                f"not attempted. Restart the container onto the new pin, then re-run: "
+                f"the write is idempotent, so replaying costs nothing."
+            )
+            return 1
         if timing_log is not None:
             timings.append(
                 {

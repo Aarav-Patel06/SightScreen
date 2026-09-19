@@ -15,7 +15,7 @@ The parity gate itself lives in tests/db/test_asof_parity.py.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import psycopg
@@ -191,7 +191,7 @@ def test_fresh_reference_data_is_accepted(conn):
     # assertion depend on the calendar. Written with a literal on 2026-09-15
     # and passing only because the dates happened to coincide; it reported
     # age_days == -1 the next morning.
-    today = date.today()
+    today = datetime.now(timezone.utc).date()
     _seed_summaries(conn, newest=today - timedelta(days=1))
     report = assert_reference_fresh(conn, today=today)
     assert report["age_days"] == 0  # synced just now
@@ -208,7 +208,7 @@ def test_a_current_sync_of_an_older_corpus_is_accepted(conn):
     be - measured, not hypothesised: synced 14 hours earlier, rejected as
     "22 days old". Freshness now measures synced_at.
     """
-    today = date.today()
+    today = datetime.now(timezone.utc).date()
     _seed_summaries(conn, newest=today - timedelta(days=22))
     report = assert_reference_fresh(conn, today=today)
     assert report["age_days"] == 0

@@ -156,14 +156,39 @@ SRC = REPO_ROOT / "api" / "src"
 # and that module also holds REBUILD_SQL - an INSERT INTO match_states that
 # only rebuild() ever executes, against local Postgres. An import-graph scan
 # flags it and is wrong to; what matters is which functions execute.
-SERVING_AUTHORED = ("serving", "ingest/cricketdata.py")
+SERVING_AUTHORED = (
+    "serving",
+    "ingest/cricketdata.py",
+    # Phase 3 session 1. These two do not run in a container, but they DO
+    # write to Supabase - which is what this scan is actually about. The
+    # name says "serving" for historical reasons; the membership rule is
+    # "writes to the hosted database". Adding them closed a real gap: the
+    # scan globs `serving/**` plus one named file, so a new module anywhere
+    # else was invisible to it, and Phase 3 added exactly that. A gate whose
+    # coverage does not grow with the code stops being a gate.
+    "ingest/replay_log.py",
+    "models/resolve_outcomes.py",
+)
+
+# Every module above must still be findable. Without this, a rename quietly
+# empties the scanned set and every assertion below passes vacuously - the
+# failure mode Phase 2 session 5 found in CI, where a check reported
+# `skipped` for ten runs while the thing it guarded drifted.
+REQUIRED_SCANNED = (
+    "serving/app.py",
+    "serving/live_loop.py",
+    "ingest/cricketdata.py",
+    "ingest/replay_log.py",
+    "models/resolve_outcomes.py",
+)
 
 # Tables a serving process may write on Supabase. Adding one is a decision -
 # see the assertion messages.
 ALLOWED_SERVING_WRITES = {
     "matches",              # cricketdata.py's _ensure_match_row, for a live match
-    "predictions",          # serving/app.py, one row per prediction
+    "predictions",          # serving/app.py and the Phase 3 logger, one row per ball
     "unresolved_entities",  # entity_resolution queues rather than auto-creating
+    "prediction_outcomes",  # models/resolve_outcomes.py, one row per resolved prediction
 }
 
 # Functions that mutate corpus or derived tables. Serving code must not call
@@ -194,6 +219,18 @@ def _serving_sources() -> dict[str, str]:
         for path in paths:
             files[str(path.relative_to(SRC)).replace("\\", "/")] = path.read_text(encoding="utf-8")
     return files
+
+
+def test_every_module_the_scan_claims_to_cover_is_actually_read():
+    """The scan is only as good as the file list, and a list goes stale."""
+    scanned = set(_serving_sources())
+    missing = [name for name in REQUIRED_SCANNED if name not in scanned]
+    assert not missing, (
+        f"{missing} are named in REQUIRED_SCANNED but were not read by _serving_sources(). "
+        "Either the module moved and SERVING_AUTHORED needs updating, or it was deleted "
+        "and REQUIRED_SCANNED does. Until then every write-target assertion below is "
+        "weaker than it looks."
+    )
 
 
 def _real_tables(conn) -> set[str]:

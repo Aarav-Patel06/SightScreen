@@ -132,6 +132,14 @@ class ReplayClient:
                 for r in cur.fetchall()
             ]
 
+            cur.execute(
+                "SELECT innings, batting_team_id FROM deliveries "
+                "WHERE match_id = %s AND NOT is_super_over "
+                "GROUP BY innings, batting_team_id",
+                (match_id,),
+            )
+            self._batting_by_innings = {innings: team for innings, team in cur.fetchall()}
+
         if speed == "instant":
             self._seconds_per_ball = 0.0
         elif speed == "real_time":
@@ -175,7 +183,26 @@ class ReplayClient:
             format=self.format, team_a=self.team_a, team_b=self.team_b,
             toss_winner=self.toss_winner, toss_decision=self.toss_decision,
             winner=self.winner if status == "complete" else None,
+            match_date=self.start_time.date(),
         )
+
+    def current_teams(self, match_id: int) -> tuple[int | None, int | None]:
+        """(batting_team_id, bowling_team_id) for the innings in progress.
+
+        The corpus knows this outright, which is why replay can verify the
+        worker's scoring path even though the live provider often cannot
+        supply it (see cricketdata.py's implementation).
+        """
+        assert match_id == self.match_id
+        visible = self._visible_count()
+        if visible == 0:
+            return None, None
+        innings = self._deliveries[visible - 1].innings
+        batting = self._batting_by_innings.get(innings)
+        if batting is None:
+            return None, None
+        bowling = self.team_b if batting == self.team_a else self.team_a
+        return batting, bowling
 
     def get_deliveries_since(self, match_id: int, last_ball: int) -> list[Delivery]:
         assert match_id == self.match_id

@@ -34,6 +34,7 @@ Enforced unconditionally, in this one place, every time:
 from __future__ import annotations
 
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -47,6 +48,46 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 ENV_PATH = REPO_ROOT / "api" / ".env"
 
 Split = Literal["train", "val", "test"]
+
+# The section 9.1 exclusion predicate, in one place (Phase 3 session 1).
+#
+# These four clauses were a local variable inside get_second_innings_split
+# until Phase 3 needed them a fifth time. By then they had been hand-copied
+# into run_calibration_selection.py and tests/deploy/test_smoke.py verbatim,
+# and into drive_replay.py as a three-clause variant that silently dropped
+# `batting_team_won IS NOT NULL` - which is how a tie or no-result match
+# could be chosen for a replay and then produce predictions that can never
+# be resolved. Outcome resolution needs the identical predicate the training
+# split uses, and a sixth copy would be the one that diverges.
+#
+# Exported as a fragment rather than as a whole query, following
+# features/venue_stats.py's precedent: "if someone ever changes `innings = 2`
+# ... the direct query, the rebuild and the oracle all change together
+# instead of drifting apart." The boundary DATES stay private - a shared
+# predicate is not an invitation to run your own split.
+# Templates rather than finished strings so an alias can be applied without
+# parsing SQL back apart. A clause added here is aliased correctly for free;
+# the first version of this special-cased the NOT and would have mis-aliased
+# the next negated clause anyone added.
+_CLAUSE_TEMPLATES = (
+    "{p}innings = 2",
+    "{p}batting_team_won IS NOT NULL",
+    "NOT {p}has_reconciliation_anomaly",
+    "{p}required_run_rate IS NOT NULL",
+)
+
+SECOND_INNINGS_CLAUSES = tuple(t.format(p="") for t in _CLAUSE_TEMPLATES)
+
+
+def second_innings_predicate(alias: str = "") -> str:
+    """The section 9.1 clauses as one AND-joined SQL fragment.
+
+    `alias` qualifies the column names for callers that join match_states to
+    something else (`second_innings_predicate("ms")` -> `ms.innings = 2 AND
+    ...`). Callers selecting from match_states alone pass nothing.
+    """
+    prefix = f"{alias}." if alias else ""
+    return " AND ".join(t.format(p=prefix) for t in _CLAUSE_TEMPLATES)
 
 # Train <=2023-12-31, val all of 2024, test >=2025-01-01 (section 9.1).
 _TRAIN_END = date(2023, 12, 31)
@@ -107,12 +148,7 @@ def get_second_innings_split(conn, split: Split) -> SecondInningsDataset:
     there is no natural intermediate for another module to grab and filter
     differently itself."""
     lower, upper = _date_bounds(split)
-    clauses = [
-        "innings = 2",
-        "batting_team_won IS NOT NULL",
-        "NOT has_reconciliation_anomaly",
-        "required_run_rate IS NOT NULL",
-    ]
+    clauses = list(SECOND_INNINGS_CLAUSES)
     params: list[date] = []
     if lower is not None:
         clauses.append("match_date > %s")
@@ -173,6 +209,42 @@ def get_second_innings_split(conn, split: Split) -> SecondInningsDataset:
         phase=np.array(cols[8], dtype=object),
         label=np.array(cols[9], dtype=np.int8),
     )
+
+
+BallKey = tuple[int, int, int, int]  # (match_id, innings, over_num, ball_in_over)
+
+
+def second_innings_labels(conn, match_ids: Sequence[int]) -> dict[BallKey, int]:
+    """Outcome labels for the balls of `match_ids` that section 9.1 includes.
+
+    Phase 3 session 1. Outcome resolution needs per-ball labels for a handful
+    of matches, and `get_second_innings_split` only offers whole-split numpy
+    arrays - so this is the by-match accessor, sharing the one predicate
+    rather than growing a second definition of "includable".
+
+    Keyed on (match_id, innings, over_num, ball_in_over): the natural ball
+    key, which is also what `predictions` carries. A logged prediction whose
+    key is ABSENT from this mapping is not resolvable - it belongs to a tie,
+    a no-result, a flagged match, or a row with no required_run_rate - and
+    the caller must leave it unresolved rather than invent a label. Ties and
+    no-results arrive here as absences automatically, because
+    `matches.winner` is NULL for both and match_states.batting_team_won
+    inherits that through three-valued logic (features/match_state.py:133).
+    Nothing in this module re-derives the label from `matches.winner`; that
+    would be a second implementation of the one place it is computed.
+    """
+    if not match_ids:
+        return {}
+    query = f"""
+        SELECT ms.match_id, ms.innings, d.over_num, d.ball_in_over, ms.batting_team_won
+        FROM match_states ms
+        JOIN deliveries d ON d.delivery_id = ms.delivery_id
+        WHERE ms.match_id = ANY(%s) AND {second_innings_predicate("ms")}
+    """
+    with conn.cursor() as cur:
+        cur.execute(query, (list(match_ids),))
+        rows = cur.fetchall()
+    return {(m, i, o, b): int(won) for m, i, o, b, won in rows}
 
 
 def _env() -> dict[str, str]:

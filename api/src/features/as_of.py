@@ -25,7 +25,7 @@ edge for a feature computation.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 
 from features.asof_summary import DERIVED_TABLES, content_hash
 from features.elo import elo_as_of
@@ -121,7 +121,16 @@ def assert_reference_fresh(
        refreshes. The corpus age is still reported, because it is worth
        seeing; it just no longer refuses.
     """
-    today = today or date.today()
+    # UTC, not date.today(). `synced_at` is a TIMESTAMPTZ written by the
+    # sync job and compared here as a date; `date.today()` is the LOCAL
+    # date, so anywhere west of UTC the two disagree for part of every
+    # evening. Found 2026-09-19 at 02:08 UTC / 22:08 EDT, when a sync
+    # performed minutes earlier reported `age_days: -1` - a freshness check
+    # claiming the data arrives tomorrow. Invisible in CI and on Railway
+    # because both run in UTC, which is exactly why it survived three
+    # phases: the only machine that can see it is a developer laptop, in
+    # the evening.
+    today = today or datetime.now(timezone.utc).date()
     report: dict = {
         "hashes": {},
         "newest_breakpoint": None,
@@ -204,7 +213,11 @@ def _oldest_sync(conn) -> date | None:
             ([table.name for table in DERIVED_TABLES],),
         )
         value = cur.fetchone()[0]
-    return value.date() if value is not None else None
+    # .astimezone(UTC) before .date(): psycopg renders a TIMESTAMPTZ in the
+    # SESSION's timezone, so without this the answer depends on a Postgres
+    # setting rather than on the data. Same class of bug as session 3's
+    # extra_float_digits - a value that changes with a session variable.
+    return value.astimezone(timezone.utc).date() if value is not None else None
 
 
 __all__ = [
