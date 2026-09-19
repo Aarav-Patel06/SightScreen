@@ -82,6 +82,67 @@ _MATCH_REASONS_QUERY = """
 """
 
 
+class MatchIdentityMismatch(RuntimeError):
+    """A Supabase match_id means something different in the local corpus."""
+
+
+_IDENTITY_QUERY = """
+    SELECT match_id, competition, format, start_time
+    FROM matches WHERE match_id = ANY(%s)
+"""
+
+
+def assert_same_matches(local_conn, supabase_conn, match_ids: list[int]) -> None:
+    """Refuse to resolve if an id does not mean the same match on both sides.
+
+    `matches.match_id` carries two id spaces. The replay mirror copies corpus
+    rows keeping their LOCAL ids; the live worker inserts without an id, so
+    Supabase's SERIAL assigns one from 1 upwards. The result, found by
+    looking rather than by reasoning: Supabase match 3 is a CPL 2026 match
+    while LOCAL match 3 is a 2017 Pakistan-Australia ODI, complete, with a
+    winner. Resolving the former against the latter would attach a real
+    outcome to the wrong predictions and nothing downstream could tell -
+    every row would look perfectly well formed.
+
+    Migration 20260919000001 moved the sequence above the corpus so no NEW
+    live match can collide. This guard covers the rows that already exist
+    below that line, and any future way of reintroducing the problem.
+
+    Compared on competition, format and start date rather than a single
+    field: a live match and a corpus match agreeing on all three is not a
+    coincidence worth worrying about, and start_time alone is not enough
+    when two matches share a date.
+    """
+    with local_conn.cursor() as cur:
+        cur.execute(_IDENTITY_QUERY, (match_ids,))
+        local = {row[0]: (row[1], row[2], row[3].date()) for row in cur.fetchall()}
+    with supabase_conn.cursor() as cur:
+        cur.execute(_IDENTITY_QUERY, (match_ids,))
+        remote = {row[0]: (row[1], row[2], row[3].date()) for row in cur.fetchall()}
+
+    mismatched = []
+    for match_id in match_ids:
+        here, there = local.get(match_id), remote.get(match_id)
+        if here is None or there is None or here != there:
+            mismatched.append((match_id, there, here))
+    if mismatched:
+        detail = [
+            f'    match_id {mid}: Supabase says {sup!r}, corpus says {loc!r}'
+            for mid, sup, loc in mismatched[:5]
+        ]
+        raise MatchIdentityMismatch(
+            f'{len(mismatched)} match id(s) do not refer to the same match in both '
+            f'databases, so the outcome read from the corpus would be attached to '
+            f'predictions about a different game:'
+            + chr(10)
+            + chr(10).join(detail)
+            + chr(10)
+            + '  A live match takes its id from Supabase and a replayed one keeps '
+            + 'the corpus id. Resolving a live match needs a real crosswalk '
+            + '(date, teams, venue), not a shared integer.'
+        )
+
+
 def _env() -> dict:
     env = dotenv_values(ENV_PATH)
     for key in ("LOCAL_DATABASE_URL", "SUPABASE_SESSION_POOLER_URL"):
@@ -126,6 +187,8 @@ def resolve(match_ids: list[int]) -> int:
         psycopg.connect(env["LOCAL_DATABASE_URL"], connect_timeout=30) as local_conn,
         psycopg.connect(env["SUPABASE_SESSION_POOLER_URL"], connect_timeout=30) as supabase_conn,
     ):
+        # Before anything reads a label: prove the ids mean the same matches.
+        assert_same_matches(local_conn, supabase_conn, match_ids)
         labels = second_innings_labels(local_conn, match_ids)
         reasons = _match_reasons(local_conn, match_ids)
 

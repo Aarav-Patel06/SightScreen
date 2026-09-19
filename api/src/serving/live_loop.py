@@ -221,13 +221,16 @@ class LivePredictor:
             "target": row.target,
             "phase": row.phase,
         }
+        # source='live': predicted before the result existed, which is the
+        # only population whose accuracy means anything. Everything else
+        # defaults to 'backfill' (migration 20260919000001).
         with self._conn.cursor() as cur:
             cur.execute(
                 """
                 INSERT INTO predictions
                     (match_id, delivery_id, model_version, prediction_type, payload,
-                     match_phase, created_at, innings, over_num, ball_in_over)
-                VALUES (%s, NULL, %s, 'win_prob', %s, 'innings2', now(), %s, %s, %s)
+                     match_phase, created_at, innings, over_num, ball_in_over, source)
+                VALUES (%s, NULL, %s, 'win_prob', %s, 'innings2', now(), %s, %s, %s, 'live')
                 ON CONFLICT (match_id, model_version, prediction_type, innings, over_num, ball_in_over)
                     WHERE innings IS NOT NULL
                     DO NOTHING

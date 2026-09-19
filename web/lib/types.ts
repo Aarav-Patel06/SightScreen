@@ -39,6 +39,35 @@ export type Database = {
   }
   public: {
     Tables: {
+      calibration_runs: {
+        Row: {
+          computed_at: string
+          model_version: string
+          report: Json
+          run_id: number
+        }
+        Insert: {
+          computed_at?: string
+          model_version: string
+          report: Json
+          run_id?: number
+        }
+        Update: {
+          computed_at?: string
+          model_version?: string
+          report?: Json
+          run_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calibration_runs_model_version_fkey"
+            columns: ["model_version"]
+            isOneToOne: false
+            referencedRelation: "model_versions"
+            referencedColumns: ["model_version"]
+          },
+        ]
+      }
       deliveries: {
         Row: {
           ball_in_over: number
@@ -586,6 +615,7 @@ export type Database = {
           payload: Json
           prediction_id: number
           prediction_type: string
+          source: string
           subject_id: number | null
         }
         Insert: {
@@ -600,6 +630,7 @@ export type Database = {
           payload: Json
           prediction_id?: number
           prediction_type: string
+          source?: string
           subject_id?: number | null
         }
         Update: {
@@ -614,6 +645,7 @@ export type Database = {
           payload?: Json
           prediction_id?: number
           prediction_type?: string
+          source?: string
           subject_id?: number | null
         }
         Relationships: [

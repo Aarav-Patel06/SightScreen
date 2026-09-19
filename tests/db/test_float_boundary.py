@@ -168,6 +168,11 @@ SERVING_AUTHORED = (
     # coverage does not grow with the code stops being a gate.
     "ingest/replay_log.py",
     "models/resolve_outcomes.py",
+    # Phase 3 session 2: the daily calibration monitor. Runs in a GitHub
+    # Action rather than a container, and writes one calibration_runs row
+    # per run - which makes it a Supabase writer, which is what this scan is
+    # about regardless of where the process lives.
+    "eval/calibration_monitor.py",
 )
 
 # Every module above must still be findable. Without this, a rename quietly
@@ -180,6 +185,7 @@ REQUIRED_SCANNED = (
     "ingest/cricketdata.py",
     "ingest/replay_log.py",
     "models/resolve_outcomes.py",
+    "eval/calibration_monitor.py",
 )
 
 # Tables a serving process may write on Supabase. Adding one is a decision -
@@ -189,6 +195,7 @@ ALLOWED_SERVING_WRITES = {
     "predictions",          # serving/app.py and the Phase 3 logger, one row per ball
     "unresolved_entities",  # entity_resolution queues rather than auto-creating
     "prediction_outcomes",  # models/resolve_outcomes.py, one row per resolved prediction
+    "calibration_runs",     # eval/calibration_monitor.py, one row per daily run
 }
 
 # Functions that mutate corpus or derived tables. Serving code must not call

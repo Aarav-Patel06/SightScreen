@@ -70,3 +70,20 @@ a { color: var(--bat); }
   font-size: 12px;
 }
 .strip .cell.absent { color: var(--muted); border-style: dashed; }
+
+/* The accuracy page's tables (SPEC.md 8.5). A decile row carries six
+   numbers and reads better aligned than as prose. */
+.grid { width: 100%; border-collapse: collapse; font-size: 13px; margin: 8px 0; }
+.grid th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--muted);
+  font-size: 12px;
+  border-bottom: 1px solid var(--line);
+  padding: 4px 6px 4px 0;
+}
+.grid td { padding: 3px 6px 3px 0; border-bottom: 1px solid #1d2125; }
+/* 12.2: grey out small samples rather than showing a misleading precise
+   number. Thin is judged on MATCHES, not rows - see lib/accuracy.ts. */
+.grid tr.thin td { color: var(--muted); }
+h3 { font-size: 13px; margin: 14px 0 6px; font-weight: 600; }

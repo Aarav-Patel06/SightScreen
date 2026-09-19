@@ -249,3 +249,29 @@ def reliability_match_clustered(
             "contains_predicted": bool(lo <= mean_predicted <= hi),
         })
     return rows
+
+
+def calibration_report(y_true, y_prob, match_id, n_bins: int = 10, n_resamples: int = 2000) -> dict:
+    """SPEC.md section 8.1 steps 2-4 and 9, in one call.
+
+    Promoted out of eval/run_calibration_selection.py in Phase 3 session 2
+    rather than copied: the daily monitor and the offline selection run need
+    the identical notion of "how many deciles failed", and this repo has a
+    documented history of hand-copied fragments drifting (see eval/splits.py
+    on the section 9.1 predicate, which had reached five copies).
+
+    `n_deciles_failed` counts only POPULATED bins. `contains_predicted` is
+    tri-state - None on an empty bin - so summing it directly would count
+    every empty decile as a pass.
+    """
+    reliability = reliability_match_clustered(
+        y_true, y_prob, match_id, n_bins=n_bins, n_resamples=n_resamples
+    )
+    populated = [row for row in reliability if row["n"] > 0]
+    return {
+        "brier": brier_score(y_true, y_prob),
+        "log_loss": log_loss(y_true, y_prob),
+        "n_deciles_populated": len(populated),
+        "n_deciles_failed": sum(1 for row in populated if not row["contains_predicted"]),
+        "reliability": reliability,
+    }

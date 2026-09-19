@@ -1,0 +1,50 @@
+name: Calibration monitor
+
+# SPEC.md §2.3's schedule: daily 03:00 UTC. §8.1's steps 1-4 always run and
+# always have value; steps 5-8 usually decline to act. A green run that
+# changes nothing is this job succeeding, and its log says so in words.
+#
+# workflow_dispatch as well as the schedule, deliberately. A scheduled job
+# whose first real execution is unattended at 3am is a job nobody has
+# actually tested - Phase 2 spent four sessions learning that things which
+# look correct are frequently wrong about reality.
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install api package
+        run: pip install -e "./api[dev]"
+      - name: Run the calibration monitor
+        working-directory: api/src
+        env:
+          # The prediction log lives in Supabase. This is the only credential
+          # the job needs: it reads `predictions` joined to
+          # `prediction_outcomes` and writes one `calibration_runs` row, and
+          # it never touches the local corpus - which does not exist on a
+          # runner and never will (§2.1).
+          #
+          # Scoped to this step rather than the job, matching ci.yml's
+          # treatment of SUPABASE_ACCESS_TOKEN.
+          SUPABASE_SESSION_POOLER_URL: ${{ secrets.SUPABASE_SESSION_POOLER_URL }}
+          # Optional. Without it the §9.2 baseline comparison reports itself
+          # unavailable and the rest of the report is still produced - the
+          # baselines are fitted objects that need the training corpus, so
+          # they are published as a pinned artifact rather than refit here.
+          BASELINES_ARTIFACT_URL: ${{ secrets.BASELINES_ARTIFACT_URL }}
+        run: python -u -m eval.calibration_monitor --out "$RUNNER_TEMP/calibration.json"
+      - name: Keep the report as an artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: calibration-report
+          path: ${{ runner.temp }}/calibration.json
+          if-no-files-found: warn

@@ -109,6 +109,7 @@ export default async function ModelPage() {
       </div>
 
       <p className="tiny muted">
+        <Link href="/accuracy">See it measured on logged predictions</Link> ·{" "}
         <Link href="/">Back</Link> · analytics, not betting advice.
       </p>
     </main>

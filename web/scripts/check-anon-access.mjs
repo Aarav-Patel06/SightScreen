@@ -29,8 +29,21 @@ const URL_VAR = "NEXT_PUBLIC_SUPABASE_URL";
 const ANON_VAR = "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY";
 const SECRET_VAR = "SUPABASE_SECRET_KEY";
 
-// Tables 20260826180008 grants anon SELECT on. A browser reads these directly.
-const READABLE = ["predictions", "matches", "teams", "venues", "players"];
+// Tables a browser reads directly. The first five were opened by
+// 20260826180008; `prediction_outcomes` and `calibration_runs` by
+// 20260919000001, for the public accuracy page - which reads a Brier per
+// prediction and the daily monitor's report, both of which that page exists
+// to show. Each was opened with the same three statements: GRANT SELECT,
+// ENABLE ROW LEVEL SECURITY, and a FOR SELECT policy.
+const READABLE = [
+  "predictions",
+  "matches",
+  "teams",
+  "venues",
+  "players",
+  "prediction_outcomes",
+  "calibration_runs",
+];
 
 // The negative control, and the load-bearing check in this script. If someone
 // ever replaces `USING (true)` with a blanket

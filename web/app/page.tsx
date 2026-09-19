@@ -54,7 +54,8 @@ export default async function Home() {
       </div>
 
       <p className="tiny muted">
-        <Link href="/about/model">How good is this model?</Link> · analytics, not
+        <Link href="/accuracy">How accurate is it?</Link> ·{" "}
+        <Link href="/about/model">What it can&apos;t do</Link> · analytics, not
         betting advice.
       </p>
     </main>
