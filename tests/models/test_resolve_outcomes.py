@@ -36,12 +36,32 @@ NORMAL_MATCH = 9337
 
 @pytest.fixture(scope="module")
 def corpus():
+    """The real corpus, or a skip.
+
+    These tests name real match ids, which is the point: they prove the
+    corpus genuinely contains a tie, a no-result and a flagged match with
+    innings-2 rows, which a fixture I wrote could only assume. CI runs
+    against a schema-only database where those ids do not exist, so there
+    they skip - and test_resolve_outcomes_synthetic.py covers the same rules
+    on seeded rows so the logic is still checked on every push.
+    """
     url = os.environ.get("LOCAL_DATABASE_URL") or dotenv_values(ENV_PATH).get(
         "LOCAL_DATABASE_URL"
     )
     if not url:
         pytest.skip("LOCAL_DATABASE_URL not set")
     with psycopg.connect(url, connect_timeout=20) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT count(*) FROM matches WHERE match_id = ANY(%s)",
+                ([TIED_MATCH, NO_RESULT_MATCH, ANOMALY_MATCH, NORMAL_MATCH],),
+            )
+            if cur.fetchone()[0] != 4:
+                pytest.skip(
+                    "the reference matches are not loaded - this database has the schema "
+                    "but not the corpus (CI). The same rules run on seeded rows in "
+                    "tests/models/test_resolve_outcomes_synthetic.py."
+                )
         yield conn
 
 

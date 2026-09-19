@@ -56,7 +56,7 @@ figure is 477 B. The estimate was inflated by fixed index overhead that a
 tiny table cannot amortise — worth remembering the next time a per-row cost
 is extrapolated from a few hundred rows.
 
-## The six things running it found
+## The seven things running it found
 
 Not one of these came from reading the code.
 
@@ -165,6 +165,20 @@ on both sides — UTC default, and `.astimezone(timezone.utc)` so the answer
 does not depend on a Postgres session setting. Nothing was wrongly refused,
 since a negative age is below every threshold, but `/health` would have
 printed a negative number.
+
+### 7. CI caught tests that could only pass on my machine
+
+The suite was green locally and red in CI. The new exclusion tests name real
+match ids — a real tie, a real no-result, a real flagged match — deliberately,
+because a fixture I wrote could only encode my assumption about those shapes.
+CI's Postgres has the schema and no corpus, so all five failed there.
+
+Skipping them in CI would have satisfied the build and left the rule checked
+nowhere that runs on every push — a check that exists but does not run, which
+is standing rule 8. So the rules are now covered twice: seeded rows in
+`test_resolve_outcomes_synthetic.py`, which run everywhere, and the
+corpus-backed versions, which skip with an explicit reason when the data is
+absent. One proves the logic on every push; the other confronts real data.
 
 ## The live path, proven the same day
 
