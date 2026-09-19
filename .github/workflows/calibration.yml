@@ -35,10 +35,17 @@ jobs:
           # Scoped to this step rather than the job, matching ci.yml's
           # treatment of SUPABASE_ACCESS_TOKEN.
           SUPABASE_SESSION_POOLER_URL: ${{ secrets.SUPABASE_SESSION_POOLER_URL }}
-          # Optional. Without it the §9.2 baseline comparison reports itself
-          # unavailable and the rest of the report is still produced - the
-          # baselines are fitted objects that need the training corpus, so
-          # they are published as a pinned artifact rather than refit here.
+          # An OVERRIDE, not the source. The published baselines URL is
+          # committed in api/data/baselines_published.json, so the checkout
+          # already has it and this secret does not need to exist - when it
+          # is unset GitHub substitutes an empty string, which env_value
+          # treats as absent, and the committed record is used. Set it only
+          # to point a run at different bytes without a commit.
+          #
+          # The baselines are fitted objects (a scaler plus coefficients, and
+          # three lookup tables) trained on the corpus, which a runner does
+          # not have - hence an artifact rather than a refit here. The digest
+          # is verified on download before anything is scored.
           BASELINES_ARTIFACT_URL: ${{ secrets.BASELINES_ARTIFACT_URL }}
         run: python -u -m eval.calibration_monitor --out "$RUNNER_TEMP/calibration.json"
       - name: Keep the report as an artifact

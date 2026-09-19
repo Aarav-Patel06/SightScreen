@@ -92,7 +92,48 @@ CI excludes zero**. `run_calibration_selection.py` selects by plain
 `min(brier)`; that would promote a calibrator ahead by 0.0001, which on this
 project's own Phase 1 evidence is the likely case.
 
-## Found by doing, session 2
+## Found by running it — every phase
+
+Carried forward from `docs/phase2-closeout.md` and extended. Across four
+phases, **not one defect that mattered came from review, and not one came
+from a test written before the code.** The pattern is stable enough to plan
+around: write the thing, point it at the real dependency, and look at what it
+actually does.
+
+| Phase / session | Defect | Found by |
+|---|---|---|
+| 0 | `sslmode` breaking CI and local dev, twice | Running CI |
+| 0 | A connection left in a transaction hanging the suite | Running the suite |
+| 1 s1 | 992 innings-2 rows satisfy §9.1's documented predicate but have a NULL `required_run_rate` | Querying the real corpus, not reading the spec |
+| 2 s1 | Postgres `ROUND(numeric)` rounds half away from zero, Python's half to even; a 30-ball chase hit exactly 22.5 | Incremental-vs-bulk parity on the real corpus |
+| 2 s2 | 0.00% partnership error at every interval — an artifact of uniform ball-gap timing, not a result | Running the measurement and disbelieving the answer |
+| 2 s3 | `extra_float_digits` differs between local Postgres and Supabase's pooler; `float4::numeric` caps at 6 significant digits | The sync's own hash verification, on its first run |
+| 2 s4a | pydantic's `ValidationError` repr embeds the entire environment, secrets included | Running the failure path in a container |
+| 2 s4b | 11 defects, including a `/health` that reported green throughout an outage | Three real Supabase pauses |
+| 2 s5 | 13 tables world-readable to `anon`; `anon` held write privileges on all five policied tables | The first time anything authenticated as `anon` |
+| 2 s5 | `web/lib/types.ts` four migrations stale, behind a CI check that had been `skipped` for ten runs | Reading the Actions history instead of assuming CI was green |
+| 2 s5 | Realtime drops `postgres_changes` messages silently | The anon gate failing twice, then being measured rather than re-run |
+| 3 s1 | **The ball key collided with itself.** A wide and the next delivery shared `(over, ball_in_over)`, so the live path silently dropped the ball after every extra | A live match arriving mid-session and producing fewer predictions than deliveries |
+| 3 s1 | `POST /predict/win-prob` retried by the transport: 125 posts, 128 rows | Counting what landed instead of trusting the loop's tally |
+| 3 s1 | Match 13143's 121 logged rows are 13 distinct payloads — the smoke test run ten times | Looking at the log before computing anything from it |
+| 3 s1 | Reference freshness compared a UTC timestamp to a LOCAL date | Running the suite at 22:08 EDT |
+| 3 s1 | Corpus-dependent tests could only pass on my machine | CI going red while the suite was green locally |
+| 3 s2 | **Two id spaces shared one column.** Supabase `match_id` 3 is a CPL 2026 match; LOCAL `match_id` 3 is a 2017 Pakistan-Australia ODI | Querying both databases for the same id while planning live resolution |
+| 3 s2 | The live population has **zero** resolvable predictions, not a small number | Joining live matches to the corpus on (date, teams, venue) and getting `[]` three times |
+| 3 s2 | Actions could not reach the serving database at all | Grepping every `secrets.*` reference before writing the workflow |
+| 3 s2 | The five "biggest misses" were five balls of one over — one miss shown five times | Looking at the rendered page instead of the query |
+| 3 s2 | The Actions step summary would have crashed a *successful* run after it wrote its row | Running it with the env var set instead of assuming |
+| 3 s2 | The CI watcher reported failure on a green build — 60 requests/hour unauthenticated, polled every 20s, no error handling | Re-running it and checking the rate limit rather than the build |
+
+The last row is worth its place. A monitoring tool that reports failure on
+success is the same defect as `/health` returning `ok` through an outage,
+pointed the other way — and it was structurally guaranteed, not unlucky: the
+budget runs out in about fifteen minutes and the `api` job takes eleven plus
+queue time, so it broke on precisely the runs worth watching. Deleted rather
+than fixed; a single query reports the actual run state and cannot lie about
+its own exit code.
+
+### Session 2's four, in detail
 
 | Finding | Found by |
 |---|---|

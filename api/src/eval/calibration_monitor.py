@@ -48,6 +48,7 @@ import numpy as np
 import psycopg
 
 from db.env import env_value
+from serving.db import OTHER, classify_connection_error, describe
 from eval.metrics import brier_match_clustered_ci, calibration_report, paired_brier_match_clustered_ci
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -482,6 +483,53 @@ def store(conn, model_version: str, report: dict) -> int:
     return run_id
 
 
+def write_step_summary(report: dict) -> None:
+    """Put the outcome on the Actions run page, not only in the log.
+
+    The distinction that matters for a job designed to decline: a run that
+    SKIPPED the refit because the window was too thin and a run that
+    EVALUATED every candidate and rejected them are both green ticks in the
+    Actions UI. They are very different facts - the first means "not enough
+    data yet", the second means "we checked, and doing nothing still wins" -
+    and someone glancing at a list of green runs should not have to open the
+    log to tell which happened.
+
+    GitHub renders $GITHUB_STEP_SUMMARY on the run page itself. No-op
+    anywhere else, so a laptop run is unaffected.
+    """
+    path = env_value("GITHUB_STEP_SUMMARY")
+    if not path:
+        return
+
+    lines = ["## Calibration monitor", ""]
+    lines.append(f"Model `{report['model_version']}`")
+    lines.append("")
+    for source, pop in report["populations"].items():
+        if pop.get("n"):
+            lines.append(
+                f"**{source}** - {pop['n']:,} predictions over {pop['n_matches']} matches, "
+                f"Brier {pop['brier']:.4f} "
+                f"[{pop['brier_ci_low']:.4f}, {pop['brier_ci_high']:.4f}], "
+                f"{pop['n_deciles_failed']}/{pop['n_deciles_populated']} deciles off"
+            )
+            refit = pop.get("refit", {})
+            if refit.get("ran"):
+                verdict = (
+                    f"evaluated every candidate and kept identity"
+                    if refit.get("winner") == "identity"
+                    else f"found a promotion candidate: {refit.get('winner')}"
+                )
+                lines.append(f"  - refit RAN and {verdict}")
+            else:
+                lines.append("  - refit **SKIPPED** (not enough data) - " + refit.get("reason", ""))
+        else:
+            lines.append(
+                f"**{source}** - {pop['unresolved']['predictions']} logged, none scored yet"
+            )
+        lines.append("")
+    Path(path).write_text(chr(10).join(lines), encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="calibration_monitor", description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="compute and print, write nothing")
@@ -495,7 +543,31 @@ def main(argv: list[str] | None = None) -> None:
             "log from Supabase; in GitHub Actions it must come from a repository secret."
         )
 
-    with psycopg.connect(url, connect_timeout=30) as conn:
+    # Connect inside a controlled failure path (standing rule 5).
+    #
+    # GitHub retains Actions logs, and on a public repo anyone can read them.
+    # An unhandled psycopg failure prints its whole exception repr there -
+    # host, resolved IPs, username, and whatever a future version of the
+    # driver decides to include. Today psycopg redacts the password, which
+    # was verified rather than assumed by connecting with a canary value and
+    # grepping the output; that is a property of this version of a library,
+    # not a guarantee. Session 4a learned the same lesson from pydantic,
+    # whose ValidationError repr embedded the entire environment.
+    #
+    # So the message below is one this module composes, and the classifier
+    # is the same one the serving path uses - PAUSED is reported as PAUSED
+    # rather than as the auth failure it disguises itself as.
+    try:
+        conn = psycopg.connect(url, connect_timeout=30)
+    except Exception as exc:  # noqa: BLE001 - reported deliberately, never re-raised
+        kind = classify_connection_error(exc) or OTHER
+        sys.exit(
+            f"could not reach the prediction log: {describe(kind)} "
+            f"[{type(exc).__name__}]. The connection string is not echoed here on "
+            f"purpose - this output is retained and public."
+        )
+
+    with conn:
         model_version = active_model(conn)
         print(f"calibration monitor - model {model_version}")
         print()
@@ -512,6 +584,7 @@ def main(argv: list[str] | None = None) -> None:
         args.out.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
         print(f"report written to {args.out}")
 
+    write_step_summary(report)
     # A run that changes nothing is a successful run (section 8.1).
     print(f"done in {report['elapsed_seconds']}s")
 

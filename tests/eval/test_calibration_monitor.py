@@ -125,3 +125,83 @@ def test_tiny_windows_do_not_crash(n_matches):
     decision = refit_decision(rows, log=lambda _m: None)
     assert decision["ran"] is False
     assert decision["winner"] == "identity"
+
+
+def _summary(tmp_path, report: dict) -> str:
+    """Render the Actions step summary for a report."""
+    import os
+
+    from eval.calibration_monitor import write_step_summary
+
+    target = tmp_path / "summary.md"
+    os.environ["GITHUB_STEP_SUMMARY"] = str(target)
+    try:
+        write_step_summary(report)
+    finally:
+        os.environ.pop("GITHUB_STEP_SUMMARY", None)
+    return target.read_text(encoding="utf-8")
+
+
+def _report(refit: dict) -> dict:
+    return {
+        "model_version": "winprob2-20260910",
+        "populations": {
+            "backfill": {
+                "n": 12081,
+                "n_matches": 100,
+                "brier": 0.102,
+                "brier_ci_low": 0.0745,
+                "brier_ci_high": 0.1311,
+                "n_deciles_failed": 4,
+                "n_deciles_populated": 10,
+                "unresolved": {"predictions": 0, "matches": 0},
+                "refit": refit,
+            }
+        },
+    }
+
+
+def test_the_summary_distinguishes_skipped_from_evaluated(tmp_path):
+    """Two green runs that mean different things must not look identical.
+
+    A run that skipped the refit because the window was thin and a run that
+    evaluated every candidate and rejected them are both green ticks in the
+    Actions list. The first says "not enough data"; the second says "we
+    checked, and doing nothing still wins". Telling them apart should not
+    require opening the log.
+    """
+    skipped = _summary(tmp_path, _report({"ran": False, "winner": "identity", "reason": "100 matches, floor is 500"}))
+    assert "SKIPPED" in skipped
+    assert "not enough data" in skipped
+
+    evaluated = _summary(
+        tmp_path, _report({"ran": True, "winner": "identity", "reason": "no candidate beat identity"})
+    )
+    assert "SKIPPED" not in evaluated
+    assert "refit RAN" in evaluated
+    assert "kept identity" in evaluated
+
+
+def test_the_summary_names_a_promotion_candidate(tmp_path):
+    promoted = _summary(
+        tmp_path, _report({"ran": True, "winner": "phase_isotonic", "reason": "beat identity"})
+    )
+    assert "promotion candidate: phase_isotonic" in promoted
+
+
+def test_the_summary_reports_an_unscored_population_as_a_count(tmp_path):
+    report = _report({"ran": False, "winner": "identity", "reason": "thin"})
+    report["populations"]["live"] = {
+        "n": 0,
+        "n_matches": 0,
+        "unresolved": {"predictions": 25, "matches": 1},
+    }
+    rendered = _summary(tmp_path, report)
+    assert "25 logged, none scored yet" in rendered
+
+
+def test_the_summary_is_a_no_op_off_actions(tmp_path):
+    """A laptop run must not need an env var to succeed."""
+    from eval.calibration_monitor import write_step_summary
+
+    write_step_summary(_report({"ran": False, "winner": "identity", "reason": "thin"}))
