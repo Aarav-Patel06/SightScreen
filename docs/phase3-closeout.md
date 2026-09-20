@@ -163,6 +163,29 @@ row counts, files on disk — rather than its output. `python -u` and a
 seconds" was the same mistake wearing a different hat: three other runs were
 hammering the same Postgres, and alone it takes 0.01 s.
 
+**10. When a verification needs access you do not have, say what you can
+establish, say what you cannot, and name who can close it.** Do not let the
+reasoning stand in for the observation. Confirming the monitor's first real
+run, I could read the run status, the row it wrote, and the deployed page
+rendering that row — and I could enumerate every line the code can print and
+show the credential is never interpolated into any of them. I could not read
+what GitHub actually stored: `/actions/jobs/{id}/logs` returns `403 Must
+have admin rights`. "The code cannot emit this" and "GitHub did not store
+this" are different claims, and only the repo owner could check the second.
+Handing it back took one sentence and produced a better answer than my
+inference would have: the archive scan showed GitHub's masking firing on
+`SUPABASE_SESSION_POOLER_URL`, which confirmed the secret reached the job
+and was masked on egress — something no amount of reading the source could
+establish.
+
+A worked example of the same rule catching a real discrepancy: that scan
+reported the log saying `wrote calibration_runs row 3` while I had reported
+row 4. Both were right. There had been **two** dispatches — 04:50 on
+`7ae01fd` and 22:56 on `208f200` — and the earlier one wrote row 3 with the
+baseline section reporting itself unavailable, because the artifact was not
+registered until the later commit. Checking the workflow's full run history
+rather than the single run I had been handed is what resolved it.
+
 ## Open, carried into Phase 4
 
 1. **Live predictions cannot be scored** until the Cricsheet corpus is
