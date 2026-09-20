@@ -144,11 +144,27 @@ GRANT SELECT ON agent_venues TO agent_ro;
 -- them without holding a grant on deliveries. Setting security_invoker = true
 -- here would break every one of them - stated explicitly because it looks
 -- like a hardening improvement and is the opposite.
-ALTER VIEW agent_deliveries SET (security_invoker = false);
-ALTER VIEW agent_matches    SET (security_invoker = false);
-ALTER VIEW agent_players    SET (security_invoker = false);
-ALTER VIEW agent_teams      SET (security_invoker = false);
-ALTER VIEW agent_venues     SET (security_invoker = false);
+--
+-- Guarded on the server version because the option did not exist before
+-- PostgreSQL 15. On 14 and earlier a view ALWAYS executes with owner rights
+-- and there is nothing to set, so skipping is correct rather than merely
+-- tolerable - but an unguarded ALTER would abort the whole bootstrap on an
+-- older image, and which image a hosted provider hands you is not something
+-- this file gets to assume.
+DO $$
+BEGIN
+    IF current_setting('server_version_num')::int >= 150000 THEN
+        ALTER VIEW agent_deliveries SET (security_invoker = false);
+        ALTER VIEW agent_matches    SET (security_invoker = false);
+        ALTER VIEW agent_players    SET (security_invoker = false);
+        ALTER VIEW agent_teams      SET (security_invoker = false);
+        ALTER VIEW agent_venues     SET (security_invoker = false);
+    ELSE
+        RAISE NOTICE 'server is %, pre-15: views are owner-rights by default, nothing to set',
+            current_setting('server_version');
+    END IF;
+END
+$$;
 
 -- Belt and braces against a future table being created and silently readable:
 -- strip the PUBLIC pseudo-role's default CREATE on schema public (already the
