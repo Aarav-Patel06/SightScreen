@@ -124,8 +124,19 @@ actually does.
 | 3 s2 | The five "biggest misses" were five balls of one over — one miss shown five times | Looking at the rendered page instead of the query |
 | 3 s2 | The Actions step summary would have crashed a *successful* run after it wrote its row | Running it with the env var set instead of assuming |
 | 3 s2 | The CI watcher reported failure on a green build — 60 requests/hour unauthenticated, polled every 20s, no error handling | Re-running it and checking the rate limit rather than the build |
+| 6 s1 | **Every player attribute is empty — `batting_hand`, `bowling_style`, `dob` are 0 of 18,468** — and Cricsheet cannot supply them, which blocks §10.1's flagship query and a §6.4 feature | Reading the only `INSERT INTO players` in the repo, then counting |
+| 6 s1 | **An exploration agent asserted those columns were "populated" and were "exactly what makes §10.4's example citation possible".** They are empty | Checking the claim against the loader source and a `count(*)`, instead of taking the report at its word |
 
-The last row is worth its place. A monitoring tool that reports failure on
+The agent row is not a cheap shot at tooling — it is the same failure mode as
+every other row in this table, arriving through a new door. A subagent report
+reads like evidence because it is specific, cites files and line numbers, and
+is mostly right. This one was right about the DDL and wrong about the data,
+which is precisely the gap a schema listing cannot close: the column exists,
+so it looks available. The rule that caught it is the one already written
+down — go and look at what the system actually does. **Treat a subagent's
+factual claims as leads to verify, not as observations already made.**
+
+The CI-watcher row is worth its place too. A monitoring tool that reports failure on
 success is the same defect as `/health` returning `ok` through an outage,
 pointed the other way — and it was structurally guaranteed, not unlucky: the
 budget runs out in about fifteen minutes and the `api` job takes eleven plus
