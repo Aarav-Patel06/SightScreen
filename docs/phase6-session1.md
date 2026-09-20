@@ -56,10 +56,22 @@ verify     layers 1 and 3, empirically
 | replica size | ~690 MB | **577 MB** |
 
 The estimate was conservative by ~16%: it assumed the source's full index set,
-and the projection carries three indexes rather than six. 577 MB is still
-112 MB more than the whole of Supabase's remaining free space, so the decision
-is unchanged — **the margin is just smaller than the number it was argued
-from**, and that is worth saying rather than quietly keeping the better figure.
+and the projection carries three indexes rather than six.
+
+**Decision 1 survived a measurement that moved against it, and that is the
+point worth recording.** The argument for a separate service rested partly on
+the replica being far too large for Supabase's free tier. Building it cut the
+headroom in that argument roughly in half — from ~225 MB of overflow to
+112 MB. The conclusion is unchanged, because 112 MB of overflow is still
+overflow and the blast-radius argument never depended on the size at all. But
+a conclusion that holds *after* the number moves the wrong way is worth more
+than one nobody rechecked, and the honest way to record that is to state both
+figures and which direction the correction ran — not to quietly substitute
+the new number and leave the original argument reading as though it had been
+right all along.
+
+Note also what the correction does *not* rescue: T20-only still does not fit.
+The 457 MB figure was measured the same way, and it is against 465 MB.
 
 **The replica is not a third member of the schema-parity regime.** Its schema
 is created by `agent_tools/replica.py`'s own bootstrap, not by
@@ -248,6 +260,18 @@ requirement**, enforced in session 2's evals.
 > actual mechanism, not a nicety. If session 2 ships the agent loop without
 > enforcing citations in its evals, this gap is open again and the tool-layer
 > refusal is exactly the theatre it was accused of being.
+>
+> **And it has to be in the eval set, not only the system prompt.** The
+> behaviour at issue is the agent declining to present a computed average as
+> an ability estimate — that is a behaviour, and a prompt instruction with no
+> eval behind it is an intention, not a control. Concretely, the 20-question
+> set §11 already requires should include at least one question phrased to
+> invite the confusion ("is X in form?", "how good is X right now?") where the
+> *passing* answer is a descriptive number with its sample size plus an
+> explicit statement that this is a record, not an estimate — and the failing
+> answer is a fluent, correct-looking average with no such hedge. If that case
+> is not in the set, §10.3's guard is tested and §10.4's is not, which would
+> leave the session's two halves held to different standards.
 
 ---
 
@@ -259,7 +283,7 @@ Carrying the column forward from the Phase 2 and Phase 3 close-outs.
 |---|---|
 | The suite was untracked and had never run — "fails correctly" was asserted by construction | Checking `git status` instead of trusting the resumption note |
 | 4 of 73 cases pass against a guard that implements nothing | Running the suite against a deliberate stub rather than reasoning about what would fail |
-| sqlglot carries comments into its output, so `SELECT 1 -- ; DROP …` re-emits with `DROP` still in it | Probing the AST empirically; reasoning had concluded the comment was inert |
+| **sqlglot carries comments into its output, so `SELECT 1 -- ; DROP …` re-emits with `DROP` still in it — the recommended defence preserves the payload the discouraged one would have destroyed** | Probing the AST empirically; reasoning had concluded the comment was inert. See standing rule 11 |
 | `exp.Command` round-trips unmodelled syntax verbatim | Same probe |
 | A trailing comment parses as a second statement, so a naive statement count rejects ordinary SQL | Same probe |
 | Writes against join views are refused with 55000 before privileges are consulted | Running `--verify` against a real database and reading the SQLSTATEs |
@@ -289,7 +313,56 @@ twice.
 
 ---
 
-## 7. What is NOT verified
+## 7. Standing rules
+
+Rules 1–8 are in `docs/phase2-closeout.md`, 9 and 10 in
+`docs/phase3-closeout.md`.
+
+**11. Round-tripping is not sanitising. When you replace a string operation
+with a structural one, check what the structure PRESERVES — the safer tool
+can carry the payload through in a form the cruder one would have
+destroyed.**
+
+§10.3 says "Parse, don't regex — regex blocklists are trivially bypassed",
+and that is correct. But `SELECT 1 -- ; DROP TABLE deliveries` parses to a
+single clean `Select`, and sqlglot then regenerates it as
+`SELECT 1 /* ; DROP TABLE deliveries */`. The comment is not part of the
+query's semantics, so the parser treats it as trivia to be *preserved* rather
+than content to be evaluated — and hands the payload straight through to the
+database. A naive `"DROP" in sql.upper()` blocklist, the approach §10.3
+explicitly discourages, would have refused it. By accident, for the wrong
+reason, and while being bypassable a dozen other ways — but refused it.
+
+**The inversion is the lesson.** It is easy to reason that the structural
+tool is a superset of the textual one: it understands everything the string
+check understood, plus grammar. It is not a superset. A parser partitions its
+input into what it models and what it carries, and **the carried part is
+invisible to every check written against the model.** Comments are the
+obvious case; whitespace, optimiser hints, dialect-specific pragmas and
+anything falling back to a catch-all node (sqlglot's `exp.Command`, which
+round-trips unmodelled text verbatim) are the same category. This guard hit
+two of them in one afternoon.
+
+So the check is not "does the AST contain anything dangerous", it is **"is
+everything in the output accounted for by the AST"**. Concretely: emit with
+comments stripped, refuse anything the parser did not model, and diff what
+went in against what comes out when you want to know which of those two you
+have.
+
+This one generalises past SQL. The same shape is an HTML sanitiser that
+preserves comments or `<![CDATA[`, a YAML round-trip that keeps anchors, a
+Markdown renderer that passes raw HTML through, a JSON parser that tolerates
+duplicate keys and silently picks one. In each case the structural tool is
+still the right choice — the fix is never to go back to regex — but choosing
+it obliges you to ask what it decided was none of its business.
+
+**Anyone implementing §10.3 from its own text would inherit this bug**, which
+is why the section now records it as an as-built deviation rather than
+leaving the guidance reading as though parsing alone were sufficient.
+
+---
+
+## 8. What is NOT verified
 
 Standing rule 10: name what cannot be established here, and who can close it.
 
