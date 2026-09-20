@@ -116,7 +116,6 @@ class Settings(BaseSettings):
     @field_validator(
         "supabase_session_pooler_url",
         "supabase_transaction_pooler_url",
-        "agent_sql_role_db_url",
     )
     @classmethod
     def _require_pooler_host(cls, value: str | None, info: ValidationInfo) -> str | None:
@@ -139,6 +138,43 @@ class Settings(BaseSettings):
             f"{env_name}'s host ({host!r}) isn't a Supavisor pooler host "
             "(*.pooler.supabase.com) - see SPEC.md section 2.4."
         )
+
+    @field_validator("agent_sql_role_db_url")
+    @classmethod
+    def _forbid_supabase_host(cls, value: str | None, info: ValidationInfo) -> str | None:
+        """The agent's corpus lives on its own replica, never on Supabase.
+
+        This field used to share _require_pooler_host above, which ALLOWED
+        only Supabase hosts. Phase 6's Decision 1 inverts that: the corpus
+        replica is a separate Postgres service precisely so that filling it
+        cannot take the serving database down with it (SPEC.md section 2.1).
+        A Supabase host in this variable means the read-only role has been
+        pointed at the database that holds predictions - which is both the
+        blast radius the replica exists to avoid and, for a role with no
+        grants there, a connection that fails in a confusing way.
+
+        The direct-host case keeps its own message because it is a different
+        mistake with a different symptom: db.<ref>.supabase.co resolves over
+        IPv6 only and simply times out from Railway.
+        """
+        if not value:
+            return value
+        env_name = cls.model_fields[info.field_name].alias or info.field_name
+        host = urlparse(value).hostname or ""
+        if host.startswith("db.") and host.endswith(".supabase.co"):
+            raise ValueError(
+                f"{env_name} points at the direct connection host ({host!r}), which "
+                "resolves over IPv6 only and is unreachable from Railway or Docker's "
+                "default bridge network. It is also the wrong database entirely - see "
+                "SPEC.md section 2.1."
+            )
+        if "supabase.co" in host or "supabase.com" in host:
+            raise ValueError(
+                f"{env_name}'s host ({host!r}) is a Supabase host. The agent's corpus "
+                "replica is a separate Postgres service so that filling it cannot stop "
+                "predictions being written - see SPEC.md section 2.1."
+            )
+        return value
 
     @field_validator("supabase_session_pooler_url", "supabase_transaction_pooler_url")
     @classmethod

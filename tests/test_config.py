@@ -111,10 +111,10 @@ TRANSACTION_POOLER_URL = _pooler_url(6543)
     [
         ("supabase_session_pooler_url", SESSION_POOLER_URL),
         ("supabase_transaction_pooler_url", TRANSACTION_POOLER_URL),
-        # agent_sql_role_db_url has no port rule - Phase 6 has not decided
-        # which mode its read-only role uses, and inventing one here would
-        # be enforcing a decision nobody has made.
-        ("agent_sql_role_db_url", SESSION_POOLER_URL),
+        # agent_sql_role_db_url is NOT here: Phase 6's Decision 1 puts the
+        # corpus on its own Postgres service, so a Supabase pooler URL in
+        # that field is now a rejection, not an acceptance. See
+        # test_settings_rejects_a_supabase_host_for_the_agent_role below.
     ],
 )
 def test_settings_accepts_a_real_pooler_url(field, url):
@@ -151,7 +151,7 @@ def test_settings_rejects_direct_connection_host(field):
 
 
 @pytest.mark.parametrize(
-    "field", ["supabase_session_pooler_url", "supabase_transaction_pooler_url", "agent_sql_role_db_url"]
+    "field", ["supabase_session_pooler_url", "supabase_transaction_pooler_url"]
 )
 def test_settings_rejects_non_pooler_host(field):
     other_host_url = "postgresql://postgres.abcxyzref:pw@some-other-host.example.com:5432/postgres"
@@ -176,15 +176,28 @@ def test_settings_rejects_bare_postgres_username_on_pooler_urls(field, port):
         Settings(_env_file=None, **kwargs)
 
 
-def test_settings_does_not_check_username_pattern_on_agent_sql_role_url():
-    # agent_sql_role_db_url gets its own role/username in Phase 6 - it must
-    # never be forced into the postgres.<ref> superuser pattern.
-    kwargs = {
-        **REQUIRED_KWARGS,
-        "agent_sql_role_db_url": "postgresql://agent_ro:pw@aws-0-ap-south-1.pooler.supabase.com:5432/postgres",
-    }
+REPLICA_URL = "postgresql://agent_ro:pw@shinkansen.proxy.rlwy.net:41234/railway"
+
+
+def test_settings_accepts_a_non_supabase_replica_url_for_the_agent_role():
+    # Phase 6 Decision 1: the corpus replica is its own Postgres service, so
+    # this field takes a host the two Supabase fields would reject. It also
+    # gets its own role name and must never be forced into the
+    # postgres.<ref> superuser pattern.
+    kwargs = {**REQUIRED_KWARGS, "agent_sql_role_db_url": REPLICA_URL}
     settings = Settings(_env_file=None, **kwargs)
-    assert settings.agent_sql_role_db_url == kwargs["agent_sql_role_db_url"]
+    assert settings.agent_sql_role_db_url == REPLICA_URL
+
+
+def test_settings_rejects_a_supabase_host_for_the_agent_role():
+    """The inverse of the rule the two Supabase fields carry, and the reason
+    it is inverted: pointing the agent's read-only role at the serving
+    database is exactly the blast radius the separate replica exists to
+    avoid (SPEC.md section 2.1). A pooler URL here is the plausible mistake,
+    because it is the connection string already in the file above it."""
+    kwargs = {**REQUIRED_KWARGS, "agent_sql_role_db_url": SESSION_POOLER_URL}
+    with pytest.raises(ValidationError, match="separate Postgres service"):
+        Settings(_env_file=None, **kwargs)
 
 
 def test_env_example_matches_canonical_local_db_default():
