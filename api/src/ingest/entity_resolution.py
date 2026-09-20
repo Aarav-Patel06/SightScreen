@@ -153,16 +153,25 @@ def _initials_match(normalized_query: str, normalized_candidate: str) -> bool:
 
 # --- Candidate generation -----------------------------------------------
 
+def surname_blocks(target_surname: str, candidate_name: str) -> bool:
+    """Does this candidate share the query's surname bucket?
+
+    Fuzzy, not exact: "kolhi" has to reach "kohli", which is the entire
+    reason SURNAME_BLOCK_THRESHOLD is a ratio and not an equality test.
+    Extracted so that agent_tools/routes.py's read-only resolver blocks on
+    the SAME rule rather than a second copy of it - a copy that used
+    equality scored "Viraat Kolhi" against all 18,468 players and returned
+    "Rahat Ali".
+    """
+    return fuzz.ratio(target_surname, surname_key(normalize_name(candidate_name))) >= SURNAME_BLOCK_THRESHOLD
+
+
 def _player_candidates(conn, normalized_query: str) -> list[tuple[int, str]]:
     target_surname = surname_key(normalized_query)
     with conn.cursor() as cur:
         cur.execute("SELECT player_id, canonical_name FROM players")
         rows = cur.fetchall()
-    return [
-        (player_id, name)
-        for player_id, name in rows
-        if fuzz.ratio(target_surname, surname_key(normalize_name(name))) >= SURNAME_BLOCK_THRESHOLD
-    ]
+    return [(player_id, name) for player_id, name in rows if surname_blocks(target_surname, name)]
 
 
 def _team_candidates(conn, _normalized_query: str) -> list[tuple[int, str]]:

@@ -29,3 +29,13 @@ py-modules = ["config"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# agent_tools/views.sql is read at runtime by replica.py via
+# Path(__file__).with_name(). Without this it is absent from the wheel -
+# `pip wheel ./api` ships the three .py files and nothing else - so
+# --bootstrap raises FileNotFoundError from an installed package while
+# working perfectly from the editable local checkout. The Dockerfile does a
+# real `pip install .`, not an editable one. Found by building the wheel and
+# listing it, not by deploying and waiting.
+[tool.setuptools.package-data]
+agent_tools = ["*.sql"]

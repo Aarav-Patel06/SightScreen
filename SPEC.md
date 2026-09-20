@@ -91,7 +91,17 @@ The split that solves this without feeling like a hack:
 
 Trained model artifacts are committed to GitHub Releases (or Supabase Storage) and pulled by the serving container. Training never touches Supabase; serving never touches local Postgres.
 
-If you later want the agent to query the full historical corpus, either upgrade Supabase to Pro ($25/mo) or restrict v1 to T20 only, which roughly halves the row count and fits comfortably.
+~~If you later want the agent to query the full historical corpus, either upgrade Supabase to Pro ($25/mo) or restrict v1 to T20 only, which roughly halves the row count and fits comfortably.~~
+
+**Superseded, Phase 6 session 1 — and the sizing sentence above was wrong twice.** T20 is 2,417,673 of 3,780,368 deliveries, which is **64%**, not roughly half; and at the corpus's measured density T20-only comes to **457 MB against 465 MB of Supabase free space**. That is not "comfortably", it is 8 MB of headroom before `predictions` grows at 79 kB/match — and the only way to shrink it further is to drop the `batter_id`/`bowler_id` indexes, which turns every matchup question into a sequential scan of 2.4M rows that the 5 s statement timeout then kills. It is not a cheaper option, it is a broken one.
+
+So the corpus gets a **third home**: its own Postgres service, holding `deliveries`, `matches`, `players`, `teams` and `venues` and **not** `match_states`. Built and measured at **577 MB**.
+
+The deciding argument is blast radius, not the $300/yr. Filling the *serving* database to ~79% to host an analytical replica puts the live product at risk: at the 500 MB cap, predictions stop being written and both the match page and the accuracy page break. A separate replica isolates that completely — if it fills, the agent degrades and serving is untouched.
+
+**The replica is not a third member of the schema-parity regime.** It is a derived, rebuildable projection — the same category as the as-of summaries, just larger. Its schema is created by `api/src/agent_tools/replica.py`'s own bootstrap, *not* by `supabase/migrations/`, so `apply_migrations.py` keeps two targets and `test_schema_parity.py` keeps comparing exactly two databases. Excluding `match_states` also keeps its four `REAL` columns exempt from the NUMERIC conversion, since nothing serving-side would write them.
+
+`AGENT_SQL_ROLE_DB_URL` correspondingly gets the *inverse* of the Supavisor host rule the two Supabase fields carry: a Supabase host in that variable is now rejected outright, because pointing the agent's read-only role at the serving database is precisely the blast radius this split exists to avoid.
 
 ### 2.2 What Vercel cannot do
 
@@ -835,6 +845,27 @@ Text-to-SQL is a well-known injection surface. Five layers, all required:
 
 Log every generated query. You will want them for debugging and they make a good appendix in your writeup.
 
+**As built (Phase 6 session 1).** Two of the five layers are enforced by the database and three by Python, and `agent_tools/sql_guard.py`'s `LAYERS` registry records which is which — so nobody can "cover" layer 1 with a Python assertion that proves nothing about the grants.
+
+| Layer | Enforced by | Proven by |
+|---|---|---|
+| `readonly_role` | database | `replica.py --verify`, against a live replica |
+| `single_statement` | python | `tests/agent/test_sql_guard_adversarial.py` |
+| `single_select` | python | same |
+| `statement_timeout` | database | `replica.py --verify` |
+| `forced_limit` | python | `tests/agent/test_sql_guard_adversarial.py` |
+
+**Every layer has a non-vacuity proof**, because "five layers" is a claim and a five-layer defence where layer 2 never fires alone is a four-layer defence with a comment. For each layer there is a query that *only* that layer rejects, demonstrated twice: rejected with everything on, and admitted with that one layer disabled. The `skip` parameter exists for exactly this, and `test_the_production_entry_point_never_skips_a_layer` asserts the served path never passes it.
+
+Four deviations from the list above, all forced by what the parser actually does:
+
+- **Layer 1 says "Supabase Postgres role … create it in a migration".** It is a *replica* role, created by the replica's own bootstrap — see §2.1. Writes against the join views are refused with SQLSTATE 55000 (not auto-updatable) *before* PostgreSQL consults the grants, so `--verify` reads the privileges straight out of `has_table_privilege` rather than inferring them from an error code.
+- **Layer 2 must walk the whole tree, not check the root.** PostgreSQL executes data-modifying CTEs, and `WITH x AS (INSERT …) SELECT * FROM x` parses with `Select` at the root.
+- **Anything sqlglot cannot model is refused.** `SET ROLE`, `RESET ROLE`, `ALTER ROLE` and `EXPLAIN ANALYZE` all fall back to an `exp.Command` node that round-trips its raw text unchanged.
+- **Comments must be stripped, not merely parsed.** `SELECT 1 -- ; DROP TABLE deliveries` regenerates as `SELECT 1 /* ; DROP TABLE deliveries */`; sqlglot carries comments into its output, so the guard emits with `comments=False`.
+
+The caller gets one uninformative payload whatever the cause — `{"error": "query rejected", "ref": "<uuid>"}` — with no table name, column name or layer identity, because a message that varies by cause is an oracle telling an attacker which layer they tripped. The detail goes to `agent_query_log` on Supabase, joined by `ref`.
+
 ### 10.4 Citation requirement
 
 The agent must state sample sizes. "Rashid concedes 5.8 to left-handers in the powerplay **(based on 214 deliveries since 2023)**." A 3-ball sample and a 300-ball sample must be visibly different to the user. Enforce this in the system prompt and check it in your evals.
@@ -937,12 +968,16 @@ Each phase ends with a demoable artifact and explicit acceptance criteria. Do no
 
 ### Phase 6 — Agent (weeks 9–10)
 
-- [ ] Tools as FastAPI endpoints, shared-secret authenticated
-- [ ] SQL guard with all five layers, plus the read-only Supabase role
+- [x] Tools as FastAPI endpoints, shared-secret authenticated *(session 1)*
+- [x] SQL guard with all five layers, plus the read-only ~~Supabase~~ **replica** role *(session 1)*
 - [ ] Agent loop in `web/app/api/agent/route.ts` with citation enforcement
 - [ ] Streaming chat UI at `/ask`
 
-**Acceptance:** A 20-question eval set covering stats lookups, form questions, live match questions, and adversarial SQL attempts. Zero successful injections. Every numeric answer carries a sample size.
+**Session 1 closed 2026-09-20.** Corpus replica built and loaded (3,780,368 deliveries, 577 MB); five-layer guard with a non-vacuity proof per layer; 99 tests green. Layers 1 and 3 verified against a live PostgreSQL 17.6 with the real corpus — `agent_ro` reads five views, is denied all five base tables on privilege (42501), holds no write privilege anywhere per `has_table_privilege`, and a `pg_sleep(10)` is cancelled at 5 s while `pg_sleep(1)` with no timeout completes. Four tools built; `get_player_form` returns a structured unavailability naming Phase 5, **not** a rolling average. See `docs/phase6-session1.md`.
+
+**Not closed by session 1:** the replica is verified on local Postgres, not on the hosted service, and `agent_query_log`'s migration has not been pushed. Both need the account owner; `replica.py --verify` is the command that closes the first.
+
+**Acceptance:** A 20-question eval set covering stats lookups, form questions, live match questions, and adversarial SQL attempts. Zero successful injections. Every numeric answer carries a sample size. *(Session 2 — and §10.4's citation rule is the actual safeguard behind `get_player_form`'s refusal, not a nicety; see `docs/phase6-session1.md` §5, Gap 3.)*
 
 ### Phase 7 — Upcoming and player pages (weeks 11–12)
 

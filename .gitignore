@@ -33,3 +33,8 @@ api/data/models/
 
 # Stray capture files from shell redirects with unset variables
 /.txt
+
+# setuptools build artifacts. `pip wheel ./api` writes api/build/lib/ with a
+# full copy of src/ in it - a stale duplicate of every module, which is
+# exactly the kind of thing that gets grepped and believed later.
+api/build/

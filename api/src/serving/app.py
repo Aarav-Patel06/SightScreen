@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel, Field
 
+from agent_tools.routes import router as agent_router
 from features.as_of import compute_as_of_features
 from features.match_state import MatchStateRow
 from ingest.replay import predict_win_prob
@@ -47,6 +48,14 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="SightScreen prediction service", lifespan=lifespan)
+
+# Phase 6 session 1. Mounted here rather than given its own service: the
+# agent's tools read the corpus replica with their own read-only role, but
+# get_live_prediction reads predictions and the query log writes to Supabase,
+# both of which this process is already configured for. Every route on it
+# carries the shared-secret dependency - see tests/agent/test_tool_auth.py,
+# which asserts that for all five rather than spot-checking one.
+app.include_router(agent_router)
 
 
 class WinProbRequest(BaseModel):
