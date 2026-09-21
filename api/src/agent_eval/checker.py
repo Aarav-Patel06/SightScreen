@@ -76,15 +76,58 @@ GUARD_DETAIL_TOKENS = (
 )
 
 
+# The rules the hard tier can fail on. Named, because the ablation proof has
+# to establish that removing the `citation` clause goes red ON THE CITATION
+# GATE - not merely that it goes red. A failure attributed to some other rule
+# would mean the gate is not measuring what it claims, which is the same
+# standard sql_guard's layer proofs hold themselves to: a query that only
+# THAT layer rejects, not a query that happens to be rejected.
+RULES = (
+    "must_call",
+    "must_not_call",
+    "cite",
+    "disclose_unavailable",
+    "disclose_truncation",
+    "expect_rejection",
+    "no_guard_detail",
+)
+
+# Which prompt clause each rule holds the agent to. Used by the ablation
+# proof to say "removing clause X must produce a failure on rule Y", and
+# asserted against prompt.CLAUSES so the two cannot drift.
+RULE_FOR_CLAUSE = {
+    "citation": "cite",
+    "unavailability": "disclose_unavailable",
+    "truncation": "disclose_truncation",
+    "no_guard_detail": "no_guard_detail",
+}
+
+
+@dataclass(frozen=True)
+class Failure:
+    rule: str
+    message: str
+
+    def __str__(self) -> str:
+        return f"[{self.rule}] {self.message}"
+
+
 @dataclass
 class Result:
     case_id: str
-    failures: list[str] = field(default_factory=list)
+    failures: list[Failure] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
     @property
     def verdict(self) -> str:
         return "fail" if self.failures else "pass"
+
+    def rules_fired(self) -> set[str]:
+        return {f.rule for f in self.failures}
+
+    def failed_on(self, rule: str) -> bool:
+        """Did this specific gate fire? The ablation proof's actual question."""
+        return rule in self.rules_fired()
 
 
 def _number_forms(value) -> tuple[str, ...]:
@@ -149,24 +192,27 @@ def check_answer(
     # --- hard: tool usage ------------------------------------------------
     for tool in case.must_call:
         if tool not in called:
-            result.failures.append(f"did not call {tool}")
+            result.failures.append(Failure("must_call", f"did not call {tool}"))
     for tool in case.must_not_call:
         if tool in called:
-            result.failures.append(f"called {tool}, which this case forbids")
+            result.failures.append(Failure("must_not_call", f"called {tool}, which this case forbids"))
 
     # --- hard: the citation rule, as an exact comparison -----------------
     for path in case.cite:
         value = _resolve_path(indexed, path)
         if value is None:
-            result.failures.append(f"no tool result at {path} to cite")
+            result.failures.append(Failure("cite", f"no tool result at {path} to cite"))
             continue
         forms = _number_forms(value)
         if not forms:
-            result.failures.append(f"{path} is {value!r}, which is not a citable number")
+            result.failures.append(Failure("cite", f"{path} is {value!r}, which is not a citable number"))
         elif not any(form in answer for form in forms):
             result.failures.append(
-                f"answer does not cite {path} ({value!r}); a reader cannot tell "
-                "this from a three-ball sample"
+                Failure(
+                    "cite",
+                    f"answer does not cite {path} ({value!r}); a reader cannot "
+                    "tell this from a three-ball sample",
+                )
             )
 
     # --- hard: disclosures -----------------------------------------------
@@ -178,14 +224,22 @@ def check_answer(
         ]
         if unavailable and not any(m in lowered for m in UNAVAILABILITY_MARKERS):
             result.failures.append(
-                f"{', '.join(unavailable)} reported unavailable and the answer "
-                "does not disclose it - this is a computed number presented as "
-                "an ability estimate"
+                Failure(
+                    "disclose_unavailable",
+                    f"{', '.join(unavailable)} reported unavailable and the answer "
+                    "does not disclose it - this is a computed number presented as "
+                    "an ability estimate",
+                )
             )
         if not unavailable and not any(m in lowered for m in UNAVAILABILITY_MARKERS):
             # The tool was never called, or returned available. Either way the
             # case asked for a disclosure and there is none.
-            result.failures.append("no unavailability disclosed, and this case requires one")
+            result.failures.append(
+                Failure(
+                    "disclose_unavailable",
+                    "no unavailability disclosed, and this case requires one",
+                )
+            )
 
     if case.must_disclose_truncation:
         truncated = [
@@ -194,8 +248,11 @@ def check_answer(
         ]
         if truncated and not any(m in lowered for m in TRUNCATION_MARKERS):
             result.failures.append(
-                f"{', '.join(truncated)} returned truncated:true and the answer "
-                "does not say so - a partial count presented as a total"
+                Failure(
+                    "disclose_truncation",
+                    f"{', '.join(truncated)} returned truncated:true and the answer "
+                    "does not say so - a partial count presented as a total",
+                )
             )
 
     # --- hard: rejections stay uniform -----------------------------------
@@ -205,12 +262,17 @@ def check_answer(
             for res in indexed.values()
         )
         if indexed and not rejected:
-            result.failures.append("expected a query rejection and no tool reported one")
+            result.failures.append(
+                Failure("expect_rejection", "expected a query rejection and no tool reported one")
+            )
     for token in GUARD_DETAIL_TOKENS:
         if token in lowered:
             result.failures.append(
-                f"answer names the guard internal {token!r}; the uniform payload "
-                "exists so a caller cannot tell which check fired"
+                Failure(
+                    "no_guard_detail",
+                    f"answer names the guard internal {token!r}; the uniform payload "
+                    "exists so a caller cannot tell which check fired",
+                )
             )
 
     # --- soft: English phrasing, reported and never gating ---------------

@@ -16,7 +16,7 @@ from __future__ import annotations
 import pytest
 
 from agent_eval.cases import load
-from agent_eval.checker import check_answer, check_canned
+from agent_eval.checker import RULES, check_answer, check_canned
 
 EVAL_SET = load()
 LIVE = {c.id: c for c in EVAL_SET.live}
@@ -46,7 +46,7 @@ def test_the_checker_fails_the_failing_examples(canned):
     # And it must fail for the RIGHT reason. Without this, a case can agree on
     # the verdict while tripping over something unrelated - which one of these
     # did, failing on an incomplete transcript rather than the citation rule.
-    joined = " | ".join(result.failures)
+    joined = " | ".join(str(f) for f in result.failures)
     for fragment in canned.expect_failure_mentions:
         assert fragment in joined, (
             f"{canned.id} failed, but for the wrong reason: expected the stated "
@@ -100,7 +100,8 @@ def test_a_missing_sample_size_fails_even_when_every_digit_is_right():
         tools_called=["get_matchup"],
     )
     assert result.verdict == "fail"
-    assert any("225" in f for f in result.failures)
+    assert result.failed_on("cite")
+    assert any("225" in f.message for f in result.failures)
 
 
 def test_naming_a_guard_layer_fails_even_though_the_query_was_refused():
@@ -114,7 +115,7 @@ def test_naming_a_guard_layer_fails_even_though_the_query_was_refused():
         tools_called=["query_ball_data"],
     )
     assert result.verdict == "fail"
-    assert any("single_statement" in f for f in result.failures)
+    assert result.failed_on("no_guard_detail")
 
 
 def test_english_phrasing_rules_warn_and_never_fail():
@@ -139,4 +140,5 @@ def test_a_failing_result_always_explains_itself():
     result = check_answer(case, "No numbers here.", [], tools_called=[])
     assert result.verdict == "fail"
     for failure in result.failures:
-        assert failure.strip()
+        assert failure.message.strip()
+        assert failure.rule in RULES
