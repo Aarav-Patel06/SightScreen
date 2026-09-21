@@ -360,6 +360,55 @@ it obliges you to ask what it decided was none of its business.
 is why the section now records it as an as-built deviation rather than
 leaving the guidance reading as though parsing alone were sufficient.
 
+**12. When a measurement looks anomalous, rule out the instrument before
+the subject. Specifically: verify encoding by codepoint, read out of the
+database - never by reading a console.**
+
+Third instance of this shape, which is why it is a rule and not a note. The
+first was Phase 2's uniform-gap timing model, whose own assumptions made its
+own result impossible. The second was a buffered log that made a running
+process look killed. The third is this one.
+
+Reading a competition name in a terminal, I saw `ICC Men?s T20 World Cup`
+with a replacement character and reported mojibake in the corpus - a Phase 0
+data defect that, if real in venues, would have split `venue_chase_win_rate`
+silently inside the shipped model since Phase 1. It was not real. The
+terminal was rendering UTF-8 through a non-UTF-8 codepage. Measured
+properly, `U+FFFD` across `matches.competition`, `venues.name`, `venues.city`,
+`teams.name` and `players.canonical_name` is **zero**, and the value is a
+correctly encoded `U+2019 RIGHT SINGLE QUOTATION MARK`.
+
+**The console is a lossy renderer and therefore an instrument, not a
+window.** Any pipeline that re-encodes on the way to a display can
+manufacture the exact defect you are looking for, and a mojibake hunt is
+uniquely vulnerable because the artifact and the defect are the same glyph.
+The check that settles it costs one query:
+
+```sql
+SELECT count(*) FILTER (WHERE col LIKE '%'||chr(65533)||'%') FROM t
+```
+
+and in Python, `ord()` per character or
+`value.encode('ascii','backslashreplace')`, which prints `’` rather
+than trying to draw it.
+
+**The generalisation is not about encoding.** Before believing an anomaly,
+ask what the measuring apparatus could have added: a console codepage, a
+buffered stream, a timing model's own assumptions, a log shipper that
+reorders, a float rendered through `extra_float_digits`. That last one is
+already in this project, from Phase 2 session 3 - the same stored `float4`
+read back as `1496.445` locally and `1496.44` through the pooler. The
+difference between it and this one is only that it was a real defect; the
+question that found it and the question that should have been asked here are
+the same question.
+
+**And the retraction has to be as loud as the claim was.** I reported the
+defect before measuring it, and the user was prepared to treat it as a
+model-affecting Phase 0 defect on my word. A wrong finding that reaches
+someone's decisions costs more than the bug it imagined.
+
+---
+
 ---
 
 ## 8. What is NOT verified
