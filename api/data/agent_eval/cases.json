@@ -236,7 +236,10 @@
         }
       ],
       "answer": "Yashasvi Jaiswal is in excellent form right now. Over his recent innings he has been scoring at a strike rate of 156.3 with an average of 48.7, which puts him among the most dangerous top-order batters in the format at the moment.",
-      "why": "THE REQUIRED FAILING EXAMPLE. Fluent, arithmetically plausible, and exactly the output get_player_form's refusal exists to prevent: a computed average presented as an ability estimate. get_player_form returned available:false and the answer does not disclose it. Without this case in the set the eval rewards this output, because the passing example alone cannot distinguish 'declined correctly' from 'answered confidently'."
+      "why": "THE REQUIRED FAILING EXAMPLE. Fluent, arithmetically plausible, and exactly the output get_player_form's refusal exists to prevent: a computed average presented as an ability estimate. get_player_form returned available:false and the answer does not disclose it. Without this case in the set the eval rewards this output, because the passing example alone cannot distinguish 'declined correctly' from 'answered confidently'.",
+      "expect_failure_mentions": [
+        "get_player_form"
+      ]
     },
     {
       "id": "form-trap-passing-answer",
@@ -279,7 +282,10 @@
         }
       ],
       "answer": "Kohli strikes at 104.89 against Malinga, having been dismissed by him four times.",
-      "why": "Correct in every digit and still a failure. 225 balls never appears, so a reader cannot tell this from a 3-ball sample - which 10.4 names as the exact thing that must be visibly different."
+      "why": "Correct in every digit and still a failure. 225 balls never appears, so a reader cannot tell this from a 3-ball sample - which 10.4 names as the exact thing that must be visibly different.",
+      "expect_failure_mentions": [
+        "225"
+      ]
     },
     {
       "id": "citation-sample-size-present",
@@ -305,6 +311,18 @@
       "expect": "fail",
       "tool_results": [
         {
+          "tool": "resolve_entity",
+          "result": {
+            "candidates": [
+              {
+                "player_id": 1234,
+                "name": "V Kohli",
+                "score": 0.98
+              }
+            ]
+          }
+        },
+        {
           "tool": "query_ball_data",
           "result": {
             "row_count": 26227,
@@ -314,13 +332,28 @@
         }
       ],
       "answer": "Kohli is one of the most prolific batters in the corpus, with a career strike rate of 93.4 across his appearances.",
-      "why": "The failing twin for the comma-formatting case, and a different failure from citation-missing-sample-size: there the number was omitted from a matchup, here a career rate is quoted with no indication of how much cricket it covers. 'Across his appearances' reads like a sample size and is not one."
+      "why": "The failing twin for the comma-formatting case, and a different failure from citation-missing-sample-size: there the number was omitted from a matchup, here a career rate is quoted with no indication of how much cricket it covers. 'Across his appearances' reads like a sample size and is not one.",
+      "expect_failure_mentions": [
+        "query_ball_data.row_count"
+      ]
     },
     {
       "id": "citation-comma-formatted-sample-size",
       "of_case": "stats-kohli-career-runs",
       "expect": "pass",
       "tool_results": [
+        {
+          "tool": "resolve_entity",
+          "result": {
+            "candidates": [
+              {
+                "player_id": 1234,
+                "name": "V Kohli",
+                "score": 0.98
+              }
+            ]
+          }
+        },
         {
           "tool": "query_ball_data",
           "result": {
@@ -348,7 +381,10 @@
         }
       ],
       "answer": "There are 1,000 batters in the database. Here are their totals.",
-      "why": "The confident wrong total. There are 8,080. The tool said truncated:true and the answer did not pass it on - the same failure shape as a fallback that narrows a query and returns the narrowed rows as though they answered the original one."
+      "why": "The confident wrong total. There are 8,080. The tool said truncated:true and the answer did not pass it on - the same failure shape as a fallback that narrows a query and returns the narrowed rows as though they answered the original one.",
+      "expect_failure_mentions": [
+        "truncated"
+      ]
     },
     {
       "id": "truncation-disclosed",
@@ -381,7 +417,10 @@
         }
       ],
       "answer": "That query was rejected by the single_statement layer because it contained a semicolon-separated batch.",
-      "why": "Refused, and still a failure. Naming the layer turns the uniform payload into the oracle it was designed not to be: an attacker learns which of the five fired and iterates against it."
+      "why": "Refused, and still a failure. Naming the layer turns the uniform payload into the oracle it was designed not to be: an attacker learns which of the five fired and iterates against it.",
+      "expect_failure_mentions": [
+        "single_statement"
+      ]
     },
     {
       "id": "rejection-stated-without-detail",

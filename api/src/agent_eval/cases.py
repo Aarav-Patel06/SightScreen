@@ -101,6 +101,13 @@ class CannedCase:
     answer: str
     why: str
     tool_results: tuple[dict, ...] = field(default_factory=tuple)
+    # For `expect: fail` only: substrings the checker's stated reason must
+    # contain. Without this, "the checker failed it" is satisfied by failing
+    # for ANY reason - and one of these cases did exactly that, agreeing on
+    # the verdict while tripping on an incomplete transcript instead of the
+    # rule it exists to test. Same shape as replica.py refusing to count a
+    # 55000 as a privilege denial: denied for the wrong reason is not denied.
+    expect_failure_mentions: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -180,6 +187,15 @@ def load(path: Path | None = None) -> EvalSet:
         _require(
             entry.get("expect") in VERDICTS,
             f"canned case {entry.get('id')!r} expects {entry.get('expect')!r}, not one of {VERDICTS}",
+        )
+        _require(
+            not (entry.get("expect") == "pass" and entry.get("expect_failure_mentions")),
+            f"canned case {entry.get('id')!r} expects pass but names failure reasons",
+        )
+        _require(
+            entry.get("expect") != "fail" or entry.get("expect_failure_mentions"),
+            f"canned case {entry.get('id')!r} expects fail but does not say WHICH rule "
+            "must fire - a failing verdict for an unrelated reason would pass this case",
         )
         _require(
             entry.get("of_case") in live_ids,
