@@ -1,0 +1,120 @@
+{
+  "model": "claude-sonnet-5",
+  "prompt_fingerprint": "f44c84ea75e6f8e8",
+  "run_at": "2026-09-21T20:24:43.001396+00:00",
+  "elapsed_seconds": 16.0,
+  "rates_per_mtok": {
+    "input": 2.0,
+    "output": 10.0
+  },
+  "cost_dollars": 0.0194,
+  "runs": [
+    {
+      "case_id": "stats-kohli-vs-malinga",
+      "rep": 1,
+      "thinking": true,
+      "ablated": [],
+      "answer": "## Virat Kohli vs Lasith Malinga (all formats in corpus)\n\nBased on **305 balls** faced across their head-to-head meetings:\n\n- **Runs scored:** 317\n- **Dismissals:** 3\n- **Strike rate:** 103.93 (runs per 100 balls)\n- **Average:** 105.67 (runs per dismissal)\n\nThis is a fairly strong record for Kohli \u2014 over 300 balls, he's scored at just above a run a ball while only being dismissed 3 times, giving a high average. This is a historical record of what actually happened in these matchups, not a prediction of how either player would fare if they faced off today.",
+      "tools_called": [
+        "resolve_entity",
+        "resolve_entity",
+        "get_matchup"
+      ],
+      "tool_results": [
+        {
+          "tool": "resolve_entity",
+          "result": {
+            "query": "Virat Kohli",
+            "kind": "player",
+            "candidates": [
+              {
+                "id": 1021,
+                "name": "A Kohli",
+                "score": 83.3
+              },
+              {
+                "id": 15605,
+                "name": "S Kohli",
+                "score": 83.3
+              },
+              {
+                "id": 16914,
+                "name": "T Kohli",
+                "score": 83.3
+              },
+              {
+                "id": 17558,
+                "name": "V Kohli",
+                "score": 83.3
+              },
+              {
+                "id": 12510,
+                "name": "Parth Kohli",
+                "score": 72.7
+              }
+            ]
+          }
+        },
+        {
+          "tool": "resolve_entity",
+          "result": {
+            "query": "Lasith Malinga",
+            "kind": "player",
+            "candidates": [
+              {
+                "id": 4828,
+                "name": "E Malinga",
+                "score": 87.5
+              },
+              {
+                "id": 16961,
+                "name": "T Malinga",
+                "score": 87.5
+              },
+              {
+                "id": 9542,
+                "name": "LN Malinga",
+                "score": 82.4
+              },
+              {
+                "id": 15671,
+                "name": "SL Malinga",
+                "score": 82.4
+              },
+              {
+                "id": 17915,
+                "name": "WJ Malinda",
+                "score": 50.0
+              }
+            ]
+          }
+        },
+        {
+          "tool": "get_matchup",
+          "result": {
+            "ref": "959e4ae5-422b-4f0e-b061-471ade860805",
+            "batter": "V Kohli",
+            "bowler": "SL Malinga",
+            "balls": 305,
+            "runs": 317,
+            "dismissals": 3,
+            "strike_rate": 103.93,
+            "average": 105.67
+          }
+        }
+      ],
+      "verdict": "pass",
+      "rules_fired": [],
+      "failures": [],
+      "warnings": [],
+      "usage": {
+        "input_tokens": 2047,
+        "output_tokens": 919,
+        "cache_read_input_tokens": 4248,
+        "cache_creation_input_tokens": 2124
+      },
+      "dollars": 0.019443600000000002,
+      "turns": 3
+    }
+  ]
+}

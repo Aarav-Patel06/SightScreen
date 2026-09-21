@@ -83,6 +83,60 @@ jobs:
             exit 1;
           }
 
+  # The agent eval's DETERMINISTIC half, plus a staleness gate on the half
+  # that cannot run here. Its own job, not a step inside `api`, for the reason
+  # the types check was extracted into one: on 2026-09-18 a different failure
+  # earlier in the same job reported the staleness step as `skipped` for ten
+  # consecutive runs while the drift it existed to catch grew unchecked.
+  #
+  # NO MODEL CALLS. The live eval costs money per run and is nondeterministic,
+  # and a check that goes red intermittently teaches people to ignore red.
+  # What CI enforces is that the paid half was RE-RUN against the current
+  # prompt - not that it passed.
+  agent-eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: pip install -e "./api[dev]"
+      - name: Generated TypeScript is not stale
+        working-directory: api/src
+        run: |
+          python -m agent_eval.prompt --emit-ts
+          python -m agent_eval.tools --emit-ts
+          git diff --exit-code -- ../../web/lib/agent-prompt.ts ../../web/lib/agent-tools.ts || {
+            echo "::error::web/lib/agent-prompt.ts or agent-tools.ts is stale - run 'python -m agent_eval.prompt --emit-ts' and 'python -m agent_eval.tools --emit-ts' from api/src and commit. Until then the served route and the eval harness run different agents.";
+            exit 1;
+          }
+      - name: Committed eval results match the current prompt
+        working-directory: api/src
+        run: |
+          # The results file records the fingerprint it was produced under.
+          # A prompt or tool-definition edit moves the fingerprint, so results
+          # from before the edit no longer describe the current agent. This is
+          # the same generate-and-diff shape as the types.ts check, applied to
+          # an artifact CI cannot regenerate itself.
+          python - <<'PY'
+          import json, sys
+          from pathlib import Path
+          from agent_eval.prompt import fingerprint
+          results = Path("../data/agent_eval/results.json")
+          if not results.exists():
+              sys.exit("::error::api/data/agent_eval/results.json is missing - run "
+                       "`python -m agent_eval.runner --all` and commit the results.")
+          recorded = json.loads(results.read_text())["prompt_fingerprint"]
+          current = fingerprint()
+          if recorded != current:
+              sys.exit(f"::error::eval results are STALE: recorded fingerprint {recorded}, "
+                       f"current {current}. The prompt or tool definitions changed since the "
+                       "last paid run. Re-run `python -m agent_eval.runner --all` and commit "
+                       "api/data/agent_eval/results.json.")
+          print(f"eval results match fingerprint {current}")
+          PY
+
   web:
     runs-on: ubuntu-latest
     defaults:

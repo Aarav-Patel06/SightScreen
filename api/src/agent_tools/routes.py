@@ -48,6 +48,24 @@ from ingest.entity_resolution import (
 router = APIRouter(prefix="/agent", tags=["agent"])
 
 STATEMENT_TIMEOUT = "5s"
+
+# How many rows the MODEL is shown, as against the MAX_ROWS the guard allows
+# the database to return. These are different limits for different reasons and
+# both are reported.
+#
+# The cost argument is real - a 1,000-row JSON payload measured 24,446 tokens
+# and is re-sent on every subsequent turn - but it is the weaker one. The
+# stronger one: handing a model a thousand rows invites it to compute an
+# aggregate by READING them instead of asking SQL for the number. That is
+# precisely the behaviour §10.4's citation rule exists to prevent, so a tool
+# that makes it convenient is working against the system prompt. A count
+# derived by eyeballing rows also has no sample size to quote, because the
+# model never asked for one.
+#
+# So the rows are a SAMPLE, labelled as such, and the true count is a
+# separate field. Aggregate in SQL, where the answer comes back with its own
+# denominator.
+MODEL_ROWS = 50
 MAX_CANDIDATES = 5
 
 # A floor, not a marker list. config._looks_like_placeholder catches the
@@ -197,13 +215,26 @@ def query_ball_data(request: SqlRequest) -> dict:
     # means "truncated" unambiguously, where a logged 1000 would not.
     _log_query(ref, guarded, "ok", None, len(rows), duration_ms)
 
+    # Two independent reductions, reported separately because they mean
+    # different things. `truncated` says the DATABASE had more rows than
+    # layer 4 permitted - so the result is not the whole answer.
+    # `rows_shown` says how many of the rows we did get are in this payload.
+    # Collapsing them would make a complete 200-row result look like a
+    # truncated one, which is the ambiguity probe_extra_row exists to remove.
     truncated = len(rows) > MAX_ROWS
     if truncated:
         rows = rows[:MAX_ROWS]
+    row_count = len(rows)
+    shown = rows[:MODEL_ROWS]
     return {
         "ref": ref,
-        "row_count": len(rows),
-        "rows": rows,
+        # The true count of what the query returned, whether or not every row
+        # is below. Aggregates should come from SQL, but if a count is going
+        # to be read off this payload it should at least be the right one.
+        "row_count": row_count,
+        "rows": shown,
+        "rows_shown": len(shown),
+        "rows_shown_limit": MODEL_ROWS,
         # §10.3 layer 4 caps the result; these two say so out loud. Without
         # them a truncated aggregate is indistinguishable from a complete
         # one and the agent reports a partial count as a total - confidently,

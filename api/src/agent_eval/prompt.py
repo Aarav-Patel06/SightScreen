@@ -27,13 +27,21 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-TOOL_NAMES = (
-    "resolve_entity",
-    "query_ball_data",
-    "get_matchup",
-    "get_player_form",
-    "get_live_prediction",
-)
+from agent_eval.tools import TOOL_NAMES, TOOLS  # noqa: E402  (single source)
+
+# The model the eval runs against. Sonnet 5 rather than Sonnet 4.6: it is both
+# the current generation and cheaper ($2/$10 per MTok against $3/$15), which
+# makes 4.6 the wrong choice for a "start cheap" brief.
+MODEL = "claude-sonnet-5"
+
+# $ per token, for the cost recorded in the results file. Rates are per MTok
+# from the pricing table and are recorded WITH the results, so a figure read
+# in December is interpretable even if pricing has moved since.
+INPUT_RATE = 2.00 / 1_000_000
+OUTPUT_RATE = 10.00 / 1_000_000
+# Cache reads are ~0.1x input; writes 1.25x at the 5-minute TTL.
+CACHE_READ_RATE = INPUT_RATE * 0.1
+CACHE_WRITE_RATE = INPUT_RATE * 1.25
 
 
 @dataclass(frozen=True)
@@ -158,10 +166,14 @@ def fingerprint() -> str:
     shape as the web/lib/types.ts staleness check: generate, diff, fail with
     something actionable.
     """
+    # Full tool DEFINITIONS, not just names. A description edited without
+    # regenerating the TypeScript is exactly the drift this is for, and a
+    # name-only hash would not see it.
     payload = json.dumps(
         {
             "clauses": [{"name": c.name, "text": c.text} for c in CLAUSES],
-            "tools": list(TOOL_NAMES),
+            "tools": list(TOOLS),
+            "model": MODEL,
         },
         sort_keys=True,
     )
