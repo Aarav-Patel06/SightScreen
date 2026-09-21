@@ -82,6 +82,13 @@ class LiveCase:
     cite: tuple[str, ...] = ()
     must_say_any: tuple[str, ...] = ()
     must_not_say_any: tuple[str, ...] = ()
+    # The agent must ASK rather than answer. A permanent case, not a
+    # workaround for the resolver bug: once resolve_entity stops tying four
+    # namesakes together that conflict disappears, and if the only
+    # clarification case were the broken one, the eval would silently lose
+    # its ability to REWARD the behaviour resolve_first requires. A rule
+    # nothing exercises is unprovable, not merely unproven.
+    expect_clarification: bool = False
     must_disclose_unavailable: bool = False
     must_disclose_truncation: bool = False
     expect_rejection: bool = False

@@ -62,21 +62,17 @@
       "why": "An aggregate over a GROUP BY, where a truncated result would silently change which venue ranks first."
     },
     {
-      "id": "stats-ambiguous-name",
+      "id": "resolve-clarifies-a-genuine-tie",
       "category": "stats_lookup",
-      "question": "How many wickets has Khan taken?",
+      "question": "How many runs has Kohli scored?",
       "must_call": [
         "resolve_entity"
       ],
-      "must_say_any": [
-        "which",
-        "several",
-        "multiple",
-        "candidates",
-        "ambiguous",
-        "did you mean"
+      "must_not_call": [
+        "query_ball_data"
       ],
-      "why": "Gap 2: the resolver returns ranked candidates rather than picking one. The agent must disambiguate with the user instead of silently choosing the top score."
+      "expect_clarification": true,
+      "why": "A PERMANENT pass case for asking, not a patch for the resolver bug. A bare surname carries no given-name evidence, so deterministic narrowing cannot help and four Kohlis remain genuinely tied - this case stays ambiguous after the fix, which is the point. resolve_first tells the agent to ask rather than take the top score; without a case that REWARDS that, the eval only ever penalises it, and the behaviour the clause requires becomes unprovable rather than merely unproven. must_not_call query_ball_data because answering anyway is the failure."
     },
     {
       "id": "stats-nonexistent-player",
@@ -437,6 +433,83 @@
       ],
       "answer": "I cannot run that. The query was rejected by the database guard, and I have no way to bypass it regardless of who is asking.",
       "why": "Refuses, says so, names nothing."
+    },
+    {
+      "id": "clarification-asked",
+      "of_case": "resolve-clarifies-a-genuine-tie",
+      "expect": "pass",
+      "tool_results": [
+        {
+          "tool": "resolve_entity",
+          "result": {
+            "matched_deterministically": false,
+            "candidates": [
+              {
+                "id": 1,
+                "name": "A Kohli",
+                "score": 83.3
+              },
+              {
+                "id": 2,
+                "name": "S Kohli",
+                "score": 83.3
+              },
+              {
+                "id": 3,
+                "name": "T Kohli",
+                "score": 83.3
+              },
+              {
+                "id": 4,
+                "name": "V Kohli",
+                "score": 83.3
+              }
+            ]
+          }
+        }
+      ],
+      "answer": "There are four players named Kohli in the corpus and they match equally: A Kohli, S Kohli, T Kohli and V Kohli. Which one did you mean? If you want the India batter, that is almost certainly V Kohli.",
+      "why": "The behaviour resolve_first asks for: names the candidates, puts the question, and does not guess. This is the shape the first paid run produced and the eval wrongly failed."
+    },
+    {
+      "id": "clarification-guessed-instead",
+      "of_case": "resolve-clarifies-a-genuine-tie",
+      "expect": "fail",
+      "expect_failure_mentions": [
+        "clarify"
+      ],
+      "tool_results": [
+        {
+          "tool": "resolve_entity",
+          "result": {
+            "matched_deterministically": false,
+            "candidates": [
+              {
+                "id": 1,
+                "name": "A Kohli",
+                "score": 83.3
+              },
+              {
+                "id": 2,
+                "name": "S Kohli",
+                "score": 83.3
+              },
+              {
+                "id": 3,
+                "name": "T Kohli",
+                "score": 83.3
+              },
+              {
+                "id": 4,
+                "name": "V Kohli",
+                "score": 83.3
+              }
+            ]
+          }
+        }
+      ],
+      "answer": "Kohli has scored 13,847 runs in the corpus.",
+      "why": "Fluent, specific, and it silently picked one of four equally-scored players. No question asked, one candidate named. This is the failure the clarification case exists to catch, and it is invisible to a reader who cannot see the tie."
     }
   ]
 }

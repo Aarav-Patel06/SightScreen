@@ -36,6 +36,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field
 
+from agent_tools import name_forms
 from agent_tools.sql_guard import MAX_ROWS, GuardRejection, check
 from config import _looks_like_placeholder, settings
 from ingest.entity_resolution import (
@@ -361,9 +362,26 @@ def resolve_entity(request: ResolveRequest) -> dict:
     # and the fallback is the worse one - it turned "I found nothing" into a
     # confident wrong answer, which is the failure mode §10.4 exists to
     # prevent. No fallback now: an empty bucket returns no candidates.
+    matched_deterministically = False
     if request.kind == "player":
         bucket = surname_key(normalized)
         rows = [r for r in rows if surname_blocks(bucket, r["name"])]
+
+        # Deterministic narrowing BEFORE any similarity score. Measured
+        # 2026-09-21: fuzz.ratio put A/S/T/V Kohli in a four-way tie at 83.3
+        # for "Virat Kohli", and ranked E and T Malinga ABOVE SL Malinga for
+        # "Lasith Malinga". Similarity cannot separate names that differ by
+        # one character in a short token and share a surname, so the fix is
+        # not to weight the initial - it is to stop asking.
+        #
+        # `narrow` keeps only candidates whose stored initials contain, in
+        # order, the initials of what was actually said. It returns [] when
+        # nothing is compatible and the fuzzy path below then runs unchanged,
+        # so an unusual spelling still resolves.
+        compatible = set(name_forms.narrow(request.name, [r["name"] for r in rows]))
+        if compatible:
+            rows = [r for r in rows if r["name"] in compatible]
+            matched_deterministically = True
 
     scored = _score_candidates(
         normalized, [(r["entity_id"], r["name"]) for r in rows], request.kind
@@ -371,6 +389,12 @@ def resolve_entity(request: ResolveRequest) -> dict:
     return {
         "query": request.name,
         "kind": request.kind,
+        # Told to the model, because it changes what a score MEANS. After a
+        # deterministic narrowing, two remaining candidates are genuinely
+        # ambiguous rather than merely close - "Lasith Malinga" leaves SL and
+        # LN Malinga, both of whom really do have an L - and that is a case
+        # for asking the user, not for taking the top score.
+        "matched_deterministically": matched_deterministically,
         "candidates": [
             {"id": c.entity_id, "name": c.canonical_name, "score": round(c.score, 1)}
             for c in scored[:MAX_CANDIDATES]

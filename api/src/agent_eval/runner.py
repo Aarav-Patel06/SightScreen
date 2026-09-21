@@ -41,6 +41,7 @@ from dotenv import dotenv_values
 
 from agent_eval.cases import LiveCase, load
 from agent_eval.checker import Result, check_answer
+from agent_eval.heartbeat import Heartbeat, status
 from agent_eval.prompt import (
     CACHE_READ_RATE,
     CACHE_WRITE_RATE,
@@ -254,7 +255,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--thinking", default="on", choices=["on", "off"])
     parser.add_argument("--reps", type=int, default=None)
     parser.add_argument("--out", default=None, help="results file name under data/agent_eval/")
+    parser.add_argument("--status", action="store_true", help="report the heartbeat and exit")
+    parser.add_argument("--force", action="store_true", help="start even if one looks live")
     args = parser.parse_args(argv)
+
+    if args.status:
+        print(status()[1])
+        return 0
 
     import anthropic
 
@@ -280,23 +287,43 @@ def main(argv: list[str] | None = None) -> int:
     if args.thinking_ab:
         cases = [c for c in eval_set.live if _is_honesty(c)]
 
+    # Refuse to start a second paid job on top of a live one. The $0.70 that
+    # motivated the heartbeat was spent re-running an eval that was still
+    # going, because a buffered pipe and `ps` both said it was not.
+    state, line = status()
+    if state == "RUNNING" and not args.force:
+        raise SystemExit(
+            f"a paid job is already running: {line}. "
+            "Wait for it, or pass --force if you are certain it is not."
+        )
+
+    total_planned = sum(
+        (args.reps or (HONESTY_REPS if _is_honesty(c) else OTHER_REPS)) for c in cases
+    ) * len(configs)
+
     runs: list[Run] = []
     started = time.perf_counter()
-    for thinking in configs:
-        for case in cases:
-            reps = args.reps or (HONESTY_REPS if _is_honesty(case) else OTHER_REPS)
-            for rep in range(1, reps + 1):
-                run = run_case(
-                    client, api, case, rep=rep, thinking=thinking,
-                    ablate=frozenset(), secret=secret,
-                )
-                runs.append(run)
-                mark = "ok  " if run.verdict == "pass" else "FAIL"
-                think = "think" if thinking else "     "
-                print(
-                    f"{mark} {think} {case.id:<36} rep{rep} "
-                    f"{run.turns}t ${run.dollars:.4f} {','.join(run.rules_fired) or ''}"
-                )
+    with Heartbeat.start(args.out or "results", total=total_planned) as beat:
+        for thinking in configs:
+            for case in cases:
+                reps = args.reps or (HONESTY_REPS if _is_honesty(case) else OTHER_REPS)
+                for rep in range(1, reps + 1):
+                    run = run_case(
+                        client, api, case, rep=rep, thinking=thinking,
+                        ablate=frozenset(), secret=secret,
+                    )
+                    runs.append(run)
+                    mark = "ok  " if run.verdict == "pass" else "FAIL"
+                    think = "think" if thinking else "     "
+                    print(
+                        f"{mark} {think} {case.id:<36} rep{rep} "
+                        f"{run.turns}t ${run.dollars:.4f} {','.join(run.rules_fired) or ''}"
+                    )
+                    beat.tick(
+                        done=len(runs),
+                        dollars=sum(r.dollars for r in runs),
+                        note=f"{case.id} rep{rep}",
+                    )
 
     total = sum(r.dollars for r in runs)
     payload = {

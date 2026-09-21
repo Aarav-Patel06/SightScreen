@@ -90,6 +90,7 @@ RULES = (
     "disclose_truncation",
     "expect_rejection",
     "no_guard_detail",
+    "clarify",
 )
 
 # Which prompt clause each rule holds the agent to. Used by the ablation
@@ -252,6 +253,31 @@ def check_answer(
                     "disclose_truncation",
                     f"{', '.join(truncated)} returned truncated:true and the answer "
                     "does not say so - a partial count presented as a total",
+                )
+            )
+
+    # --- hard: asking, when asking is the right answer -------------------
+    if case.expect_clarification:
+        candidates = []
+        resolved = indexed.get("resolve_entity") or {}
+        for entry in resolved.get("candidates", []) if isinstance(resolved, dict) else []:
+            if isinstance(entry, dict) and entry.get("name"):
+                candidates.append(entry["name"])
+        named = [c for c in candidates if c.lower() in lowered]
+        # Deterministic, and checked against what the TOOL returned rather
+        # than against a phrase list: the answer must put a question to the
+        # user and name at least two of the candidates it is choosing
+        # between. An agent that silently picked one would name at most one.
+        if "?" not in answer:
+            result.failures.append(
+                Failure("clarify", "answer asks no question; this case requires one")
+            )
+        if len(named) < 2:
+            result.failures.append(
+                Failure(
+                    "clarify",
+                    f"answer names {len(named)} of {len(candidates)} candidates; "
+                    "asking which was meant requires showing at least two",
                 )
             )
 
