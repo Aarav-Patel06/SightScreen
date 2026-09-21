@@ -220,16 +220,28 @@ def _single_select(statement: exp.Expression) -> None:
 MAX_ROWS = 1000
 
 
-def _forced_limit(statement: exp.Expression) -> exp.Expression:
+def _forced_limit(statement: exp.Expression, *, probe_extra_row: bool = False) -> exp.Expression:
     """Bound the result set, without overriding a caller who asked for less.
 
     Only touches a Select. Leaving anything else alone is what lets the
     single_select non-vacuity proof observe a SET statement surviving the
     rest of the pipeline when that one layer is disabled.
+
+    `probe_extra_row` raises the ceiling to MAX_ROWS + 1 so the CALLER can
+    tell a complete result of exactly MAX_ROWS from one the limit cut off.
+    Counting rows cannot: both come back as 1000. That ambiguity is the
+    dangerous half of layer 4 - a LIMIT that silently truncates a GROUP BY
+    turns "how many players have done X" into a confident wrong total, the
+    same failure shape as a fallback that narrows a query and returns the
+    narrowed rows as though they answered the original question.
+
+    The extra row is never returned; routes slice it off and set a flag. It
+    exists only to be counted.
     """
     if not isinstance(statement, exp.Select):
         return statement
 
+    ceiling = MAX_ROWS + 1 if probe_extra_row else MAX_ROWS
     limit = statement.args.get("limit")
     if limit is not None:
         try:
@@ -237,16 +249,33 @@ def _forced_limit(statement: exp.Expression) -> exp.Expression:
         except (AttributeError, ValueError):
             # A non-literal LIMIT (a parameter, an expression) cannot be
             # compared, so it is replaced rather than trusted.
-            return statement.limit(MAX_ROWS)
-        if requested <= MAX_ROWS:
+            return statement.limit(ceiling)
+        if requested < MAX_ROWS:
+            # The caller asked for less than the ceiling. That is their
+            # limit, they know they set it, and probing it would make every
+            # deliberate "top 10" report itself as truncated.
             return statement
-    return statement.limit(MAX_ROWS)
+        if requested == MAX_ROWS:
+            # Written by the caller but identical to the guard's ceiling, so
+            # it has the same silent-truncation problem and gets the same
+            # probe. With probe_extra_row off this re-sets the same value
+            # and emits the same SQL.
+            return statement.limit(ceiling)
+    return statement.limit(ceiling)
 
 
-def check(sql: str, *, skip: frozenset[str] = frozenset()) -> str:
+def check(
+    sql: str, *, skip: frozenset[str] = frozenset(), probe_extra_row: bool = False
+) -> str:
     """Return the SQL to execute, or raise GuardRejection.
 
     `skip` disables a named layer. Tests only - see the module docstring.
+
+    `probe_extra_row` asks for one row beyond MAX_ROWS so the caller can
+    report truncation rather than presenting a cut-off result as a total.
+    It defaults to off, which keeps the emitted SQL byte-identical to what
+    every existing test asserts; layer 4 still caps what is RETURNED at
+    MAX_ROWS either way, because the route slices the probe row off.
     """
     statements = _parse(sql)
 
@@ -258,6 +287,9 @@ def check(sql: str, *, skip: frozenset[str] = frozenset()) -> str:
             _single_select(statement)
 
     if "forced_limit" not in skip:
-        statements = [_forced_limit(statement) for statement in statements]
+        statements = [
+            _forced_limit(statement, probe_extra_row=probe_extra_row)
+            for statement in statements
+        ]
 
     return "; ".join(s.sql(dialect=DIALECT, comments=False) for s in statements)

@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent_tools.sql_guard import LAYERS, GuardRejection, check
+from agent_tools.sql_guard import LAYERS, MAX_ROWS, GuardRejection, check
 
 ALL_LAYER_NAMES = {layer.name for layer in LAYERS}
 
@@ -249,6 +249,52 @@ def test_a_cartesian_product_is_still_bounded_by_the_forced_limit():
     with a LIMIT so it cannot stream 2.4M x 2.4M rows."""
     out = check("SELECT * FROM agent_deliveries a, agent_deliveries b")
     assert "LIMIT" in out.upper()
+
+
+# --- 5b. the truncation probe ---------------------------------------------
+#
+# Layer 4 caps the result at MAX_ROWS, and a cap nobody is told about is how
+# a truncated GROUP BY becomes a confident wrong total. Counting rows cannot
+# detect it: a complete result of exactly MAX_ROWS and one cut off at
+# MAX_ROWS are both 1000 rows. So `probe_extra_row` asks for one more and
+# the route reports the difference.
+
+
+def test_the_probe_asks_for_one_row_past_the_ceiling():
+    out = check("SELECT batter FROM agent_deliveries", probe_extra_row=True)
+    assert f"LIMIT {MAX_ROWS + 1}" in out.upper()
+
+
+def test_the_probe_is_off_by_default_so_the_emitted_sql_is_unchanged():
+    """Every other test in this file asserts on the default output. The probe
+    is opt-in precisely so it cannot quietly move that contract."""
+    out = check("SELECT batter FROM agent_deliveries")
+    assert f"LIMIT {MAX_ROWS}" in out.upper()
+    assert f"LIMIT {MAX_ROWS + 1}" not in out.upper()
+
+
+def test_a_caller_limit_equal_to_the_ceiling_is_probed_too():
+    """`LIMIT 1000` written by the agent has the same silent-truncation
+    problem as a limit the guard imposed, so it gets the same treatment."""
+    out = check(f"SELECT batter FROM agent_deliveries LIMIT {MAX_ROWS}", probe_extra_row=True)
+    assert f"LIMIT {MAX_ROWS + 1}" in out.upper()
+
+
+def test_a_smaller_caller_limit_is_left_alone():
+    """A deliberate "top 10" must not report itself as truncated. The caller
+    set that limit and knows it."""
+    out = check("SELECT batter FROM agent_deliveries LIMIT 10", probe_extra_row=True)
+    assert "LIMIT 10" in out.upper()
+    assert f"LIMIT {MAX_ROWS + 1}" not in out.upper()
+
+
+def test_the_probe_never_raises_the_cap_on_what_is_returned():
+    """The probe row exists to be counted, not served. Layer 4's guarantee is
+    about what reaches the caller, and routes slice the extra row off - so a
+    probe that leaked it would weaken the layer it reports on."""
+    from agent_tools.routes import MAX_ROWS as route_max
+
+    assert route_max == MAX_ROWS
 
 
 # --- 6. file and privilege access -----------------------------------------

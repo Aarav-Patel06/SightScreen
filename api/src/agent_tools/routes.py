@@ -36,7 +36,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field
 
-from agent_tools.sql_guard import GuardRejection, check
+from agent_tools.sql_guard import MAX_ROWS, GuardRejection, check
 from config import _looks_like_placeholder, settings
 from ingest.entity_resolution import (
     _score_candidates,
@@ -167,7 +167,9 @@ def query_ball_data(request: SqlRequest) -> dict:
     started = time.perf_counter()
 
     try:
-        guarded = check(request.sql)
+        # One row past the ceiling, so truncation can be REPORTED rather than
+        # inferred from a row count that looks identical either way.
+        guarded = check(request.sql, probe_extra_row=True)
     except GuardRejection as rejection:
         _log_query(
             ref, request.sql, "rejected", rejection.layer, None,
@@ -191,8 +193,25 @@ def query_ball_data(request: SqlRequest) -> dict:
         raise _rejected(ref) from None
 
     duration_ms = int((time.perf_counter() - started) * 1000)
+    # Log the RAW count, before the probe row is dropped. A logged 1001 then
+    # means "truncated" unambiguously, where a logged 1000 would not.
     _log_query(ref, guarded, "ok", None, len(rows), duration_ms)
-    return {"ref": ref, "row_count": len(rows), "rows": rows, "sql": guarded}
+
+    truncated = len(rows) > MAX_ROWS
+    if truncated:
+        rows = rows[:MAX_ROWS]
+    return {
+        "ref": ref,
+        "row_count": len(rows),
+        "rows": rows,
+        # §10.3 layer 4 caps the result; these two say so out loud. Without
+        # them a truncated aggregate is indistinguishable from a complete
+        # one and the agent reports a partial count as a total - confidently,
+        # because nothing in the payload suggested otherwise.
+        "truncated": truncated,
+        "row_limit": MAX_ROWS,
+        "sql": guarded,
+    }
 
 
 # --- 2. get_matchup -------------------------------------------------------
