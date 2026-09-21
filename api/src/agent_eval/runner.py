@@ -57,7 +57,12 @@ from agent_eval.tools import ENDPOINTS, TOOLS
 _ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
 RESULTS_PATH = Path(__file__).resolve().parents[2] / "data" / "agent_eval" / "results.json"
 
-MAX_TURNS = 8
+# Raised from 8 on 2026-09-21. Two cases failed 0/3 under BOTH thinking
+# configs with turns=8 and an EMPTY answer: they were cut off mid-work, one
+# of them 17 tool calls into comparing two players. A ceiling that truncates
+# a working conversation and then lets a content gate take the blame is the
+# harness failing the agent.
+MAX_TURNS = 16
 MAX_TOKENS = 4096
 
 # Cases where intermittency is the risk the case exists to detect, so a
@@ -114,6 +119,7 @@ class Run:
     rules_fired: list[str] = field(default_factory=list)
     failures: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    hit_turn_limit: bool = False
     usage: dict = field(default_factory=dict)
     dollars: float = 0.0
     turns: int = 0
@@ -202,7 +208,14 @@ def run_case(
 
         calls = [b for b in response.content if b.type == "tool_use"]
         if not calls:
+            # The model stopped asking for tools, so this turn's text IS the
+            # answer. Anything it said on an earlier turn was commentary
+            # between tool calls.
+            run.hit_turn_limit = False
             break
+        # Still working. If the loop runs out here, whatever text it emitted
+        # this turn is mid-stream commentary, not a conclusion.
+        run.hit_turn_limit = True
 
         results = []
         for call in calls:
@@ -230,7 +243,18 @@ def run_case(
         # stop making parallel calls.
         messages.append({"role": "user", "content": results})
 
-    checked: Result = check_answer(case, run.answer, run.tool_results, run.tools_called)
+    # Cut off mid-work. The first version of this checked whether `answer`
+    # was empty, which was wrong in a way that took a second run to see: the
+    # loop keeps the LAST text block, so a model that commented between tool
+    # calls and was then truncated left that remark sitting in `answer`,
+    # looking like a conclusion. A content gate then failed it for not
+    # citing a sample size in a sentence that was never meant to be the
+    # answer. Whether the loop exited by exhaustion is the fact; the
+    # presence of text is a proxy for it, and a bad one.
+    answer_for_checking = "" if run.hit_turn_limit else run.answer
+    checked: Result = check_answer(
+        case, answer_for_checking, run.tool_results, run.tools_called
+    )
     run.verdict = checked.verdict
     run.rules_fired = sorted(checked.rules_fired())
     run.failures = [str(f) for f in checked.failures]
@@ -240,10 +264,39 @@ def run_case(
     return run
 
 
-def _write_results(payload: dict) -> None:
+def _payload(runs: list[Run], started: float, *, complete: bool, planned: int) -> dict:
+    return {
+        "model": MODEL,
+        "prompt_fingerprint": fingerprint(),
+        "cases_fingerprint": cases_fingerprint(),
+        "run_at": datetime.now(timezone.utc).isoformat(),
+        "elapsed_seconds": round(time.perf_counter() - started, 1),
+        # A partial file must announce itself. A crash at conversation 32 of
+        # 48 that left a file looking finished would be worse than no file.
+        "complete": complete,
+        "planned_runs": planned,
+        # Recorded so a figure read months later is interpretable without
+        # looking up what pricing was at the time.
+        "rates_per_mtok": {"input": INPUT_RATE * 1e6, "output": OUTPUT_RATE * 1e6},
+        "cost_dollars": round(sum(r.dollars for r in runs), 4),
+        "runs": [asdict(r) for r in runs],
+    }
+
+
+def _write_results(payload: dict, quiet: bool = False) -> None:
+    """Atomically, and after EVERY run rather than only at the end.
+
+    Written once at the end until 2026-09-21, when a network drop killed a
+    run at conversation 32 of 48 and discarded $1.03 of completed work - the
+    results existed only in memory. Incremental writing costs one small file
+    write per conversation and caps the loss at a single conversation.
+    """
     RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    RESULTS_PATH.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    print(f"\nwrote {RESULTS_PATH}")
+    tmp = RESULTS_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(RESULTS_PATH)
+    if not quiet:
+        print(f"wrote {RESULTS_PATH}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -302,6 +355,11 @@ def main(argv: list[str] | None = None) -> int:
         (args.reps or (HONESTY_REPS if _is_honesty(c) else OTHER_REPS)) for c in cases
     ) * len(configs)
 
+    # Before the loop, because results are now written DURING it.
+    if args.out:
+        global RESULTS_PATH
+        RESULTS_PATH = RESULTS_PATH.parent / args.out
+
     runs: list[Run] = []
     started = time.perf_counter()
     with Heartbeat.start(args.out or "results", total=total_planned) as beat:
@@ -325,23 +383,15 @@ def main(argv: list[str] | None = None) -> int:
                         dollars=sum(r.dollars for r in runs),
                         note=f"{case.id} rep{rep}",
                     )
+                    # After every run, so a crash costs one conversation
+                    # rather than the whole pass.
+                    _write_results(
+                        _payload(runs, started, complete=False, planned=total_planned),
+                        quiet=True,
+                    )
 
     total = sum(r.dollars for r in runs)
-    payload = {
-        "model": MODEL,
-        "prompt_fingerprint": fingerprint(),
-        "cases_fingerprint": cases_fingerprint(),
-        "run_at": datetime.now(timezone.utc).isoformat(),
-        "elapsed_seconds": round(time.perf_counter() - started, 1),
-        # Recorded so a figure read months later is interpretable without
-        # looking up what pricing was at the time.
-        "rates_per_mtok": {"input": INPUT_RATE * 1e6, "output": OUTPUT_RATE * 1e6},
-        "cost_dollars": round(total, 4),
-        "runs": [asdict(r) for r in runs],
-    }
-    if args.out:
-        global RESULTS_PATH
-        RESULTS_PATH = RESULTS_PATH.parent / args.out
+    payload = _payload(runs, started, complete=True, planned=total_planned)
     _write_results(payload)
 
     failed = [r for r in runs if r.verdict != "pass"]

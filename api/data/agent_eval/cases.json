@@ -52,14 +52,12 @@
     {
       "id": "stats-venue-scoring",
       "category": "stats_lookup",
-      "question": "Which venue has the highest average runs per over in T20s?",
+      "question": "Which venue has the highest average runs per over in T20s, and how many balls has been bowled there?",
       "must_call": [
         "query_ball_data"
       ],
-      "cite": [
-        "query_ball_data.row_count"
-      ],
-      "why": "An aggregate over a GROUP BY, where a truncated result would silently change which venue ranks first."
+      "why": "An aggregate over a GROUP BY. The citation cannot be asserted by COLUMN NAME here: the model writes the SQL and chooses the aliases, and two runs of this same question produced `legal_balls` and `balls` - so a path naming either fails the other, and one run marked failed had answered '11.31 runs per over, based on 78 legal balls bowled', which is precisely what 10.4 asks for. Asserting on VALUES instead: at least two distinct numbers from the winning row must appear, so a rate quoted with its denominator passes and a bare rate does not.",
+      "cite_values_from_first_row": 2
     },
     {
       "id": "resolve-clarifies-a-genuine-tie",

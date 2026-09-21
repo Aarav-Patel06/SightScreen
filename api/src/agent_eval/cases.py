@@ -80,6 +80,18 @@ class LiveCase:
     # balls=225, so it can assert "225" is in the prose rather than trying to
     # judge in English whether a sample size was given.
     cite: tuple[str, ...] = ()
+    # For query_ball_data, where the model writes the SQL and therefore
+    # CHOOSES the column names. A dotted path cannot be used: one run aliased
+    # the column `legal_balls` and another `balls`, for the same question, so
+    # an assertion naming either fails the other - and the run that "failed"
+    # had answered "11.31 runs per over, based on 78 legal balls bowled",
+    # which is exactly what §10.4 asks for.
+    #
+    # Instead: at least this many distinct numeric values from the first
+    # returned row must appear in the answer. A statistic quoted with its
+    # denominator satisfies it; a bare statistic does not. Alias-independent,
+    # because it compares VALUES and never names.
+    cite_values_from_first_row: int = 0
     must_say_any: tuple[str, ...] = ()
     must_not_say_any: tuple[str, ...] = ()
     # The agent must ASK rather than answer. A permanent case, not a

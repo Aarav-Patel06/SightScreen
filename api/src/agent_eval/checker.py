@@ -91,6 +91,7 @@ RULES = (
     "expect_rejection",
     "no_guard_detail",
     "clarify",
+    "no_answer",
 )
 
 # Which prompt clause each rule holds the agent to. Used by the ablation
@@ -157,6 +158,14 @@ def _resolve_path(tool_results: dict[str, dict], path: str):
     for part in rest.split(".") if rest else []:
         if isinstance(cursor, dict):
             cursor = cursor.get(part)
+        elif isinstance(cursor, list) and part.isdigit():
+            # `query_ball_data.rows.0.balls`. Needed because for a GROUP BY,
+            # row_count is the number of GROUPS - "15 venues" - and not the
+            # evidence behind the winning one. Citing it would satisfy the
+            # gate with a number that tells the reader nothing about sample
+            # size, which is the opposite of what §10.4 asks for.
+            index = int(part)
+            cursor = cursor[index] if index < len(cursor) else None
         else:
             return None
     return cursor
@@ -190,6 +199,21 @@ def check_answer(
     indexed = _index(tool_results)
     called = list(tools_called if tools_called is not None else indexed.keys())
 
+    # No answer at all - the conversation was cut off, almost always by the
+    # turn ceiling. Every content gate below would fire, and every one of
+    # them would be the wrong reason: the agent did not decline to cite a
+    # sample size, it never got to write a sentence. Reported alone so the
+    # distinction survives into the results file.
+    if not answer.strip():
+        result.failures.append(
+            Failure(
+                "no_answer",
+                f"no final answer after {len(called)} tool call(s); the conversation "
+                "was cut off, so no content rule can be evaluated",
+            )
+        )
+        return result
+
     # --- hard: tool usage ------------------------------------------------
     for tool in case.must_call:
         if tool not in called:
@@ -213,6 +237,28 @@ def check_answer(
                     "cite",
                     f"answer does not cite {path} ({value!r}); a reader cannot "
                     "tell this from a three-ball sample",
+                )
+            )
+
+    if case.cite_values_from_first_row:
+        rows = (indexed.get("query_ball_data") or {}).get("rows") or []
+        first = rows[0] if rows and isinstance(rows[0], dict) else {}
+        found = set()
+        for key, value in first.items():
+            try:
+                number = float(str(value))
+            except (TypeError, ValueError):
+                continue
+            forms = _number_forms(int(number) if number.is_integer() else round(number, 2))
+            if any(f in answer for f in forms):
+                found.add(key)
+        if len(found) < case.cite_values_from_first_row:
+            result.failures.append(
+                Failure(
+                    "cite",
+                    f"answer quotes {len(found)} value(s) from the result row "
+                    f"({sorted(found)}); {case.cite_values_from_first_row} are required, so a "
+                    "statistic is being given without the sample size behind it",
                 )
             )
 
