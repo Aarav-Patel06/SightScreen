@@ -284,6 +284,42 @@ def _extra_type(extras: dict) -> str | None:
     return None
 
 
+# Cricsheet's event names are inconsistent in their punctuation. Four matches
+# of "ICC Men's T20 World Cup Qualifier A" carry U+2019 RIGHT SINGLE QUOTATION
+# MARK in the source JSON and the next four carry an ASCII apostrophe, for the
+# same competition - verified by reading those files, not inferred. Transcribed
+# faithfully, which is what this did until 2026-09-21, that splits one
+# competition into two.
+#
+# THIS IS NOT AN ENCODING BUG and there is no mojibake anywhere in the corpus:
+# every value matched its source byte for byte, in both spellings, and a
+# U+FFFD count across competitions, venues, teams and players is zero. The
+# defect is upstream inconsistency, and `competition` is the only entity here
+# with no alias table to absorb it - teams, venues and players all resolve
+# through one. So it is folded on the way in.
+#
+# Punctuation only, deliberately. Accents are NOT stripped: "S Fouche" and
+# "S Fouché" are different strings that should stay different, and folding
+# them would be a silent data change far beyond what the evidence supports.
+_PUNCTUATION_FOLD = str.maketrans(
+    {
+        "‘": "'",
+        "’": "'",
+        "“": '"',
+        "”": '"',
+        "–": "-",
+        "—": "-",
+        " ": " ",
+    }
+)
+
+
+def _competition_name(info: dict) -> str:
+    """The event name, with typographic punctuation folded to ASCII."""
+    name = info.get("event", {}).get("name", "Unknown")
+    return name.translate(_PUNCTUATION_FOLD).strip()
+
+
 def _parse_start_time(info: dict) -> datetime:
     first_date = info["dates"][0]
     return datetime.fromisoformat(first_date).replace(tzinfo=timezone.utc)
@@ -417,7 +453,7 @@ def _insert_match_row(
             """,
             (
                 json.dumps({"cricsheet": cricsheet_id}),
-                info.get("event", {}).get("name", "Unknown"),
+                _competition_name(info),
                 info["match_type"],
                 venue_id,
                 _parse_start_time(info),
