@@ -143,6 +143,41 @@ def _require(condition: bool, message: str) -> None:
         raise EvalSetError(message)
 
 
+def fingerprint(path: Path | None = None) -> str:
+    """A hash of the QUESTIONS and their assertions.
+
+    Separate from prompt.fingerprint, which covers the agent. Both go in the
+    results file, because they go stale for different reasons: editing a
+    clause changes what the agent was told, and editing a case changes what
+    it was asked. Results recorded under either are no longer about the
+    current eval, and until 2026-09-21 only the first was checked - so
+    renaming three mis-specified cases would have left the old results
+    looking current.
+
+    Deliberately hashes the ASSERTIONS and not `why`: prose can be improved
+    without invalidating a paid run.
+    """
+    import hashlib
+
+    eval_set = load(path)
+    payload = json.dumps(
+        [
+            {
+                k: v
+                for k, v in asdict_case(case).items()
+                if k not in {"why"}
+            }
+            for case in eval_set.live
+        ],
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def asdict_case(case: LiveCase) -> dict:
+    return {f: getattr(case, f) for f in LiveCase.__dataclass_fields__}
+
+
 def load(path: Path | None = None) -> EvalSet:
     """Read the eval set, or raise EvalSetError naming what is wrong."""
     path = path or CASES_PATH

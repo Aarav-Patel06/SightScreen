@@ -40,6 +40,7 @@ from pathlib import Path
 from dotenv import dotenv_values
 
 from agent_eval.cases import LiveCase, load
+from agent_eval.cases import fingerprint as cases_fingerprint
 from agent_eval.checker import Result, check_answer
 from agent_eval.heartbeat import Heartbeat, status
 from agent_eval.prompt import (
@@ -329,6 +330,7 @@ def main(argv: list[str] | None = None) -> int:
     payload = {
         "model": MODEL,
         "prompt_fingerprint": fingerprint(),
+        "cases_fingerprint": cases_fingerprint(),
         "run_at": datetime.now(timezone.utc).isoformat(),
         "elapsed_seconds": round(time.perf_counter() - started, 1),
         # Recorded so a figure read months later is interpretable without

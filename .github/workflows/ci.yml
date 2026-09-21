@@ -127,14 +127,24 @@ jobs:
           if not results.exists():
               sys.exit("::error::api/data/agent_eval/results.json is missing - run "
                        "`python -m agent_eval.runner --all` and commit the results.")
-          recorded = json.loads(results.read_text())["prompt_fingerprint"]
-          current = fingerprint()
-          if recorded != current:
-              sys.exit(f"::error::eval results are STALE: recorded fingerprint {recorded}, "
-                       f"current {current}. The prompt or tool definitions changed since the "
-                       "last paid run. Re-run `python -m agent_eval.runner --all` and commit "
-                       "api/data/agent_eval/results.json.")
-          print(f"eval results match fingerprint {current}")
+          from agent_eval.cases import fingerprint as cases_fingerprint
+          data = json.loads(results.read_text())
+          # TWO fingerprints, because results go stale for two reasons:
+          # editing a clause changes what the agent was TOLD, editing a case
+          # changes what it was ASKED. Only the first was checked until
+          # 2026-09-21, so renaming three mis-specified cases would have left
+          # stale results looking current.
+          for key, current, what in (
+              ("prompt_fingerprint", fingerprint(), "the prompt or tool definitions"),
+              ("cases_fingerprint", cases_fingerprint(), "the eval cases"),
+          ):
+              recorded = data.get(key)
+              if recorded != current:
+                  sys.exit(f"::error::eval results are STALE: {key} recorded {recorded}, "
+                           f"current {current}. {what} changed since the last paid run. "
+                           "Re-run `python -m agent_eval.runner --all` and commit "
+                           "api/data/agent_eval/results.json.")
+          print("eval results match both fingerprints")
           PY
 
   web:

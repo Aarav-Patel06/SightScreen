@@ -379,7 +379,12 @@ def resolve_entity(request: ResolveRequest) -> dict:
         # nothing is compatible and the fuzzy path below then runs unchanged,
         # so an unusual spelling still resolves.
         compatible = set(name_forms.narrow(request.name, [r["name"] for r in rows]))
-        if compatible:
+        # Only claim a deterministic match when narrowing actually REDUCED the
+        # set. A bare surname is compatible with every namesake, so `narrow`
+        # returns all of them - that is the absence of given-name evidence,
+        # not a deterministic identification, and reporting it as one would
+        # tell the model to trust a result nothing narrowed.
+        if compatible and len(compatible) < len(rows):
             rows = [r for r in rows if r["name"] in compatible]
             matched_deterministically = True
 

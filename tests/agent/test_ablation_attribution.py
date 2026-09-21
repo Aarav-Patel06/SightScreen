@@ -60,8 +60,8 @@ def test_a_missing_citation_is_attributed_to_cite_and_nothing_else():
     so `cite` is the only gate that can fire - which is what makes the proof
     about the citation clause rather than about the run."""
     result = check_answer(
-        LIVE["stats-kohli-vs-malinga"],
-        "Kohli strikes at 104.89 against Malinga.",
+        LIVE["stats-kohli-vs-starc"],
+        "Kohli strikes at 104.89 against Starc.",
         [{"tool": "get_matchup", "result": {"balls": 225, "strike_rate": 104.89}}],
         tools_called=["get_matchup"],
     )
@@ -100,8 +100,8 @@ def test_a_clean_answer_fires_no_gates():
     """The control half. Without it, "the gate fired" could just mean the
     gate always fires - the vacuity problem one level up."""
     result = check_answer(
-        LIVE["stats-kohli-vs-malinga"],
-        "Across 225 deliveries Kohli strikes at 104.89 against Malinga.",
+        LIVE["stats-kohli-vs-starc"],
+        "Across 225 deliveries Kohli strikes at 104.89 against Starc.",
         [{"tool": "get_matchup", "result": {"balls": 225, "strike_rate": 104.89}}],
         tools_called=["get_matchup"],
     )

@@ -92,10 +92,10 @@ def test_the_same_number_unformatted_also_counts():
 def test_a_missing_sample_size_fails_even_when_every_digit_is_right():
     """§10.4's actual requirement: a 3-ball sample and a 300-ball sample must
     look different to the reader. Correctness of the rate is not the point."""
-    case = LIVE["stats-kohli-vs-malinga"]
+    case = LIVE["stats-kohli-vs-starc"]
     result = check_answer(
         case,
-        "Kohli strikes at 104.89 against Malinga.",
+        "Kohli strikes at 104.89 against Starc.",
         [{"tool": "get_matchup", "result": {"balls": 225, "strike_rate": 104.89}}],
         tools_called=["get_matchup"],
     )
@@ -136,7 +136,7 @@ def test_english_phrasing_rules_warn_and_never_fail():
 
 
 def test_a_failing_result_always_explains_itself():
-    case = LIVE["stats-kohli-vs-malinga"]
+    case = LIVE["stats-kohli-vs-starc"]
     result = check_answer(case, "No numbers here.", [], tools_called=[])
     assert result.verdict == "fail"
     for failure in result.failures:
