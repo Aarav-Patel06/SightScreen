@@ -21,7 +21,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+# httpx2 is what starlette.testclient imports; without it every test that
+# builds a TestClient fails at COLLECTION, so the whole agent suite is
+# unrunnable from a clean install. It was missing until 2026-09-21 and
+# went unnoticed because the ambient system Python happened to carry the
+# deprecated httpx - which is the drift a project venv exists to prevent.
+dev = ["pytest>=8", "httpx2"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
