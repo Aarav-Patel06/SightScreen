@@ -10,6 +10,97 @@ See [SPEC.md](SPEC.md) for the full build specification.
 2. Python service: `pip install -e "./api[dev]"`
 3. Web app: `cd web && npm install`
 
+## Running it locally
+
+Four processes, none of which needs the others to start first. Ports are
+5433 (Postgres), 8000 (agent tools), 3000 (web).
+
+```bash
+# 1. Postgres - the training corpus and the agent's replica
+docker compose up -d
+
+# 2. Migrations, to BOTH databases (local + Supabase). Idempotent.
+python supabase/apply_migrations.py
+
+# 3. Agent tool endpoints (five routes under /agent)
+cd api && ../api/.venv/Scripts/python.exe -m agent_tools.serve
+
+# 4. Web app, including /ask
+cd web && npm run dev
+```
+
+Step 3 refuses to start without `AGENT_SQL_ROLE_DB_URL`, because the
+alternative is four tools returning 503 while `get_player_form` answers
+normally - which reads as a broken agent rather than a missing variable.
+
+### The agent's corpus replica
+
+A separate database (`cricket_agent_replica`) holding a projection of the
+corpus, read through five views by a role with no table grants (SPEC.md
+§2.1, §10.3). Build or rebuild it with one command - about five minutes for
+3.78M deliveries:
+
+```powershell
+.\scripts\setup-replica.ps1 "postgresql://postgres:postgres@localhost:5433/cricket_agent_replica?sslmode=disable"
+```
+
+It prints an `AGENT_SQL_ROLE_DB_URL` line once and writes it nowhere. Put
+that in `api/.env`. Re-running rotates the password, so re-paste it.
+
+`--verify` proves layers 1 and 3 against the real database rather than
+asserting them, and fails on an unstamped replica - see
+`agent_tools/replica.py`.
+
+### /ask
+
+`/ask` is password-gated because it calls a paid API. Set in
+`web/.env.local`:
+
+| variable | what |
+|---|---|
+| `ASK_PASSWORD` | the shared password a visitor types once |
+| `ASK_SESSION_SECRET` | HMAC key for the session cookie; any long random string |
+| `ASK_DAILY_COST_CAP` | dollars per UTC day before /ask pauses (default 2) |
+
+`AGENT_TOOL_SHARED_SECRET` **must be identical** in `api/.env` and
+`web/.env.local`. When it is not, every tool call returns 401 while the
+password gate, the page and the model call all work - so it reads as a
+broken agent. `tests/test_shared_secret_parity.py` compares them.
+
+### Tests
+
+```bash
+cd api && ../api/.venv/Scripts/python.exe -m pytest ../tests -q   # ~470, 13 min
+cd web && npm test                                                # ~84, seconds
+```
+
+Run the Python suite **from `api/`** - `config.py` resolves its `.env`
+relative to the working directory, and from the repo root it fails on
+`SUPABASE_URL: Field required`.
+
+### The agent eval
+
+The deterministic half runs in CI on every push. The model-calling half
+costs money and is a deliberate command:
+
+```bash
+cd api
+../api/.venv/Scripts/python.exe -m agent_eval.runner --status     # is a paid job running?
+../api/.venv/Scripts/python.exe -m agent_eval.runner --all        # full pass, ~$1.15, ~15 min
+../api/.venv/Scripts/python.exe -m agent_eval.runner --prove citation
+```
+
+Results land in `api/data/agent_eval/results.json` with the model id, both
+fingerprints, the rates they were costed at, and `complete`. They are written
+after **every** conversation, so a crash costs one conversation rather than
+the pass. CI fails when either fingerprint no longer matches the committed
+results - which enforces that the paid half was re-run, without CI ever
+calling a model.
+
+`--status` reads a heartbeat file rather than the process table. Liveness is
+the age of that file: a buffered pipe and `ps` both lied about a running job
+once each, and the second time it cost a duplicate paid run.
+
 ## Environment variables
 
 Two Supabase API keys matter here, and mixing them up is the most common way to
