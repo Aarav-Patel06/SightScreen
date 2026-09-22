@@ -23,7 +23,12 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./vitest.setup.ts"],
-    include: ["lib/**/*.test.ts", "app/**/*.test.tsx"],
+    // `app/**/*.test.ts` as well as `.tsx`: route handlers are plain
+    // TypeScript, and the pattern that only matched components would have
+    // silently collected nothing for app/api/agent/route.test.ts - a test
+    // file that exists, passes locally when named directly, and never runs
+    // in `npm test`. That is the quietest way to have no coverage at all.
+    include: ["lib/**/*.test.ts", "app/**/*.test.ts", "app/**/*.test.tsx"],
     globals: false,
   },
 });
