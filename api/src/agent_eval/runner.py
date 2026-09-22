@@ -52,7 +52,7 @@ from agent_eval.prompt import (
     build,
     fingerprint,
 )
-from agent_eval.tools import ENDPOINTS, TOOLS
+from agent_eval.tools import ENDPOINTS, TOOLS, build_tools
 
 _ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
 RESULTS_PATH = Path(__file__).resolve().parents[2] / "data" / "agent_eval" / "results.json"
@@ -192,6 +192,10 @@ def run_case(
             "cache_control": {"type": "ephemeral"},
         }
     ]
+    # The citation instruction lives in the tool descriptions too, so
+    # ablating the prompt clause alone leaves half of it standing - which is
+    # exactly what made the first proof attempt fail to fire.
+    active_tools = list(build_tools(ablate_citation="citation" in ablate))
     messages: list[dict] = [{"role": "user", "content": case.question}]
     usage = Usage()
     run = Run(case_id=case.id, rep=rep, thinking=thinking, ablated=sorted(ablate))
@@ -201,7 +205,7 @@ def run_case(
             model=MODEL,
             max_tokens=MAX_TOKENS,
             system=system,
-            tools=list(TOOLS),
+            tools=active_tools,
             messages=messages,
         )
         if thinking:
@@ -336,7 +340,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.prove:
         from agent_eval.proof import prove
 
-        return prove(client, api, eval_set, secret, clause=args.prove, out=args.out)
+        return prove(
+            client, api, eval_set, secret, clause=args.prove, out=args.out,
+            case_id=args.case_id,
+        )
 
     cases = list(eval_set.live)
     if args.cases:

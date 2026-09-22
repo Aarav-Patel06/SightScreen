@@ -122,6 +122,55 @@ TOOLS: tuple[dict, ...] = (
 
 TOOL_NAMES = tuple(t["name"] for t in TOOLS)
 
+# The citation instruction is encoded HERE as well as in the system prompt's
+# `citation` clause, and that redundancy defeated the first ablation proof:
+# removing the clause left these sentences still telling the model to quote a
+# sample size, so the agent cited anyway and the proof could not fire.
+#
+# An ablation that leaves half the instruction standing is not an ablation.
+# These are the exact substrings to remove so the proof can test the ABSENCE
+# of the requirement rather than the absence of one copy of it.
+#
+# Production never ablates - `build_tools()` defaults to the full text, and
+# test_the_production_tools_ablate_nothing pins that.
+_CITATION_SENTENCES = {
+    "get_matchup": (
+        " `balls` is the sample size and must appear alongside any rate you quote "
+        "from it."
+    ),
+    "query_ball_data": (
+        " Counting or summing by reading rows gives a wrong answer whenever there "
+        "are more, and leaves you with no sample size to quote - use count(*), "
+        "sum() and group by, and the number comes back with its own denominator."
+    ),
+}
+
+
+def build_tools(*, ablate_citation: bool = False) -> tuple[dict, ...]:
+    """The tool definitions, optionally with the citation instruction removed.
+
+    Tests and the non-vacuity proof only. A clause that cannot be removed
+    cannot be shown to matter, and an instruction duplicated across the
+    prompt and the tool descriptions cannot be removed from one place alone.
+    """
+    if not ablate_citation:
+        return TOOLS
+    out = []
+    for tool in TOOLS:
+        sentence = _CITATION_SENTENCES.get(tool["name"])
+        if sentence and sentence in tool["description"]:
+            out.append({**tool, "description": tool["description"].replace(sentence, "")})
+        elif sentence:
+            # The description was reworded and the ablation silently became a
+            # no-op, which would make the proof pass by testing nothing.
+            raise ValueError(
+                f"citation sentence for {tool['name']!r} not found in its description; "
+                "update _CITATION_SENTENCES or the ablation proves nothing"
+            )
+        else:
+            out.append(tool)
+    return tuple(out)
+
 # The FastAPI path each tool executes against. The harness posts here so the
 # eval exercises the real handlers - guard, logging, auth - rather than a
 # reimplementation of what they do.

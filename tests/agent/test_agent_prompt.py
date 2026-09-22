@@ -94,3 +94,52 @@ def test_the_emitted_typescript_is_generated_not_edited():
     assert "do not edit" in out
     assert "SYSTEM_PROMPT" in out
     assert "PROMPT_FINGERPRINT" in out
+
+
+# --- the tool descriptions carry the citation rule too -------------------
+
+
+def test_the_production_tools_ablate_nothing():
+    """The same guarantee build() gives the prompt. A seam for removing a
+    safety instruction must not be reachable by forgetting an argument."""
+    from agent_eval.tools import TOOLS, build_tools
+
+    assert build_tools() == TOOLS
+
+
+def test_ablating_citation_strips_it_from_the_tool_descriptions_too():
+    """The first ablation proof FAILED TO FIRE because of this. The citation
+    requirement is written in the system prompt AND in the tool descriptions,
+    so removing the clause left get_matchup still saying "`balls` is the
+    sample size and must appear alongside any rate you quote from it" - and
+    the agent cited, correctly, from an instruction the proof thought it had
+    removed. An ablation that leaves half the instruction standing is not an
+    ablation.
+    """
+    from agent_eval.tools import build_tools
+
+    full = {t["name"]: t["description"] for t in build_tools()}
+    ablated = {t["name"]: t["description"] for t in build_tools(ablate_citation=True)}
+    assert "sample size" in full["get_matchup"]
+    assert "sample size" not in ablated["get_matchup"]
+    assert "sample size" in full["query_ball_data"]
+    assert "sample size" not in ablated["query_ball_data"]
+
+
+def test_a_reworded_description_makes_the_ablation_raise_not_no_op():
+    """A silent no-op would make the proof pass by testing nothing - the
+    same failure mode build() guards with its unknown-clause ValueError."""
+    import pytest
+
+    from agent_eval import tools as tools_module
+
+    original = tools_module.TOOLS
+    try:
+        tools_module.TOOLS = tuple(
+            {**t, "description": "reworded"} if t["name"] == "get_matchup" else t
+            for t in original
+        )
+        with pytest.raises(ValueError, match="get_matchup"):
+            tools_module.build_tools(ablate_citation=True)
+    finally:
+        tools_module.TOOLS = original

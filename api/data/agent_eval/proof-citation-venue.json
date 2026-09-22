@@ -1,0 +1,415 @@
+{
+  "clause": "citation",
+  "rule": "cite",
+  "case_id": "stats-venue-scoring",
+  "question": "Which venue has the highest average runs per over in T20s, and how many balls has been bowled there?",
+  "model": "claude-sonnet-5",
+  "prompt_fingerprint": "f44c84ea75e6f8e8",
+  "run_at": "2026-09-22T03:21:42.738190+00:00",
+  "held": false,
+  "checks": {
+    "control_passes": true,
+    "control_fires_no_gates": true,
+    "ablated_fails": false,
+    "ablated_fires_the_clauses_gate": false,
+    "ablated_fires_that_gate_alone": false
+  },
+  "cost_dollars": 0.0618,
+  "control": {
+    "case_id": "stats-venue-scoring",
+    "rep": 1,
+    "thinking": true,
+    "ablated": [],
+    "answer": "The venue with the highest average runs per over in T20s (across the whole corpus) is **North Sydney Oval, Sydney**, at **10.89 runs per over**, but this is based on only **81 balls bowled** there \u2014 a very small sample, so it's not a reliable indicator (likely just one or two matches).\n\nFor context, here are the top results with their sample sizes:\n\n| Venue | Balls bowled | Runs/over |\n|---|---|---|\n| North Sydney Oval, Sydney | 81 | 10.89 |\n| Lisburn Cricket Club, Wallace Park, Lisburn | 420 | 10.24 |\n| Castle Park Cricket Ground | 218 | 9.77 |\n| KSCA Cricket Ground, Alur | 488 | 9.74 |\n| Lavington Sports Oval, Albury | 478 | 9.31 |\n| Bready | 225 | 9.15 |\n| County Ground, Chelmsford | 9,401 | 9.01 |\n| Radlett Cricket Club | 1,874 | 9.00 |\n| The Cooper Associates County Ground | 18,400 | 8.97 |\n| Barsapara Cricket Stadium | 2,722 | 8.96 |\n\nIf you want a more statistically meaningful answer, the **County Ground, Chelmsford** (9,401 balls, 9.01 runs/over) is the highest-scoring venue with a genuinely large sample size \u2014 over 9,000 balls bowled there, versus fewer than 500 at most of the venues above it. Let me know if you'd like me to apply a minimum-balls threshold (e.g., only venues with 1,000+ or 5,000+ balls) to get a more robust ranking.",
+    "tools_called": [
+      "query_ball_data",
+      "query_ball_data",
+      "query_ball_data",
+      "query_ball_data",
+      "query_ball_data"
+    ],
+    "tool_results": [
+      {
+        "tool": "query_ball_data",
+        "result": {
+          "detail": {
+            "error": "query rejected",
+            "ref": "31759758-d649-40bc-9271-069dfcfe8e2f"
+          }
+        }
+      },
+      {
+        "tool": "query_ball_data",
+        "result": {
+          "detail": {
+            "error": "query rejected",
+            "ref": "4e6c5a8e-bede-4c17-8a5e-e66d805e6557"
+          }
+        }
+      },
+      {
+        "tool": "query_ball_data",
+        "result": {
+          "ref": "2a1c6d5d-fda7-495f-bb83-4b8a7f09e833",
+          "row_count": 1,
+          "rows": [
+            {
+              "match_ref": "corpus:125",
+              "competition": "Caribbean Premier League",
+              "format": "T20",
+              "start_time": "2016-08-03T00:00:00Z",
+              "match_date": "2016-08-03",
+              "venue": "Warner Park, Basseterre",
+              "innings": 1,
+              "over_num": 0,
+              "ball_in_over": 1,
+              "legal_ball_num": 1,
+              "batter": "CAK Walton",
+              "non_striker": "CH Gayle",
+              "bowler": "Sohail Tanvir",
+              "batting_team": "Jamaica Tallawahs",
+              "bowling_team": "Guyana Amazon Warriors",
+              "runs_batter": 1,
+              "runs_extras": 0,
+              "runs_total": 1,
+              "extra_type": null,
+              "wicket_type": null,
+              "player_out": null,
+              "wicket_count": 0
+            }
+          ],
+          "rows_shown": 1,
+          "rows_shown_limit": 50,
+          "truncated": false,
+          "row_limit": 1000,
+          "sql": "SELECT * FROM agent_deliveries LIMIT 1"
+        }
+      },
+      {
+        "tool": "query_ball_data",
+        "result": {
+          "ref": "fa4d28d2-a882-4164-acd8-5a0887ead478",
+          "row_count": 1,
+          "rows": [
+            {
+              "match_ref": "corpus:125",
+              "competition": "Caribbean Premier League",
+              "format": "T20",
+              "start_time": "2016-08-03T00:00:00Z",
+              "venue": "Warner Park, Basseterre",
+              "team_a": "Guyana Amazon Warriors",
+              "team_b": "Jamaica Tallawahs",
+              "toss_winner": "Guyana Amazon Warriors",
+              "toss_decision": "field",
+              "winner": "Guyana Amazon Warriors",
+              "result_method": "normal"
+            }
+          ],
+          "rows_shown": 1,
+          "rows_shown_limit": 50,
+          "truncated": false,
+          "row_limit": 1000,
+          "sql": "SELECT * FROM agent_matches LIMIT 1"
+        }
+      },
+      {
+        "tool": "query_ball_data",
+        "result": {
+          "ref": "87a548a5-3fdd-4d38-81af-79382ed1de7d",
+          "row_count": 10,
+          "rows": [
+            {
+              "venue": "North Sydney Oval, Sydney",
+              "balls": 81,
+              "runs": 147,
+              "runs_per_over": 10.88888888888889
+            },
+            {
+              "venue": "Lisburn Cricket Club, Wallace Park, Lisburn",
+              "balls": 420,
+              "runs": 717,
+              "runs_per_over": 10.242857142857142
+            },
+            {
+              "venue": "Castle Park Cricket Ground",
+              "balls": 218,
+              "runs": 355,
+              "runs_per_over": 9.770642201834862
+            },
+            {
+              "venue": "KSCA Cricket Ground, Alur",
+              "balls": 488,
+              "runs": 792,
+              "runs_per_over": 9.737704918032787
+            },
+            {
+              "venue": "Lavington Sports Oval, Albury",
+              "balls": 478,
+              "runs": 742,
+              "runs_per_over": 9.313807531380753
+            },
+            {
+              "venue": "Bready",
+              "balls": 225,
+              "runs": 343,
+              "runs_per_over": 9.146666666666667
+            },
+            {
+              "venue": "County Ground, Chelmsford",
+              "balls": 9401,
+              "runs": 14111,
+              "runs_per_over": 9.006063184767577
+            },
+            {
+              "venue": "Radlett Cricket Club",
+              "balls": 1874,
+              "runs": 2811,
+              "runs_per_over": 9.0
+            },
+            {
+              "venue": "The Cooper Associates County Ground",
+              "balls": 18400,
+              "runs": 27523,
+              "runs_per_over": 8.974891304347826
+            },
+            {
+              "venue": "Barsapara Cricket Stadium",
+              "balls": 2722,
+              "runs": 4065,
+              "runs_per_over": 8.960323291697282
+            }
+          ],
+          "rows_shown": 10,
+          "rows_shown_limit": 50,
+          "truncated": false,
+          "row_limit": 1000,
+          "sql": "SELECT venue, COUNT(*) AS balls, SUM(runs_total) AS runs, CAST(SUM(runs_total) AS DOUBLE PRECISION) / COUNT(*) * 6 AS runs_per_over FROM agent_deliveries WHERE format = 'T20' GROUP BY venue ORDER BY runs_per_over DESC LIMIT 10"
+        }
+      }
+    ],
+    "verdict": "pass",
+    "rules_fired": [],
+    "failures": [],
+    "warnings": [],
+    "hit_turn_limit": false,
+    "usage": {
+      "input_tokens": 4998,
+      "output_tokens": 1576,
+      "cache_read_input_tokens": 8496,
+      "cache_creation_input_tokens": 0
+    },
+    "dollars": 0.027455200000000003,
+    "turns": 4
+  },
+  "ablated": {
+    "case_id": "stats-venue-scoring",
+    "rep": 1,
+    "thinking": true,
+    "ablated": [
+      "citation"
+    ],
+    "answer": "Based on T20 ball-by-ball data in the corpus (restricted to venues with at least 600 legal balls bowled, to avoid tiny-sample noise), the venue with the highest average runs per over is:\n\n**National Sports Academy, Sofia** \u2014 **9.617 runs per over**\n\n- Total balls bowled (all deliveries, including wides/no-balls): **5,065**\n- Legal balls bowled (excluding wides/no-balls, the standard basis for \"overs\"): **4,668**\n- Total runs scored there: **7,482**\n\nFor reference, the next-highest venues were Barsapara Cricket Stadium (9.374 runs/over) and The Cooper Associates County Ground (9.287 runs/over).\n\nNote: this is a straightforward historical record from the data (not a prediction or an adjusted/ability-based figure), and it's sensitive to sample size \u2014 Sofia's total of ~845 overs is much smaller than some of the other venues in the list, so treat it as a descriptive stat about matches actually played there rather than a robust \"scoring venue\" ranking.",
+    "tools_called": [
+      "query_ball_data",
+      "query_ball_data",
+      "query_ball_data",
+      "query_ball_data"
+    ],
+    "tool_results": [
+      {
+        "tool": "query_ball_data",
+        "result": {
+          "ref": "905155a1-3333-41f6-8a0f-db2871d0d29c",
+          "row_count": 1,
+          "rows": [
+            {
+              "match_ref": "corpus:125",
+              "competition": "Caribbean Premier League",
+              "format": "T20",
+              "start_time": "2016-08-03T00:00:00Z",
+              "match_date": "2016-08-03",
+              "venue": "Warner Park, Basseterre",
+              "innings": 1,
+              "over_num": 0,
+              "ball_in_over": 1,
+              "legal_ball_num": 1,
+              "batter": "CAK Walton",
+              "non_striker": "CH Gayle",
+              "bowler": "Sohail Tanvir",
+              "batting_team": "Jamaica Tallawahs",
+              "bowling_team": "Guyana Amazon Warriors",
+              "runs_batter": 1,
+              "runs_extras": 0,
+              "runs_total": 1,
+              "extra_type": null,
+              "wicket_type": null,
+              "player_out": null,
+              "wicket_count": 0
+            }
+          ],
+          "rows_shown": 1,
+          "rows_shown_limit": 50,
+          "truncated": false,
+          "row_limit": 1000,
+          "sql": "SELECT * FROM agent_deliveries LIMIT 1"
+        }
+      },
+      {
+        "tool": "query_ball_data",
+        "result": {
+          "ref": "10624866-4328-47fc-bf54-3683eaea3838",
+          "row_count": 1,
+          "rows": [
+            {
+              "match_ref": "corpus:125",
+              "competition": "Caribbean Premier League",
+              "format": "T20",
+              "start_time": "2016-08-03T00:00:00Z",
+              "venue": "Warner Park, Basseterre",
+              "team_a": "Guyana Amazon Warriors",
+              "team_b": "Jamaica Tallawahs",
+              "toss_winner": "Guyana Amazon Warriors",
+              "toss_decision": "field",
+              "winner": "Guyana Amazon Warriors",
+              "result_method": "normal"
+            }
+          ],
+          "rows_shown": 1,
+          "rows_shown_limit": 50,
+          "truncated": false,
+          "row_limit": 1000,
+          "sql": "SELECT * FROM agent_matches LIMIT 1"
+        }
+      },
+      {
+        "tool": "query_ball_data",
+        "result": {
+          "ref": "78935aa1-e2f8-49a0-ba20-9c6262840cf7",
+          "row_count": 6,
+          "rows": [
+            {
+              "extra_type": "bye"
+            },
+            {
+              "extra_type": "legbye"
+            },
+            {
+              "extra_type": "noball"
+            },
+            {
+              "extra_type": "penalty"
+            },
+            {
+              "extra_type": "wide"
+            },
+            {
+              "extra_type": null
+            }
+          ],
+          "rows_shown": 6,
+          "rows_shown_limit": 50,
+          "truncated": false,
+          "row_limit": 1000,
+          "sql": "SELECT DISTINCT extra_type FROM agent_deliveries WHERE format = 'T20' LIMIT 1001"
+        }
+      },
+      {
+        "tool": "query_ball_data",
+        "result": {
+          "ref": "d7656fb0-2d7e-407d-a700-861c052a26cb",
+          "row_count": 10,
+          "rows": [
+            {
+              "venue": "National Sports Academy, Sofia",
+              "total_balls": 5065,
+              "legal_balls": 4668,
+              "total_runs": 7482,
+              "runs_per_over": "9.617"
+            },
+            {
+              "venue": "Barsapara Cricket Stadium",
+              "total_balls": 2722,
+              "legal_balls": 2602,
+              "total_runs": 4065,
+              "runs_per_over": "9.374"
+            },
+            {
+              "venue": "The Cooper Associates County Ground",
+              "total_balls": 18400,
+              "legal_balls": 17781,
+              "total_runs": 27523,
+              "runs_per_over": "9.287"
+            },
+            {
+              "venue": "Pukekura Park",
+              "total_balls": 4025,
+              "legal_balls": 3880,
+              "total_runs": 5995,
+              "runs_per_over": "9.271"
+            },
+            {
+              "venue": "County Ground, Chelmsford",
+              "total_balls": 9401,
+              "legal_balls": 9135,
+              "total_runs": 14111,
+              "runs_per_over": "9.268"
+            },
+            {
+              "venue": "Oakland Coliseum,Oakland",
+              "total_balls": 4971,
+              "legal_balls": 4773,
+              "total_runs": 7373,
+              "runs_per_over": "9.268"
+            },
+            {
+              "venue": "Stanley Park, Blackpool",
+              "total_balls": 854,
+              "legal_balls": 813,
+              "total_runs": 1254,
+              "runs_per_over": "9.255"
+            },
+            {
+              "venue": "Lisicji Jarak Cricket Ground",
+              "total_balls": 1274,
+              "legal_balls": 1144,
+              "total_runs": 1762,
+              "runs_per_over": "9.241"
+            },
+            {
+              "venue": "Radlett Cricket Club",
+              "total_balls": 1874,
+              "legal_balls": 1827,
+              "total_runs": 2811,
+              "runs_per_over": "9.232"
+            },
+            {
+              "venue": "Rawalpindi Cricket Stadium",
+              "total_balls": 11648,
+              "legal_balls": 11178,
+              "total_runs": 17184,
+              "runs_per_over": "9.224"
+            }
+          ],
+          "rows_shown": 10,
+          "rows_shown_limit": 50,
+          "truncated": false,
+          "row_limit": 1000,
+          "sql": "SELECT venue, COUNT(*) AS total_balls, SUM(CASE WHEN extra_type IN ('wide', 'noball') THEN 0 ELSE 1 END) AS legal_balls, SUM(runs_total) AS total_runs, ROUND(CAST(CAST(SUM(runs_total) AS DECIMAL) / (SUM(CASE WHEN extra_type IN ('wide', 'noball') THEN 0 ELSE 1 END) / 6.0) AS DECIMAL), 3) AS runs_per_over FROM agent_deliveries WHERE format = 'T20' GROUP BY venue HAVING SUM(CASE WHEN extra_type IN ('wide', 'noball') THEN 0 ELSE 1 END) >= 600 ORDER BY runs_per_over DESC LIMIT 10"
+        }
+      }
+    ],
+    "verdict": "pass",
+    "rules_fired": [],
+    "failures": [],
+    "warnings": [],
+    "hit_turn_limit": false,
+    "usage": {
+      "input_tokens": 6388,
+      "output_tokens": 1567,
+      "cache_read_input_tokens": 5727,
+      "cache_creation_input_tokens": 1909
+    },
+    "dollars": 0.0343639,
+    "turns": 4
+  }
+}

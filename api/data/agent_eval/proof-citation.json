@@ -1,0 +1,174 @@
+{
+  "clause": "citation",
+  "rule": "cite",
+  "case_id": "stats-kohli-vs-starc",
+  "question": "How does Virat Kohli fare against Mitchell Starc?",
+  "model": "claude-sonnet-5",
+  "prompt_fingerprint": "f44c84ea75e6f8e8",
+  "run_at": "2026-09-22T03:15:37.624180+00:00",
+  "held": false,
+  "checks": {
+    "control_passes": true,
+    "control_fires_no_gates": true,
+    "ablated_fails": false,
+    "ablated_fires_the_clauses_gate": false,
+    "ablated_fires_that_gate_alone": false
+  },
+  "cost_dollars": 0.0242,
+  "control": {
+    "case_id": "stats-kohli-vs-starc",
+    "rep": 1,
+    "thinking": true,
+    "ablated": [],
+    "answer": "Here's the head-to-head record between Virat Kohli (V Kohli) and Mitchell Starc (MA Starc) across the corpus:\n\n**ODI matchup (based on 174 balls):**\n- Runs: 162\n- Dismissals: 2\n- Strike rate: 93.1\n- Average: 81.0\n\n**T20 matchup (based on 51 balls):**\n- Runs: 74\n- Dismissals: 1\n- Strike rate: 145.1\n- Average: 74.0\n\nKohli has generally gotten the better of Starc in both formats \u2014 a healthy strike rate and high average with relatively few dismissals \u2014 though the T20 sample (51 balls) is notably smaller than the ODI sample (174 balls), so treat the T20 numbers with a bit more caution given the smaller size. Note this is a historical head-to-head record from the ball-by-ball data, not a prediction of how either player would fare against the other today.",
+    "tools_called": [
+      "resolve_entity",
+      "resolve_entity",
+      "get_matchup",
+      "get_matchup"
+    ],
+    "tool_results": [
+      {
+        "tool": "resolve_entity",
+        "result": {
+          "query": "Virat Kohli",
+          "kind": "player",
+          "matched_deterministically": true,
+          "candidates": [
+            {
+              "id": 17558,
+              "name": "V Kohli",
+              "score": 83.3
+            }
+          ]
+        }
+      },
+      {
+        "tool": "resolve_entity",
+        "result": {
+          "query": "Mitchell Starc",
+          "kind": "player",
+          "matched_deterministically": true,
+          "candidates": [
+            {
+              "id": 9975,
+              "name": "MA Starc",
+              "score": 76.9
+            }
+          ]
+        }
+      },
+      {
+        "tool": "get_matchup",
+        "result": {
+          "ref": "01cc41bb-3c65-41ff-bb0d-e9c1322e9c85",
+          "batter": "V Kohli",
+          "bowler": "MA Starc",
+          "balls": 174,
+          "runs": 162,
+          "dismissals": 2,
+          "strike_rate": 93.1,
+          "average": 81.0
+        }
+      },
+      {
+        "tool": "get_matchup",
+        "result": {
+          "ref": "302f3d96-9d9d-4b45-afb2-d8e83001c0e5",
+          "batter": "V Kohli",
+          "bowler": "MA Starc",
+          "balls": 51,
+          "runs": 74,
+          "dismissals": 1,
+          "strike_rate": 145.1,
+          "average": 74.0
+        }
+      }
+    ],
+    "verdict": "pass",
+    "rules_fired": [],
+    "failures": [],
+    "warnings": [],
+    "hit_turn_limit": false,
+    "usage": {
+      "input_tokens": 1515,
+      "output_tokens": 718,
+      "cache_read_input_tokens": 6372,
+      "cache_creation_input_tokens": 0
+    },
+    "dollars": 0.0114844,
+    "turns": 3
+  },
+  "ablated": {
+    "case_id": "stats-kohli-vs-starc",
+    "rep": 1,
+    "thinking": true,
+    "ablated": [
+      "citation"
+    ],
+    "answer": "Here's the head-to-head record for Virat Kohli against Mitchell Starc across the corpus (all formats combined):\n\n- **Balls faced:** 225\n- **Runs scored:** 236\n- **Dismissals:** 3\n- **Strike rate:** 104.89\n- **Average:** 78.67\n\nThis is a historical record of what has actually happened in matches covered by the data \u2014 it is not an estimate of either player's current form or ability. If you'd like, I can break this down by format (ODI/T20) or check current form estimates (though note that form/ability estimates are currently unavailable in this system).",
+    "tools_called": [
+      "resolve_entity",
+      "resolve_entity",
+      "get_matchup"
+    ],
+    "tool_results": [
+      {
+        "tool": "resolve_entity",
+        "result": {
+          "query": "Virat Kohli",
+          "kind": "player",
+          "matched_deterministically": true,
+          "candidates": [
+            {
+              "id": 17558,
+              "name": "V Kohli",
+              "score": 83.3
+            }
+          ]
+        }
+      },
+      {
+        "tool": "resolve_entity",
+        "result": {
+          "query": "Mitchell Starc",
+          "kind": "player",
+          "matched_deterministically": true,
+          "candidates": [
+            {
+              "id": 9975,
+              "name": "MA Starc",
+              "score": 76.9
+            }
+          ]
+        }
+      },
+      {
+        "tool": "get_matchup",
+        "result": {
+          "ref": "b752174c-43e6-40b9-bed8-bf5a7811365e",
+          "batter": "V Kohli",
+          "bowler": "MA Starc",
+          "balls": 225,
+          "runs": 236,
+          "dismissals": 3,
+          "strike_rate": 104.89,
+          "average": 78.67
+        }
+      }
+    ],
+    "verdict": "pass",
+    "rules_fired": [],
+    "failures": [],
+    "warnings": [],
+    "hit_turn_limit": false,
+    "usage": {
+      "input_tokens": 1191,
+      "output_tokens": 483,
+      "cache_read_input_tokens": 3818,
+      "cache_creation_input_tokens": 1909
+    },
+    "dollars": 0.012748099999999998,
+    "turns": 3
+  }
+}

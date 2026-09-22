@@ -30,6 +30,18 @@ from agent_eval.prompt import MODEL, fingerprint
 
 PROOF_DIR = Path(__file__).resolve().parents[2] / "data" / "agent_eval"
 
+
+def _console(text: str, limit: int = 600) -> str:
+    """Model text, made safe for whatever codepage the console happens to have.
+
+    An answer containing U+2011 crashed this with a UnicodeEncodeError on a
+    cp1252 console - twice - each time AFTER the control run had been paid
+    for. The console is a lossy renderer (standing rule 12), so it gets a
+    lossy copy and the JSON file keeps the exact bytes. Losing a paid run to
+    a print statement is worth one helper.
+    """
+    return text.strip()[:limit].encode("ascii", "replace").decode("ascii")
+
 # One rep each side. This is not a flakiness measurement - it is an existence
 # proof that the gate can fire - so a single clean demonstration of each of
 # the three parts is what it needs. Reps live in the eval pass, not here.
@@ -45,7 +57,7 @@ def _pick_case(eval_set, rule: str):
     assertions invites exactly the wrong-reason failure the proof rejects.
     """
     predicate = {
-        "cite": lambda c: bool(c.cite),
+        "cite": lambda c: bool(c.cite) or bool(c.cite_values_from_first_row),
         "disclose_unavailable": lambda c: c.must_disclose_unavailable,
         "disclose_truncation": lambda c: c.must_disclose_truncation,
         "no_guard_detail": lambda c: c.expect_rejection,
@@ -59,7 +71,10 @@ def _pick_case(eval_set, rule: str):
     )
 
 
-def prove(client, api, eval_set, secret, *, clause: str, out: str | None = None) -> int:
+def prove(
+    client, api, eval_set, secret, *, clause: str, out: str | None = None,
+    case_id: str | None = None,
+) -> int:
     from agent_eval.runner import run_case
 
     if clause not in RULE_FOR_CLAUSE:
@@ -67,7 +82,18 @@ def prove(client, api, eval_set, secret, *, clause: str, out: str | None = None)
             f"{clause!r} has no gate to fire. Provable clauses: {sorted(RULE_FOR_CLAUSE)}"
         )
     rule = RULE_FOR_CLAUSE[clause]
-    case = _pick_case(eval_set, rule)
+    if case_id:
+        # Aimable, because "which case can demonstrate this" is an empirical
+        # question. The default pick is the case with fewest other
+        # assertions, which minimises wrong-reason failures but also tends to
+        # pick the EASIEST case - and an easy case is one the model may get
+        # right without being told, which is not the clause failing to matter
+        # so much as the probe being too gentle to detect whether it does.
+        case = next((c for c in eval_set.live if c.id == case_id), None)
+        if case is None:
+            raise SystemExit(f"no live case {case_id!r}")
+    else:
+        case = _pick_case(eval_set, rule)
 
     print(f"proving clause {clause!r} via rule {rule!r} on case {case.id!r}")
     print(f"question: {case.question}\n")
@@ -77,16 +103,16 @@ def prove(client, api, eval_set, secret, *, clause: str, out: str | None = None)
     )
     print(f"--- CONTROL (clause present) -> {control.verdict}, "
           f"gates {control.rules_fired or '[]'}, ${control.dollars:.4f}")
-    print(f"    answer: {control.answer.strip()[:600]}\n")
+    print(f"    answer: {_console(control.answer)}\n")
 
     ablated = run_case(
         client, api, case, rep=1, thinking=True, ablate=frozenset({clause}), secret=secret
     )
     print(f"--- ABLATED ({clause} removed) -> {ablated.verdict}, "
           f"gates {ablated.rules_fired or '[]'}, ${ablated.dollars:.4f}")
-    print(f"    answer: {ablated.answer.strip()[:600]}\n")
+    print(f"    answer: {_console(ablated.answer)}\n")
     for failure in ablated.failures:
-        print(f"    {failure}")
+        print(f"    {_console(str(failure), 300)}")
 
     checks = {
         "control_passes": control.verdict == "pass",
