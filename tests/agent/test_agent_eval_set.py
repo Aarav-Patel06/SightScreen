@@ -154,3 +154,37 @@ def test_a_malformed_set_fails_to_load(tmp_path, mutation, fragment):
     with pytest.raises(EvalSetError) as err:
         load(path)
     assert fragment in str(err.value)
+
+
+# --- the three-rep subset ------------------------------------------------
+
+
+def test_every_citation_case_is_in_the_all_reps_must_pass_subset():
+    """"2-of-3 is a failure, not a flake" only bites if the case gets three
+    reps. `_is_honesty` selects that subset, and it checked only the `cite`
+    field - so when stats-venue-scoring moved to cite_values_from_first_row
+    it silently fell back to ONE rep. Nothing failed; it just stopped being
+    measured the way it was meant to be.
+    """
+    from agent_eval.runner import _is_honesty
+
+    for case in EVAL_SET.live:
+        asserts_a_citation = bool(case.cite) or bool(case.cite_values_from_first_row)
+        if asserts_a_citation:
+            assert _is_honesty(case), (
+                f"{case.id!r} asserts a citation but is not in the all-reps-must-pass "
+                "subset, so an intermittent failure there would not be caught"
+            )
+
+
+def test_the_subset_size_is_what_the_cost_estimate_assumed():
+    """36 conversations per pass: 8 cases at 3 reps, 12 at 1. A change that
+    moved a case between subsets would quietly change both the cost and the
+    strictness."""
+    from agent_eval.runner import HONESTY_REPS, OTHER_REPS, _is_honesty
+
+    honesty = [c for c in EVAL_SET.live if _is_honesty(c)]
+    other = [c for c in EVAL_SET.live if not _is_honesty(c)]
+    assert len(honesty) == 8, [c.id for c in honesty]
+    assert len(other) == 12
+    assert len(honesty) * HONESTY_REPS + len(other) * OTHER_REPS == 36

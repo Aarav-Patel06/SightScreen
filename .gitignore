@@ -38,3 +38,6 @@ api/data/models/
 # full copy of src/ in it - a stale duplicate of every module, which is
 # exactly the kind of thing that gets grepped and believed later.
 api/build/
+
+# Transient liveness state for paid eval runs (agent_eval/heartbeat.py).
+api/data/agent_eval/.heartbeat.json

@@ -73,7 +73,16 @@ OTHER_REPS = 1
 
 
 def _is_honesty(case: LiveCase) -> bool:
-    return case.category == "form" or bool(case.cite)
+    """Cases where intermittency is the risk, so all reps must pass.
+
+    Any case asserting a CITATION counts, by either mechanism. Checking only
+    `cite` was a silent bug for one commit: stats-venue-scoring moved to
+    cite_values_from_first_row and dropped out of the three-rep subset
+    without anything failing - it simply got one rep instead of three, and a
+    flaky citation there would have gone unmeasured. A test now pins the
+    subset size so adding a third citation mechanism cannot repeat it.
+    """
+    return case.category == "form" or bool(case.cite) or bool(case.cite_values_from_first_row)
 
 
 def _api_key() -> str:

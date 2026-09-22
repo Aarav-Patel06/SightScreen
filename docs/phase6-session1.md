@@ -409,6 +409,45 @@ someone's decisions costs more than the bug it imagined.
 
 ---
 
+**13. A gate that checks a NAME fails whenever the name is chosen by the
+thing being tested. Assert on values the subject does not control.**
+
+§10.4's citation gate compares a value at a dotted path into a tool result.
+That is sound for `get_matchup.balls`, because the TOOL fixes that field
+name and the agent cannot move it. It is unsound for `query_ball_data`,
+because the agent writes the SQL and therefore chooses the column aliases.
+Two runs of one question produced `legal_balls` and `balls` for the same
+quantity, so a path naming either fails the other - and the run the gate
+marked failed had answered:
+
+> "11.31 runs per over, based on **78 legal balls bowled** (147 total runs)
+> ... 78 balls is a very small sample, so this figure is easily skewed"
+
+An exemplary citation, volunteering a caveat nobody asked for, failed by the
+gate built to reward it. The fix asserts on VALUES - at least N distinct
+numbers from the winning row must appear in the answer - which the agent
+cannot rename, only decline to quote.
+
+**The shape generalises, and this project has now hit it twice.** The
+`match_states` guard read module-level IMPORTS to decide whether a code path
+executed; imports are a degree of freedom the code under test controls, so
+the guard passed while the path it was protecting had moved. Same error:
+the check depended on something the subject was free to change without
+changing the behaviour being checked.
+
+The question to ask of any assertion: **could the thing I am testing satisfy
+this while doing the wrong thing, or violate it while doing the right thing,
+purely by renaming something?** If yes, the check is measuring vocabulary.
+Values, exit codes, catalogue rows and observed effects are controlled by
+the world; names, imports, log strings and schema keys are controlled by the
+author.
+
+Note this is NOT an argument for loose assertions. The replacement is
+stricter in the way that matters - it requires a statistic AND its
+denominator - and looser only in the dimension that was never evidence.
+
+---
+
 ---
 
 ## 8. What is NOT verified
