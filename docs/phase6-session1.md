@@ -448,6 +448,47 @@ denominator - and looser only in the dimension that was never evidence.
 
 ---
 
+**14. An error you have decided to tolerate must be FIXED or SILENCED.
+Tolerating it trains everyone to read past that spot.**
+
+Every agent eval run in session 2 printed
+`agent_query_log write failed: UndefinedTable (ref ...)` - once per tool
+call, dozens of times per pass, across every run for two days. Ignoring it
+was CORRECT: the route degrades without failing the call, the migration was
+known to be unpushed, and it is recorded as an open item in section 8 below.
+Nothing was wrong.
+
+That is exactly the problem. The line was harmless, frequent, and expected,
+so it became furniture - and a real failure appearing in the same position,
+in the same colour, at the same frequency, would have been read past by
+everyone including the person who wrote the tolerance. `grep -v` was in
+every command that ran the eval, which is the habit made literal.
+
+**This is not "chase every line".** Some noise genuinely cannot be fixed
+today, and demanding a clean log before any work can proceed is its own kind
+of paralysis. The rule is narrower: a tolerated error is a decision, and a
+decision has to be implemented. Either
+
+  * FIX it - push the migration, create the table, correct the config; or
+  * SILENCE it deliberately - downgrade to a single startup-time warning,
+    suppress it behind a known-issue flag, or log it once per process rather
+    than once per call
+
+and if neither is done today, write down when it will be. What is not
+acceptable is leaving it at full volume and relying on humans to remember it
+is fine, because that reliance is what the next real error will exploit.
+
+The general form: **the signal-to-noise ratio of a log is a safety property,
+not an aesthetic one.** Every tolerated line lowers the probability that the
+next untolerated one is seen, and it lowers it for everybody, not just for
+the person who decided to tolerate it.
+
+Closed for this instance by batching the `agent_usage` migration with
+`agent_query_log` and pushing both, which removes the line rather than
+teaching anyone to skip it.
+
+---
+
 ---
 
 ## 8. What is NOT verified
