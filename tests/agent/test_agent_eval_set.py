@@ -178,16 +178,25 @@ def test_every_citation_case_is_in_the_all_reps_must_pass_subset():
 
 
 def test_the_subset_size_is_what_the_cost_estimate_assumed():
-    """36 conversations per pass: 8 cases at 3 reps, 12 at 1. A change that
+    """38 conversations per pass: 9 cases at 3 reps, 11 at 1. A change that
     moved a case between subsets would quietly change both the cost and the
-    strictness."""
+    strictness.
+
+    Was 8 and 12, for 36. `live-prediction-by-id` gained a citation on
+    2026-09-24 and moved across, which cost two more conversations a pass
+    and is the point: until then that case asserted `must_call` alone, and
+    `get_live_prediction` had been raising UndefinedColumn on every call it
+    ever received while the case stayed green. This gate firing on the
+    change is it working - the cost of coverage should be a decision, not a
+    surprise on an invoice.
+    """
     from agent_eval.runner import HONESTY_REPS, OTHER_REPS, _is_honesty
 
     honesty = [c for c in EVAL_SET.live if _is_honesty(c)]
     other = [c for c in EVAL_SET.live if not _is_honesty(c)]
-    assert len(honesty) == 8, [c.id for c in honesty]
-    assert len(other) == 12
-    assert len(honesty) * HONESTY_REPS + len(other) * OTHER_REPS == 36
+    assert len(honesty) == 9, [c.id for c in honesty]
+    assert len(other) == 11
+    assert len(honesty) * HONESTY_REPS + len(other) * OTHER_REPS == 38
 
 
 # --- the adversarial set cannot be satisfied by refusing everything ------
@@ -233,3 +242,51 @@ def test_a_refuse_everything_agent_fails_the_paired_cases():
             assert result.verdict == "pass", (
                 f"{case.id!r} has no legitimate half, so refusal must be a pass"
             )
+
+
+# --- the staleness marker ------------------------------------------------
+
+
+def test_the_results_staleness_marker_agrees_with_the_fingerprints():
+    """`results.json` carries a `stale` flag. This asserts it tells the truth.
+
+    The flag exists because the file's own numbers stay accurate when it goes
+    stale: "35 of 36" is not a wrong answer, it is an answer to a question set
+    that has since changed, and every other field around it is still correct.
+    That is the same shape as a synced-but-empty column - it looks current
+    because its neighbours are - so the file says so in words rather than
+    leaving it to a CI job somebody has to read.
+
+    A marker that is itself wrong would be worse than none, in both
+    directions: a file marked stale after a re-run trains people to ignore
+    the flag, and a file marked fresh while stale is the original bug with a
+    reassuring label on it.
+    """
+    import json
+
+    from agent_eval.cases import fingerprint as cases_fingerprint
+    from agent_eval.prompt import fingerprint as prompt_fingerprint
+    from agent_eval.runner import RESULTS_PATH
+
+    data = json.loads(RESULTS_PATH.read_text(encoding="utf-8"))
+    actually_stale = (
+        data.get("prompt_fingerprint") != prompt_fingerprint()
+        or data.get("cases_fingerprint") != cases_fingerprint()
+    )
+    marked_stale = bool(data.get("stale"))
+
+    if actually_stale:
+        assert marked_stale, (
+            "results.json no longer matches the current prompt or cases, and does "
+            "not say so. Add `stale: true` with a reason, or re-run "
+            "`python -m agent_eval.runner --all`."
+        )
+        assert data.get("stale_reason"), "`stale: true` with no `stale_reason` says nothing useful"
+        assert data.get("stale_clears_when"), (
+            "a staleness marker needs to say what would clear it, or it becomes permanent"
+        )
+    else:
+        assert not marked_stale, (
+            "results.json matches both fingerprints but is still marked stale - "
+            "a marker that outlives its cause trains people to ignore the next one"
+        )

@@ -27,6 +27,8 @@ import {
 
 import { highWaterMark, mergePredictions } from "@/lib/merge-predictions";
 import { parsePrediction, type Phase, type WinProbPrediction } from "@/lib/prediction";
+import { HATCH_PITCH_PX, toMarks } from "@/lib/ball-strip";
+import { BallStrip } from "@/components/ball-strip";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
 interface Header {
@@ -52,6 +54,78 @@ const CONFIDENCE: Record<Phase, { label: string; low: boolean }> = {
   middle: { label: "middle overs · medium confidence", low: false },
   death: { label: "death overs · higher confidence", low: false },
 };
+
+/**
+ * The light palette's values, duplicated as literals.
+ *
+ * Recharts takes colours as JS props and renders them into inline SVG
+ * attributes, so `var(--rule)` reaches the DOM uninterpreted and resolves to
+ * nothing. accuracy/charts.tsx makes the same compromise for the same reason
+ * and says so. The hand-rolled ball strip below does NOT need this - it uses
+ * CSS custom properties directly, which is one of the reasons it is
+ * hand-rolled.
+ *
+ * Keep in step with .theme-paper in globals.css; lib/tokens.test.ts holds
+ * that block to its contrast floors but cannot see these copies.
+ *
+ * Two have no light counterpart. The old tooltip background was --panel and
+ * the old 50% line was a one-off #3a4148; neither exists in a palette with no
+ * raised surfaces, so the tooltip sits on --paper inside a --rule border and
+ * the reference line is --rule.
+ */
+const CHART = {
+  paper: "#F9F5EA",
+  ink: "#2A2419",
+  soft: "#6B6152",
+  rule: "#E0D5BF",
+  bat: "#1D727C",
+} as const;
+
+/**
+ * The phase-confidence mark (§1.3).
+ *
+ * Hatched for a low-confidence phase, solid otherwise, at 14px - above the
+ * 4px hollow floor and below the 24px hatch floor lib/ball-strip.ts
+ * documents, so the hatch here reads as "not solid" rather than as a
+ * countable texture. That is the whole job at this size: the words beside it
+ * carry the detail, and the mark only has to differ.
+ *
+ * aria-hidden because the label repeats it in words. A screen reader hearing
+ * "diagonal hatch, powerplay, low confidence" learns nothing from the first
+ * two syllables.
+ */
+function ConfidenceSwatch({ low }: { low: boolean }) {
+  const id = `phase-hatch-${low ? "low" : "solid"}`;
+  return (
+    <svg width={14} height={14} aria-hidden="true" className="phase-swatch">
+      {low ? (
+        <>
+          <defs>
+            <pattern
+              id={id}
+              width={HATCH_PITCH_PX}
+              height={HATCH_PITCH_PX}
+              patternUnits="userSpaceOnUse"
+              patternTransform="rotate(45)"
+            >
+              <rect width={HATCH_PITCH_PX / 2} height={HATCH_PITCH_PX} fill="var(--ink-soft)" />
+            </pattern>
+          </defs>
+          <rect
+            x={0.5}
+            y={0.5}
+            width={13}
+            height={13}
+            fill={`url(#${id})`}
+            stroke="var(--ink-soft)"
+          />
+        </>
+      ) : (
+        <rect x={0.5} y={0.5} width={13} height={13} fill="var(--ink-soft)" />
+      )}
+    </svg>
+  );
+}
 
 export function LiveMatch({
   matchId,
@@ -92,6 +166,11 @@ export function LiveMatch({
         .select("prediction_id, created_at, model_version, payload, match_id")
         .eq("match_id", matchId)
         .eq("prediction_type", "win_prob")
+        // Same filter as the server loader, for the same reason - see
+        // page.tsx. If the two disagreed, the resync would pull in rows the
+        // initial render excluded and the curve would change shape thirty
+        // seconds after it appeared.
+        .not("innings", "is", null)
         .order("prediction_id", { ascending: true });
       if (error || data === null) return [];
       return data
@@ -110,6 +189,14 @@ export function LiveMatch({
           filter: `match_id=eq.${matchId}`,
         },
         (message) => {
+          // Realtime takes ONE filter, and it is spent on match_id - so
+          // unkeyed rows arrive here even though both queries above exclude
+          // them, and would stream onto the curve live. Dropped on arrival so
+          // the three paths agree. `measure-realtime-coldstart.mjs` inserts
+          // `p: 0.5` probe rows with no ball key and does not clean them up,
+          // which is exactly what this stops appearing mid-match.
+          if ((message.new as { innings?: number | null }).innings == null) return;
+
           const parsed = parsePrediction(message.new as never);
           if (parsed === null) return;
           streamed.current.add(parsed.prediction_id);
@@ -173,6 +260,12 @@ export function LiveMatch({
     return sixAgo && sixAgo !== current ? current.p - sixAgo.p : null;
   }, [predictions, current]);
 
+  // x IS THE POSITIONAL INDEX, NOT balls_bowled, so this curve and the ball
+  // strip below it share one domain. balls_bowled repeats on an extra - the
+  // footnote under the chart has always said so - which means two deliveries
+  // land on the same x, and the strip, which is indexed by position, could
+  // never line up with it. The tick formatter still prints balls_bowled, so
+  // the axis reads as it did before.
   const chartData = useMemo(
     () =>
       predictions.map((p, index) => ({
@@ -182,6 +275,8 @@ export function LiveMatch({
       })),
     [predictions]
   );
+
+  const marks = useMemo(() => toMarks(predictions), [predictions]);
 
   const battingName = header.teamA ?? "Batting side";
   const confidence = current ? CONFIDENCE[current.phase] : null;
@@ -248,8 +343,15 @@ export function LiveMatch({
           <span style={{ width: `${current ? current.p * 100 : 0}%` }} />
         </div>
 
-        {confidence && (
-          <span className={confidence.low ? "chip chip-low" : "chip"}>
+        {/* §1.3: confidence is texture, not a colour. The chip this replaces
+            carried its meaning in --warn, which fails as a signal for anyone
+            who cannot separate it from the surrounding text and disappears
+            entirely in greyscale. The swatch below is hatched when the phase
+            is low-confidence and solid when it is not, and the word says the
+            same thing - colour is never the only cue. */}
+        {confidence && current && (
+          <span className="phase-mark" data-low={confidence.low ? "true" : "false"}>
+            <ConfidenceSwatch low={confidence.low} />
             {confidence.label}
           </span>
         )}{" "}
@@ -286,19 +388,20 @@ export function LiveMatch({
           <div style={{ height: 240 }}>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 4, left: -18 }}>
-                <CartesianGrid stroke="#262b30" vertical={false} />
+                <CartesianGrid stroke={CHART.rule} vertical={false} />
                 <XAxis
-                  dataKey="ball"
-                  tick={{ fill: "#9aa3ab", fontSize: 11 }}
-                  stroke="#262b30"
+                  dataKey="index"
+                  tick={{ fill: CHART.soft, fontSize: 11 }}
+                  stroke={CHART.rule}
+                  tickFormatter={(i: number) => String(chartData[i]?.ball ?? "")}
                 />
                 <YAxis
                   domain={[0, 100]}
                   ticks={[0, 25, 50, 75, 100]}
-                  tick={{ fill: "#9aa3ab", fontSize: 11 }}
-                  stroke="#262b30"
+                  tick={{ fill: CHART.soft, fontSize: 11 }}
+                  stroke={CHART.rule}
                 />
-                <ReferenceLine y={50} stroke="#3a4148" strokeDasharray="3 3" />
+                <ReferenceLine y={50} stroke={CHART.rule} strokeDasharray="3 3" />
                 <Tooltip
                   contentStyle={{
                     background: "#171a1d",
@@ -306,13 +409,13 @@ export function LiveMatch({
                     borderRadius: 8,
                     fontSize: 12,
                   }}
-                  labelFormatter={(ball) => `after ${ball} balls`}
+                  labelFormatter={(i: number) => `after ${chartData[i]?.ball ?? 0} balls`}
                   formatter={(value: number) => [`${value}%`, "win probability"]}
                 />
                 <Line
                   type="monotone"
                   dataKey="wp"
-                  stroke="#4ea1ff"
+                  stroke={CHART.bat}
                   strokeWidth={2}
                   dot={false}
                   isAnimationActive={false}
@@ -322,9 +425,62 @@ export function LiveMatch({
           </div>
         )}
         <div className="tiny muted">
-          {predictions.length} predictions · x axis is legal balls bowled, so an
-          extra shares a ball with the delivery before it
+          {predictions.length} predictions · x axis is one mark per delivery;
+          the tick labels are legal balls bowled, so an extra repeats the
+          label of the delivery before it
         </div>
+      </div>
+
+      {/* §4.3: the strip beneath the curve, sharing its x-axis.
+          Both are now indexed by delivery position, so mark n sits under
+          point n. The curve says where the probability was; the strip says
+          what each ball did to it. */}
+      {marks.length > 0 && (
+        <div className="panel">
+          <h2>Every delivery</h2>
+          <BallStrip marks={marks} height={72} defaultWidth={640} />
+          <div className="tiny muted" style={{ marginTop: 8 }}>
+            Height is the swing that ball caused, above the line for the
+            batting side. The baseline under it is dotted through the
+            powerplay, dashed in the middle overs and solid at the death —
+            the same confidence the mark above reports.
+          </div>
+        </div>
+      )}
+
+      {/* §12.1 items 3, 4 and 5. They are not built, and the honest-gap
+          principle (§0.2) says to say so where they would have been rather
+          than to leave the page looking complete. Scope, not apology. */}
+      <div className="panel">
+        <h2>Not built yet</h2>
+        <dl className="absent-items">
+          <div>
+            <dt>Current batter&rsquo;s projection</dt>
+            <dd>
+              Needs a per-player model. <code>player_state</code>, the table
+              that would hold one, has no rows until Phase 5.
+            </dd>
+          </div>
+          <div>
+            <dt>Current bowler&rsquo;s projection</dt>
+            <dd>The same model and the same empty table.</dd>
+          </div>
+          <div>
+            <dt>This batter against this bowler</dt>
+            <dd>
+              The corpus has every ball between them. Turning that into a
+              prediction needs both player models above, and a sample large
+              enough to beat the prior.
+            </dd>
+          </div>
+          <div>
+            <dt>Who moved the match</dt>
+            <dd>
+              The per-ball swings are drawn above. Attributing each one to the
+              batter or the bowler is a separate model, and it is Phase 5.
+            </dd>
+          </div>
+        </dl>
       </div>
     </>
   );

@@ -20,16 +20,25 @@ import type { WinProbPrediction } from "@/lib/prediction";
 // Rows the fake server will return from a reconcile, and the subscribe
 // callback the page installs - so a test can drive both halves of Decision
 // 4 without a websocket.
-const server: { rows: unknown[]; notify: ((status: string) => void) | null } = {
+const server: {
+  rows: unknown[];
+  notify: ((status: string) => void) | null;
+  /** The INSERT handler the page installs, so a test can push a row at it. */
+  insert: ((message: { new: unknown }) => void) | null;
+} = {
   rows: [],
   notify: null,
+  insert: null,
 };
 
 vi.mock("@/lib/supabase-browser", () => ({
   supabaseBrowser: () => ({
     channel: () => {
       const channel = {
-        on: () => channel,
+        on: (_event: string, _config: unknown, handler: (m: { new: unknown }) => void) => {
+          server.insert = handler;
+          return channel;
+        },
         subscribe: (cb: (status: string) => void) => {
           server.notify = cb;
           return channel;
@@ -45,7 +54,12 @@ vi.mock("@/lib/supabase-browser", () => ({
         then: (resolve: (value: { data: unknown[]; error: null }) => void) =>
           resolve({ data: server.rows, error: null }),
       };
-      for (const method of ["select", "eq", "order", "gt"]) {
+      // Every PostgREST method the component uses. `not` was added when the
+      // page started filtering on `innings IS NOT NULL` - until then this
+      // list was four entries and any fifth method broke all four resync
+      // tests with a confusing "not is not a function". If a query here grows
+      // a method, add it here too.
+      for (const method of ["select", "eq", "not", "order", "gt", "limit"]) {
         builder[method] = () => builder;
       }
       return builder;
@@ -102,6 +116,12 @@ function row(prediction_id: number, balls_bowled: number, p: number) {
     created_at: "2026-04-01T10:00:00Z",
     model_version: "winprob2-20260910",
     match_id: 9339,
+    // The ball key, as a COLUMN. Distinct from payload.innings: the column is
+    // what migration 20260918000003 added and what every reader filters on,
+    // and a row without it is one the partial unique index cannot dedupe.
+    innings: 2,
+    over_num: Math.floor(balls_bowled / 6),
+    ball_in_over: (balls_bowled % 6) + 1,
     payload: {
       p,
       innings: 2,
@@ -117,16 +137,45 @@ function row(prediction_id: number, balls_bowled: number, p: number) {
 }
 
 describe("LiveMatch", () => {
-  it("marks a powerplay probability low-confidence", () => {
-    render(<LiveMatch matchId={9339} header={header} initialPredictions={[ball(1, 6, "powerplay", 0.62)]} />);
-    const chip = screen.getByText(/powerplay/);
-    expect(chip.className).toContain("chip-low");
+  // SPEC.md §12.2's confidence labelling, now carried by texture rather than
+  // by a coloured chip (UI-PHASE.md §4.3, §1.3). These two used to assert
+  // that the chip's className contained "chip-low", which stopped being a
+  // meaningful question when the chip stopped existing: its whole signal was
+  // --warn, a colour, which conveys nothing in greyscale and nothing to a
+  // reader who cannot separate it from the text around it.
+  //
+  // They are also no longer text searches. "powerplay" now appears in three
+  // places on this page - the mark, the strip's caption, and the <title> on
+  // the strip's phase baseline - so getByText(/powerplay/) matches all three
+  // and throws. Querying the mark directly is both narrower and closer to
+  // what the rule actually requires.
+
+  it("marks a powerplay probability low-confidence, in texture and in words", () => {
+    const { container } = render(
+      <LiveMatch matchId={9339} header={header} initialPredictions={[ball(1, 6, "powerplay", 0.62)]} />
+    );
+
+    const mark = container.querySelector(".phase-mark");
+    expect(mark).toBeTruthy();
+    expect(mark?.getAttribute("data-low")).toBe("true");
+
+    // Texture, not hue: a hatch pattern is what distinguishes it.
+    expect(mark?.querySelector("pattern")).toBeTruthy();
+
+    // And never texture ALONE - the words say the same thing, so the signal
+    // survives for anyone who cannot see the swatch at all.
+    expect(mark?.textContent).toContain("low confidence");
   });
 
   it("does not mark a death-overs probability low-confidence", () => {
-    render(<LiveMatch matchId={9339} header={header} initialPredictions={[ball(1, 114, "death", 0.62)]} />);
-    const chip = screen.getByText(/death overs/);
-    expect(chip.className).not.toContain("chip-low");
+    const { container } = render(
+      <LiveMatch matchId={9339} header={header} initialPredictions={[ball(1, 114, "death", 0.62)]} />
+    );
+
+    const mark = container.querySelector(".phase-mark");
+    expect(mark?.getAttribute("data-low")).toBe("false");
+    expect(mark?.querySelector("pattern")).toBeNull();
+    expect(mark?.textContent).toContain("higher confidence");
   });
 
   it("states the polling interval and refuses to claim a provider lag", () => {
@@ -200,5 +249,67 @@ describe("the resync safety net", () => {
 
     expect(screen.getByText("83%")).toBeTruthy();
     expect(screen.queryByText(/dropped/)).toBeNull();
+  });
+});
+
+describe("unkeyed rows", () => {
+  // Migration 20260918000003's contract is that every Phase 3 reader filters
+  // on `innings IS NOT NULL`. This page did not, and was the only
+  // user-facing surface rendering rows the partial unique index cannot
+  // dedupe - for match 13143, ten interleaved runs of a twelve-ball deploy
+  // smoke test drawn as a curve, while /matches listed it as never replayed.
+  //
+  // Both queries now filter. The Realtime channel CANNOT: PostgREST takes one
+  // filter and it is spent on match_id, so the drop happens in the handler,
+  // and that is what this asserts.
+
+  it("drops a streamed row with no ball key", async () => {
+    render(
+      <LiveMatch matchId={9339} header={header} initialPredictions={[ball(1, 60, "middle", 0.5)]} />
+    );
+    expect(screen.getByText("50%")).toBeTruthy();
+
+    // A DISTINCT probability, deliberately. The first version of this test
+    // used p: 0.5 - the same value as the initial prediction - so it passed
+    // with the filter removed and proved nothing. The probe must be visible
+    // if it gets through.
+    await act(async () => {
+      server.insert?.({
+        new: {
+          prediction_id: 999,
+          created_at: "2026-04-01T10:05:00Z",
+          model_version: "winprob2-20260910",
+          match_id: 9339,
+          innings: null,
+          payload: {
+            p: 0.11,
+            innings: 2,
+            balls_bowled: 61,
+            balls_remaining: 59,
+            runs_required: 40,
+            score: 110,
+            wickets: 4,
+            target: 150,
+            phase: "middle",
+          },
+        },
+      });
+    });
+
+    // Still the initial prediction, and the probe is nowhere on the page.
+    expect(screen.queryByText("11%")).toBeNull();
+    expect(screen.getByText("50%")).toBeTruthy();
+  });
+
+  it("still accepts a streamed row that has one", async () => {
+    render(
+      <LiveMatch matchId={9339} header={header} initialPredictions={[ball(1, 60, "middle", 0.5)]} />
+    );
+
+    await act(async () => {
+      server.insert?.({ new: row(2, 61, 0.83) });
+    });
+
+    expect(screen.getByText("83%")).toBeTruthy();
   });
 });

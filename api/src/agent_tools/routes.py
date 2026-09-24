@@ -180,6 +180,53 @@ class SqlRequest(BaseModel):
     sql: str = Field(description="A single SELECT over the agent_* views")
 
 
+# --------------------------------------------------------------------------
+# Every SQL statement a tool executes, as a named constant.
+#
+# Hoisted out of the route bodies for one reason: a statement built inside a
+# function cannot be reached by a test, and on 2026-09-24 `get_live_prediction`
+# was found selecting `win_probability` - a column that has never existed on
+# `predictions`. That query raised UndefinedColumn on every call it had ever
+# received, through a twenty-case paid eval, because nothing anywhere ran it
+# against a real schema.
+#
+# tests/db/test_tool_queries_compile.py imports these and PREPAREs each one.
+# Keep them here, and keep them whole: a statement assembled from fragments at
+# call time is one the test cannot see either.
+# --------------------------------------------------------------------------
+
+MATCHUP_SQL = (
+    "SELECT count(*) AS balls, "
+    "sum(runs_batter) AS runs, "
+    # player_out = batter, not `wicket_type IS NOT NULL`. The older form
+    # counted ANY wicket falling on a ball this batter faced - so a
+    # non-striker run out was recorded as this batter being dismissed by this
+    # bowler, in the one number a matchup exists to report. The view exposes
+    # player_out precisely so this can be asked properly.
+    "count(*) FILTER (WHERE player_out = %(batter)s) AS dismissals "
+    "FROM agent_deliveries WHERE {where}"
+)
+
+RESOLVE_SQL = "SELECT {id_column} AS entity_id, name FROM {view}"
+
+LIVE_PREDICTION_SQL = (
+    "SELECT prediction_id, match_id, model_version, "
+    "       (payload->>'p')::float AS win_probability, "
+    "       innings, over_num, ball_in_over, created_at "
+    "FROM predictions WHERE match_id = %s "
+    "  AND prediction_type = 'win_prob' AND innings IS NOT NULL "
+    "ORDER BY prediction_id DESC LIMIT 1"
+)
+
+# The three concrete forms RESOLVE_SQL takes, so the compile test covers each
+# view rather than whichever one it happened to pick.
+RESOLVE_VIEWS = {
+    "player": ("agent_players", "player_id"),
+    "team": ("agent_teams", "team_id"),
+    "venue": ("agent_venues", "venue_id"),
+}
+
+
 @router.post("/query_ball_data", dependencies=[Depends(require_agent_secret)])
 def query_ball_data(request: SqlRequest) -> dict:
     ref = str(uuid.uuid4())
@@ -266,12 +313,7 @@ def get_matchup(request: MatchupRequest) -> dict:
     filters = ["batter = %(batter)s", "bowler = %(bowler)s"]
     if request.format:
         filters.append("format = %(format)s")
-    sql = (
-        "SELECT count(*) AS balls, "
-        "sum(runs_batter) AS runs, "
-        "count(*) FILTER (WHERE wicket_type IS NOT NULL) AS dismissals "
-        "FROM agent_deliveries WHERE " + " AND ".join(filters)
-    )
+    sql = MATCHUP_SQL.format(where=" AND ".join(filters))
 
     ref = str(uuid.uuid4())
     started = time.perf_counter()
@@ -337,11 +379,7 @@ def resolve_entity(request: ResolveRequest) -> dict:
     contract: the agent can ask which one you meant, and §10.4's citation
     rule gets something to quote.
     """
-    view, id_column = {
-        "player": ("agent_players", "player_id"),
-        "team": ("agent_teams", "team_id"),
-        "venue": ("agent_venues", "venue_id"),
-    }.get(request.kind, (None, None))
+    view, id_column = RESOLVE_VIEWS.get(request.kind, (None, None))
     if view is None:
         raise HTTPException(status_code=400, detail="kind must be player, team or venue")
 
@@ -349,7 +387,7 @@ def resolve_entity(request: ResolveRequest) -> dict:
     if not normalized:
         return {"query": request.name, "candidates": []}
 
-    sql = f"SELECT {id_column} AS entity_id, name FROM {view}"
+    sql = RESOLVE_SQL.format(id_column=id_column, view=view)
     with _replica_connection() as conn, conn.transaction():
         conn.execute(f"SET LOCAL statement_timeout = '{STATEMENT_TIMEOUT}'")
         rows = conn.execute(sql).fetchall()
@@ -427,10 +465,16 @@ def get_live_prediction(request: LivePredictionRequest) -> dict:
         raise HTTPException(status_code=503, detail="serving database is not configured")
     with psycopg.connect(url, row_factory=dict_row) as conn:
         row = conn.execute(
-            "SELECT prediction_id, match_id, model_version, win_probability, "
-            "       innings, over_num, ball_in_over, created_at "
-            "FROM predictions WHERE match_id = %s "
-            "ORDER BY created_at DESC LIMIT 1",
+            # win_probability is not a column and never was: the table is
+            # `payload JSONB` plus the ball key plus `source`. This query
+            # raised UndefinedColumn on every call, so the tool has never
+            # returned a prediction - no test exercises it against a real
+            # database, which is how that survived.
+            #
+            # innings IS NOT NULL per migration 20260918000003's contract,
+            # and prediction_type because a score_proj row for the same match
+            # would otherwise be returned as a win probability.
+            LIVE_PREDICTION_SQL,
             (request.match_id,),
         ).fetchone()
     if row is None:

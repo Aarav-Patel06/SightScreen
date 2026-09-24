@@ -39,6 +39,72 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_query_log: {
+        Row: {
+          created_at: string
+          duration_ms: number | null
+          log_id: number
+          query_ref: string
+          rejected_by: string | null
+          row_count: number | null
+          sql_text: string
+          verdict: string
+        }
+        Insert: {
+          created_at?: string
+          duration_ms?: number | null
+          log_id?: number
+          query_ref: string
+          rejected_by?: string | null
+          row_count?: number | null
+          sql_text: string
+          verdict: string
+        }
+        Update: {
+          created_at?: string
+          duration_ms?: number | null
+          log_id?: number
+          query_ref?: string
+          rejected_by?: string | null
+          row_count?: number | null
+          sql_text?: string
+          verdict?: string
+        }
+        Relationships: []
+      }
+      agent_usage: {
+        Row: {
+          cache_read_tokens: number
+          cache_write_tokens: number
+          conversations: number
+          cost_usd: number
+          day: string
+          input_tokens: number
+          output_tokens: number
+          updated_at: string
+        }
+        Insert: {
+          cache_read_tokens?: number
+          cache_write_tokens?: number
+          conversations?: number
+          cost_usd?: number
+          day: string
+          input_tokens?: number
+          output_tokens?: number
+          updated_at?: string
+        }
+        Update: {
+          cache_read_tokens?: number
+          cache_write_tokens?: number
+          conversations?: number
+          cost_usd?: number
+          day?: string
+          input_tokens?: number
+          output_tokens?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       calibration_runs: {
         Row: {
           computed_at: string
@@ -500,6 +566,106 @@ export type Database = {
             foreignKeyName: "player_aliases_player_id_fkey"
             columns: ["player_id"]
             isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["player_id"]
+          },
+        ]
+      }
+      player_career_summary: {
+        Row: {
+          bat_balls: number
+          bat_fours: number
+          bat_innings: number
+          bat_outs: number
+          bat_runs: number
+          bat_sixes: number
+          bowl_balls: number
+          bowl_runs: number
+          bowl_wickets: number
+          format: string
+          phase: string
+          player_id: number
+        }
+        Insert: {
+          bat_balls: number
+          bat_fours: number
+          bat_innings: number
+          bat_outs: number
+          bat_runs: number
+          bat_sixes: number
+          bowl_balls: number
+          bowl_runs: number
+          bowl_wickets: number
+          format: string
+          phase: string
+          player_id: number
+        }
+        Update: {
+          bat_balls?: number
+          bat_fours?: number
+          bat_innings?: number
+          bat_outs?: number
+          bat_runs?: number
+          bat_sixes?: number
+          bowl_balls?: number
+          bowl_runs?: number
+          bowl_wickets?: number
+          format?: string
+          phase?: string
+          player_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_career_summary_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["player_id"]
+          },
+        ]
+      }
+      player_index: {
+        Row: {
+          bat_innings: number
+          bat_runs: number
+          bowl_innings: number
+          bowl_wickets: number
+          canonical_name: string
+          formats: string
+          matches: number
+          normalized_name: string
+          player_id: number
+          surname_key: string
+        }
+        Insert: {
+          bat_innings: number
+          bat_runs: number
+          bowl_innings: number
+          bowl_wickets: number
+          canonical_name: string
+          formats: string
+          matches: number
+          normalized_name: string
+          player_id: number
+          surname_key: string
+        }
+        Update: {
+          bat_innings?: number
+          bat_runs?: number
+          bowl_innings?: number
+          bowl_wickets?: number
+          canonical_name?: string
+          formats?: string
+          matches?: number
+          normalized_name?: string
+          player_id?: number
+          surname_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_index_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: true
             referencedRelation: "players"
             referencedColumns: ["player_id"]
           },

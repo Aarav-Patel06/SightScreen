@@ -40,6 +40,11 @@ from dotenv import dotenv_values
 
 from features.asof_summary import DERIVED_TABLES, DerivedTable, content_hash
 
+# Kept in its own module rather than appended to asof_summary's tuple: these
+# are not as-of summaries, they are career aggregates, and the two are
+# rebuilt by different commands. Both cross the same way.
+from features.player_summary import PLAYER_DERIVED_TABLES
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 ENV_PATH = REPO_ROOT / "api" / ".env"
 
@@ -171,7 +176,7 @@ def run() -> None:
         for table, id_column, columns in TABLES:
             count = sync_table(local_conn, supabase_conn, table, id_column, columns)
             print(f"synced {count} rows -> {table}")
-        for derived in DERIVED_TABLES:
+        for derived in (*DERIVED_TABLES, *PLAYER_DERIVED_TABLES):
             count = sync_derived_table(local_conn, supabase_conn, derived)
             print(f"synced {count} rows -> {derived.name} (hash verified on Supabase)")
 

@@ -278,6 +278,24 @@ def parse_match(raw: dict, observed_at: datetime | None = None) -> MatchSnapshot
     )
 
 
+def _status_of(snapshot: MatchSnapshot) -> str:
+    """The match lifecycle value for `matches.status`.
+
+    One derivation, used by both the INSERT in `_ensure_match_row` and the
+    MatchState returned by `get_match_state`, because they were previously
+    two expressions that disagreed: the insert was two-valued ('live' unless
+    ended) while the state was three-valued. A match first polled before its
+    toss went into the table as 'live' and, since nothing ever updated the
+    row, described itself as live for the rest of time.
+
+    The column's own comment (migration 20260826180002) says
+    'scheduled' | 'live' | 'complete'. This is that.
+    """
+    if snapshot.ended:
+        return "complete"
+    return "live" if snapshot.started else "scheduled"
+
+
 def scheduled_balls(snapshot: MatchSnapshot) -> tuple[int, bool]:
     """(balls, reduced_unknown). A reduced match only states its new length
     inside the free-text status, so when parsing fails we fall back to the
@@ -558,7 +576,14 @@ class CricketDataClient:
                     snapshot.observed_at,
                     team_a,
                     team_b,
-                    "live" if not snapshot.ended else "complete",
+                    # Three-valued, matching the column comment and
+                    # get_match_state below. It used to be two-valued, which
+                    # meant a match first seen before its toss was written as
+                    # 'live' and, because nothing updated the row, stayed
+                    # 'live' through the whole match and after it. The insert
+                    # is only the starting value now; live_loop's
+                    # record_status carries it forward.
+                    _status_of(snapshot),
                 ),
             )
             inserted = cur.fetchone()
@@ -615,7 +640,7 @@ class CricketDataClient:
             )
             venue_id, format_, team_a, team_b, match_date = cur.fetchone()
 
-        status = "complete" if snapshot.ended else ("live" if snapshot.started else "scheduled")
+        status = _status_of(snapshot)
         return MatchState(
             match_id=match_id,
             status=status,

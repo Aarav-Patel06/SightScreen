@@ -90,8 +90,8 @@ export default function AskPage() {
   }
 
   return (
-    <main style={{ maxWidth: "48rem", margin: "0 auto", padding: "2rem 1rem" }}>
-      <h1>Ask</h1>
+    <main className="ask">
+      <h1 className="page-title">Ask</h1>
       <p>
         Questions answered from 3.78 million deliveries of ball-by-ball data and the
         model&rsquo;s own outputs. Every number comes with the sample size behind it; where
@@ -99,8 +99,8 @@ export default function AskPage() {
       </p>
 
       {!signedIn ? (
-        <form onSubmit={signIn} style={{ margin: "2rem 0" }}>
-          <label htmlFor="password" style={{ display: "block", marginBottom: ".5rem" }}>
+        <form onSubmit={signIn} className="ask-form">
+          <label htmlFor="password">
             This demo is password-protected, because it calls a paid API.
           </label>
           <input
@@ -109,22 +109,22 @@ export default function AskPage() {
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             autoComplete="current-password"
-            style={{ padding: ".5rem", width: "18rem" }}
+            className="ask-input ask-input-password"
           />
-          <button type="submit" disabled={busy || !password} style={{ marginLeft: ".5rem", padding: ".5rem 1rem" }}>
+          <button type="submit" disabled={busy || !password} className="ask-button">
             {busy ? "Checking…" : "Enter"}
           </button>
         </form>
       ) : (
-        <form onSubmit={ask} style={{ margin: "2rem 0" }}>
+        <form onSubmit={ask} className="ask-form">
           <input
             aria-label="Your question"
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
             placeholder="How does Virat Kohli fare against Mitchell Starc?"
-            style={{ padding: ".5rem", width: "100%" }}
+            className="ask-input"
           />
-          <button type="submit" disabled={busy || !question.trim()} style={{ marginTop: ".5rem", padding: ".5rem 1rem" }}>
+          <button type="submit" disabled={busy || !question.trim()} className="ask-button">
             {busy ? "Thinking…" : "Ask"}
           </button>
         </form>
@@ -132,15 +132,34 @@ export default function AskPage() {
 
       {notice ? <p role="status">{notice}</p> : null}
 
+      {/* §4.7 asks for tool calls to render as a collapsed line the visitor
+          can expand - "queried 3.78M deliveries" opening to the SQL. It is
+          not built, and the reason is in the same paragraph that asks for it:
+          §4.7 also says do not modify the route handler, and the route
+          returns `{ answer }` and nothing else. The tool calls happen inside
+          its agentic loop and never reach the client, so there is no way to
+          render them without changing that route - which is a logic change
+          wearing a visual change's clothes, and this session's whole
+          acceptance criterion is that those are different things.
+
+          Said here rather than silently omitted (§0.2). */}
+      {history.length > 0 ? (
+        <p className="soft ask-transparency">
+          The SQL each answer ran is not shown yet. The agent logs every query
+          it makes, but the route returns only the answer, and wiring the two
+          together is a change to a proven path rather than a visual one.
+        </p>
+      ) : null}
+
       {history.map((item, index) => (
-        <section key={index} style={{ borderTop: "1px solid #ddd", padding: "1rem 0" }}>
-          <p style={{ fontWeight: 600 }}>{item.question}</p>
+        <section key={index} className="ask-exchange">
+          <p className="ask-question">{item.question}</p>
           {item.answer ? (
-            <p style={{ whiteSpace: "pre-wrap" }}>{item.answer}</p>
+            <p className="ask-answer">{item.answer}</p>
           ) : item.note ? (
-            <p role="status">{item.note}</p>
+            <p role="status" className="soft">{item.note}</p>
           ) : (
-            <p aria-live="polite">Working…</p>
+            <p aria-live="polite" className="soft">Working…</p>
           )}
         </section>
       ))}

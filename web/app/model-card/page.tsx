@@ -26,7 +26,7 @@ export const metadata = {
 
 export default function ModelCardPage() {
   return (
-    <main>
+    <main className="document">
       <div className="panel">
         <h1>Model card</h1>
         <p className="small muted">

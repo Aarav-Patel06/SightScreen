@@ -142,32 +142,236 @@ def load_balls(local_conn, match_id: int) -> list[dict]:
     return [dict(zip(_COLUMNS, row)) for row in rows]
 
 
-def mirror_match_rows(local_conn, supabase_conn, match_ids: list[int]) -> int:
+# The columns mirrored to Supabase. Ordered so the tuple matches the INSERT.
+#
+# `winner`, `result_method`, `target_runs`, `toss_winner` and `toss_decision`
+# were deliberately omitted until the UI phase, on the reasoning that the
+# label stays local and outcome resolution reads it from the corpus. That was
+# right while only the serving path read this table. It stopped being right
+# when a page had to say who won: the columns existed, were synced-looking,
+# and were NULL for all 107 rows, which is the third instance of the shape
+# `docs/column-census.md` now exists to make visible.
+#
+# Outcome RESOLUTION still reads the corpus - nothing here changes
+# models/resolve_outcomes.py. These are for display.
+_MIRRORED_COLUMNS = (
+    "match_id",
+    "competition",
+    "format",
+    "venue_id",
+    "start_time",
+    "team_a",
+    "team_b",
+    "status",
+    "winner",
+    "result_method",
+    "target_runs",
+    "toss_winner",
+    "toss_decision",
+    # Added after docs/column-census.md flagged it on its first run: 98.2%
+    # populated locally, 0% on Supabase. Exactly the shape the census exists
+    # to surface, and it had gone unnoticed through three earlier instances.
+    "target_overs",
+)
+
+# Updated on conflict - everything except the key and `status`.
+#
+# STATUS IS EXCLUDED AND THAT IS LOAD-BEARING. Since the UI phase the live
+# worker owns that column (live_loop.LivePredictor.record_status), and a
+# mirror that refreshed it would stamp a match currently in progress with the
+# corpus row's 'complete'. The two writers would then fight, and the one that
+# ran last would win, silently.
+_REFRESHED_COLUMNS = tuple(
+    c for c in _MIRRORED_COLUMNS if c not in ("match_id", "status")
+)
+
+
+def mirror_match_rows(
+    local_conn,
+    supabase_conn,
+    match_ids: list[int],
+    *,
+    dry_run: bool = False,
+    expect_changed: int | None = None,
+) -> int:
     """Copy the `matches` rows for these ids to Supabase.
 
     `predictions.match_id` is a FK into a table that by §2.1 holds only live
     and recent matches, so the row has to exist before any prediction for it
     can be written. Exactly what cricketdata.py's `_ensure_match_row` does
-    for a real live match, in bulk. Deliberately does NOT copy `winner` or
-    `result_method`: the label stays local, and outcome resolution reads it
-    from the corpus (see models/resolve_outcomes.py).
+    for a real live match, in bulk.
+
+    Idempotent with update, not DO NOTHING: re-running this is how the 107
+    rows that predate `_MIRRORED_COLUMNS` get their result columns backfilled,
+    and how a corrected corpus row reaches the serving database. `status` is
+    never refreshed - see above.
     """
+    columns = ", ".join(_MIRRORED_COLUMNS)
+    placeholders = ", ".join(["%s"] * len(_MIRRORED_COLUMNS))
+    refresh = ", ".join(f"{c} = EXCLUDED.{c}" for c in _REFRESHED_COLUMNS)
+
+    # THE TWO ID SPACES. A match_id means different things on the two
+    # databases. Corpus ids come from cricsheet.py; live-worker ids come from
+    # the Supabase sequence, which migration 20260919000001 pushed to
+    # 1,000,000 precisely so the two could not collide again - but the three
+    # rows that already existed at ids 1, 2 and 3 were deliberately NOT
+    # renumbered, because their predictions reference them. Those three are
+    # CPL 2026 matches on Supabase and 2017 Pakistan-in-Australia ODIs
+    # locally.
+    #
+    # So mirroring by id is only safe for a row the corpus owns. A row
+    # carrying `external_ids->>'cricketdata'` was created by the live worker
+    # from a provider feed, and copying a same-numbered corpus row onto it
+    # overwrites a real match with an unrelated one - which is exactly what
+    # happened on 2026-09-23, and it is silent because both rows are
+    # well-formed afterwards.
+    #
+    # Refused rather than filtered: a caller who named an id deserves to be
+    # told it was wrong, not to have it quietly dropped.
+    with supabase_conn.cursor() as cur:
+        cur.execute(
+            "SELECT match_id FROM matches "
+            "WHERE match_id = ANY(%s) AND external_ids ? 'cricketdata'",
+            (match_ids,),
+        )
+        live_owned = [row[0] for row in cur.fetchall()]
+    if live_owned:
+        raise ValueError(
+            f"refusing to mirror {live_owned}: these rows were created by the live "
+            f"worker and their ids mean something different in the corpus. "
+            f"Mirroring a corpus row onto them would replace a real match with an "
+            f"unrelated one (migration 20260919000001)."
+        )
+
     with local_conn.cursor() as cur:
         cur.execute(
-            "SELECT match_id, competition, format, venue_id, start_time, team_a, team_b, "
-            "status FROM matches WHERE match_id = ANY(%s)",
+            f"SELECT {columns} FROM matches WHERE match_id = ANY(%s)",
             (match_ids,),
         )
         rows = cur.fetchall()
+
+    # WHAT WOULD CHANGE, BEFORE ANYTHING CHANGES.
+    #
+    # This statement mutates rows that already exist, which is a different
+    # risk from one that only inserts: a wrong insert is visible as a new
+    # row, a wrong update leaves a well-formed row describing something else.
+    # On 2026-09-23 this wrote three matches' data onto three unrelated
+    # matches and reported "mirrored 106 of 107", which is a success message.
+    #
+    # So the change set is computed first, from the destination's own point
+    # of view, and the caller can require it to be the size they expected.
+    # `expect_changed=0` is the assertion for a re-run that should be a
+    # no-op, which is what a second backfill is.
+    changing = _rows_that_would_change(supabase_conn, rows)
+
+    if dry_run:
+        _report_changes(changing, len(rows))
+        return 0
+
+    if expect_changed is not None and len(changing) != expect_changed:
+        raise ValueError(
+            f"refusing to mirror: {len(changing)} row(s) would change, expected "
+            f"{expect_changed}. Re-run with dry_run=True to see which. "
+            f"A change set of an unexpected size means the two databases "
+            f"disagree about something nobody has looked at."
+        )
+
     with supabase_conn.cursor() as cur:
         cur.executemany(
-            "INSERT INTO matches (match_id, competition, format, venue_id, start_time, "
-            "team_a, team_b, status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
-            "ON CONFLICT (match_id) DO NOTHING",
+            f"INSERT INTO matches ({columns}) VALUES ({placeholders}) "
+            f"ON CONFLICT (match_id) DO UPDATE SET {refresh}",
             rows,
         )
     supabase_conn.commit()
     return len(rows)
+
+
+def _rows_that_would_change(supabase_conn, rows) -> list[tuple[int, list[str]]]:
+    """Which ids would change, and in which columns.
+
+    Compares the corpus row against the row already on Supabase, column by
+    column, over exactly the set that DO UPDATE would refresh. An id with no
+    destination row counts as an insert and is not listed - inserts are not
+    the dangerous case.
+    """
+    index = {c: i for i, c in enumerate(_MIRRORED_COLUMNS)}
+    by_id = {row[index["match_id"]]: row for row in rows}
+    if not by_id:
+        return []
+
+    selected = ", ".join(("match_id", *_REFRESHED_COLUMNS))
+    with supabase_conn.cursor() as cur:
+        cur.execute(
+            f"SELECT {selected} FROM matches WHERE match_id = ANY(%s)",
+            (list(by_id),),
+        )
+        existing = cur.fetchall()
+
+    changing: list[tuple[int, list[str]]] = []
+    for destination in existing:
+        match_id = destination[0]
+        source = by_id.get(match_id)
+        if source is None:
+            continue
+        differing = [
+            column
+            for position, column in enumerate(_REFRESHED_COLUMNS, start=1)
+            if source[index[column]] != destination[position]
+        ]
+        if differing:
+            changing.append((match_id, differing))
+    return changing
+
+
+def _report_changes(changing: list[tuple[int, list[str]]], total: int) -> None:
+    print(f"dry run: {total} row(s) read from the corpus")
+    if not changing:
+        print("  nothing would change - every destination row already matches")
+        return
+    print(f"  {len(changing)} row(s) would change:")
+    for match_id, columns in changing:
+        print(f"    match {match_id}: {', '.join(columns)}")
+
+
+def mirror_only(
+    manifest: dict,
+    also: list[int] | None = None,
+    *,
+    dry_run: bool = False,
+    expect_changed: int | None = None,
+) -> int:
+    """Re-mirror the manifest's match rows, replaying nothing.
+
+    Exists because `mirror_match_rows` grew five result columns after 107
+    rows had already been written with the older eight. Those rows are only
+    reachable through a mirror pass, and running the full `run` command to
+    get one would rescore 12,081 balls to change a handful of columns.
+
+    `--also` covers the match rows that are on Supabase but not in the
+    manifest: the live-worker rows and the pre-Phase-3 demo replays. They are
+    real rows the UI lists, so they need the same columns.
+    """
+    env = _env()
+    ids = [e["match_id"] for e in manifest["matches"]] + list(also or ())
+    with (
+        psycopg.connect(env["LOCAL_DATABASE_URL"], connect_timeout=30) as local_conn,
+        psycopg.connect(env["SUPABASE_SESSION_POOLER_URL"], connect_timeout=30) as supabase_conn,
+    ):
+        mirrored = mirror_match_rows(
+            local_conn,
+            supabase_conn,
+            ids,
+            dry_run=dry_run,
+            expect_changed=expect_changed,
+        )
+    if dry_run:
+        return 0
+    print(f"mirrored {mirrored} of {len(ids)} requested match rows")
+    # A shortfall is normal and worth naming: ids that exist on Supabase but
+    # not in the local corpus (the live-worker rows) have nothing to copy.
+    if mirrored < len(ids):
+        print(f"  {len(ids) - mirrored} not present in the local corpus - left as they are")
+    return 0
 
 
 def build_manifest(local_conn, count: int, test_start: str = "2025-01-01") -> dict:
@@ -631,6 +835,30 @@ def main(argv: list[str] | None = None) -> None:
     v = sub.add_parser("verify", help="reconcile the log against the manifest")
     v.add_argument("--manifest", type=Path, default=MANIFEST_PATH)
 
+    # Backfill: re-mirror the manifest's match rows without replaying
+    # anything. This is how the result columns added in the UI phase reach
+    # the rows that were mirrored before they existed.
+    mi = sub.add_parser("mirror", help="re-mirror manifest match rows to Supabase (no replay)")
+    mi.add_argument("--manifest", type=Path, default=MANIFEST_PATH)
+    mi.add_argument(
+        "--also",
+        type=int,
+        nargs="*",
+        default=(),
+        help="extra match ids to mirror alongside the manifest's",
+    )
+    mi.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="report what would change and write nothing",
+    )
+    mi.add_argument(
+        "--expect-changed",
+        type=int,
+        default=None,
+        help="refuse unless exactly this many rows would change (0 for a no-op re-run)",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "manifest":
@@ -647,6 +875,15 @@ def main(argv: list[str] | None = None) -> None:
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     if args.command == "run":
         raise SystemExit(run(manifest, args.deployed, args.base_url.rstrip("/"), args.limit))
+    if args.command == "mirror":
+        raise SystemExit(
+            mirror_only(
+                manifest,
+                list(args.also),
+                dry_run=args.dry_run,
+                expect_changed=args.expect_changed,
+            )
+        )
     raise SystemExit(verify(manifest))
 
 

@@ -30,6 +30,7 @@ import {
   withInterval,
   type PopulationReport,
 } from "@/lib/accuracy";
+import { HATCH_PITCH_PX } from "@/lib/ball-strip";
 import { supabaseServer } from "@/lib/supabase-server";
 
 import { ReliabilityDiagram } from "./charts";
@@ -47,6 +48,72 @@ async function loadReport() {
   if (error || !data) return null;
   const report = parseReport(data.report);
   return report === null ? null : { report, computedAt: data.computed_at };
+}
+
+/**
+ * The mark for a decile whose 95% interval does not contain its own predicted
+ * mean - i.e. the model is measurably miscalibrated in that band.
+ *
+ * Hatched rather than solid, per §1.3's evidence-class vocabulary, and in
+ * --flag because this is the page's one genuinely alarming cell. aria-hidden
+ * because the word "off" beside it says the same thing; a screen reader
+ * gains nothing from "diagonal hatch, off".
+ */
+/**
+ * What the system does not attempt (UI-PHASE.md §4.1 item 4, relocated).
+ *
+ * This lived on the landing page, where four absences stood between a
+ * visitor and the product and read as caveats. Here it reads as the same
+ * discipline applied twice: the sections above say where the model is
+ * measurably wrong, and this says what it does not try to do at all. Both
+ * are the same refusal to let silence imply capability.
+ *
+ * AFTER the measurements, deliberately. A page whose first content is a list
+ * of absences has buried the thing it exists to show.
+ */
+const NOT_ATTEMPTED = [
+  {
+    title: "First-innings predictions",
+    body: "The model reads a chase. It needs a target to work backwards from, so the first half of every match is blank.",
+  },
+  {
+    title: "Player form",
+    body: "What a player has done is recorded here. What they can do now is not — those are different questions, and only the first has an answer.",
+  },
+  {
+    title: "Upcoming matches",
+    body: "No fixtures are loaded and no pre-match model exists. A page that resembled predictions without being them would be worse than nothing.",
+  },
+  {
+    title: "Live player impact",
+    body: "Which batter or bowler is actually swinging the match, ball by ball. The win-probability model supports it; the attribution layer on top isn't written.",
+  },
+];
+
+function MissSwatch() {
+  return (
+    <svg width={12} height={12} aria-hidden="true" className="band-swatch">
+      <defs>
+        <pattern
+          id="band-off-hatch"
+          width={HATCH_PITCH_PX}
+          height={HATCH_PITCH_PX}
+          patternUnits="userSpaceOnUse"
+          patternTransform="rotate(45)"
+        >
+          <rect width={HATCH_PITCH_PX / 2} height={HATCH_PITCH_PX} fill="var(--flag)" />
+        </pattern>
+      </defs>
+      <rect
+        x={0.5}
+        y={0.5}
+        width={11}
+        height={11}
+        fill="url(#band-off-hatch)"
+        stroke="var(--flag)"
+      />
+    </svg>
+  );
 }
 
 function Deciles({ population }: { population: PopulationReport }) {
@@ -76,7 +143,22 @@ function Deciles({ population }: { population: PopulationReport }) {
             <td className="tiny">
               [{d.ci_low!.toFixed(3)}, {d.ci_high!.toFixed(3)}]
             </td>
-            <td>{d.contains_predicted ? "" : <span className="chip chip-low">off</span>}</td>
+            <td>
+              {d.contains_predicted ? (
+                <span className="visually-hidden">calibrated</span>
+              ) : (
+                // §4.5 and §1.3: the band whose clustered interval excludes
+                // its own predicted mean. --flag, and a hatched swatch beside
+                // the word - the colour alone would say nothing in greyscale
+                // and nothing to a reader who cannot separate it from the
+                // text, and this is the one cell on the page that reports a
+                // failure.
+                <span className="band-off">
+                  <MissSwatch />
+                  off
+                </span>
+              )}
+            </td>
           </tr>
         ))}
       </tbody>
@@ -209,7 +291,12 @@ export default async function AccuracyPage() {
       {/* LIVE FIRST, deliberately. It is the smaller number and the honest
           one, and putting the flattering sample at the top would be the whole
           problem this page exists to avoid. */}
-      <div className="panel">
+      {/* §4.5: the distinction becomes structural. These are not two panels
+          of equal weight - one is the measurement and the other is a
+          demonstration that the pipeline runs, and the layout now says so
+          before the words do. */}
+      <section className="panel accuracy-live">
+        <p className="section-kicker">The measurement</p>
         <h2>Live — predicted before anyone knew the result</h2>
         {live && live.n > 0 ? (
           <Scored population={live} />
@@ -237,9 +324,10 @@ export default async function AccuracyPage() {
             </p>
           </>
         )}
-      </div>
+      </section>
 
-      <div className="panel">
+      <section className="panel accuracy-replayed">
+        <p className="section-kicker">Not a measurement</p>
         <h2>Replayed — matches the model was tuned on</h2>
         <p className="small muted">
           We re-ran {backfill?.n_matches ?? 0} finished matches through the live
@@ -248,7 +336,7 @@ export default async function AccuracyPage() {
           how it performs on cricket it has never seen. Read it as a demo.
         </p>
         {backfill ? <Scored population={backfill} /> : null}
-      </div>
+      </section>
 
       <div className="panel">
         <h2>What the monitor decided</h2>
@@ -261,6 +349,25 @@ export default async function AccuracyPage() {
           that reports honestly and changes nothing is the job working.
         </p>
       </div>
+
+      {/* After the measurements, not before them. */}
+      <section className="panel not-attempted">
+        <p className="section-kicker">Not measured, because not attempted</p>
+        <h2>What it doesn&rsquo;t do</h2>
+        <p className="small muted">
+          The sections above are where the model is measurably wrong. This is
+          what it does not try to do at all — the same refusal to let silence
+          imply capability.
+        </p>
+        <dl className="not-built">
+          {NOT_ATTEMPTED.map((item) => (
+            <div key={item.title}>
+              <dt>{item.title}</dt>
+              <dd>{item.body}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
 
       <p className="tiny muted">
         <Link href="/model-card">Model card — the plain-language version</Link> ·{" "}

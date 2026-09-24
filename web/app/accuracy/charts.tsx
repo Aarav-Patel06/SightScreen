@@ -32,6 +32,26 @@ import {
 
 import { reliabilityPoints, type Decile } from "@/lib/accuracy";
 
+/**
+ * The light palette's values, duplicated as literals.
+ *
+ * Recharts takes colours as JS props and renders them into inline SVG
+ * attributes, so `var(--rule)` reaches the DOM uninterpreted and resolves to
+ * nothing. live-match.tsx makes the same compromise and says so; the
+ * hand-rolled ball strip does not need to, which is one of the reasons it is
+ * hand-rolled.
+ *
+ * Keep in step with .theme-paper in globals.css. lib/tokens.test.ts holds
+ * that block to its contrast floors and cannot see these copies.
+ */
+const CHART = {
+  paper: "#F9F5EA",
+  ink: "#2A2419",
+  soft: "#6B6152",
+  rule: "#E0D5BF",
+  bat: "#1D727C",
+} as const;
+
 export function ReliabilityDiagram({ deciles }: { deciles: Decile[] | undefined }) {
   const points = reliabilityPoints(deciles);
   if (points.length === 0) {
@@ -43,22 +63,22 @@ export function ReliabilityDiagram({ deciles }: { deciles: Decile[] | undefined 
       <div style={{ height: 260 }}>
         <ResponsiveContainer width="100%" height="100%">
           <ScatterChart margin={{ top: 8, right: 12, bottom: 4, left: -18 }}>
-            <CartesianGrid stroke="#262b30" />
+            <CartesianGrid stroke={CHART.rule} />
             <XAxis
               type="number"
               dataKey="predicted"
               domain={[0, 1]}
               ticks={[0, 0.25, 0.5, 0.75, 1]}
-              tick={{ fill: "#9aa3ab", fontSize: 11 }}
-              stroke="#262b30"
+              tick={{ fill: CHART.soft, fontSize: 11 }}
+              stroke={CHART.rule}
             />
             <YAxis
               type="number"
               dataKey="observed"
               domain={[0, 1]}
               ticks={[0, 0.25, 0.5, 0.75, 1]}
-              tick={{ fill: "#9aa3ab", fontSize: 11 }}
-              stroke="#262b30"
+              tick={{ fill: CHART.soft, fontSize: 11 }}
+              stroke={CHART.rule}
             />
             {/* Perfect calibration. Drawn as a segment rather than a
                 gridline so it reads as the thing being compared against. */}
@@ -67,22 +87,22 @@ export function ReliabilityDiagram({ deciles }: { deciles: Decile[] | undefined 
                 { x: 0, y: 0 },
                 { x: 1, y: 1 },
               ]}
-              stroke="#3a4148"
+              stroke={CHART.rule}
               strokeDasharray="3 3"
             />
             <Tooltip
-              cursor={{ stroke: "#3a4148" }}
+              cursor={{ stroke: CHART.rule }}
               contentStyle={{
-                background: "#171a1d",
-                border: "1px solid #262b30",
+                background: CHART.paper,
+                border: `1px solid ${CHART.rule}`,
                 borderRadius: 8,
                 fontSize: 12,
               }}
               formatter={(value: number, name: string) => [value.toFixed(3), name]}
               labelFormatter={() => ""}
             />
-            <Scatter data={points} fill="#4ea1ff" isAnimationActive={false}>
-              <ErrorBar dataKey="error" width={4} strokeWidth={1.5} stroke="#4ea1ff" />
+            <Scatter data={points} fill={CHART.bat} isAnimationActive={false}>
+              <ErrorBar dataKey="error" width={4} strokeWidth={1.5} stroke={CHART.bat} />
             </Scatter>
           </ScatterChart>
         </ResponsiveContainer>

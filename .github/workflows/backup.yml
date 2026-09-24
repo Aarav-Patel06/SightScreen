@@ -1,0 +1,139 @@
+name: Supabase backup
+
+# Nightly dump of the serving database, restored into a throwaway Postgres
+# and compared against the source before the artifact is kept.
+#
+# WHY. Supabase's free tier schedules no backups - daily backups begin at Pro,
+# PITR is a paid add-on - and until this job existed nothing in the repository
+# dumped anything. A 2026-09-23 incident overwrote three `matches` rows and
+# three columns were unrecoverable, because the only snapshot in existence was
+# a JSON file fetched twenty minutes earlier for an unrelated reason.
+#
+# Most of what Supabase holds is reproducible from the corpus. Two things are
+# not: predictions with source='live' (a replay emits 'backfill' rows by
+# construction, so a prediction made before its outcome existed cannot be
+# recreated) and the live-worker `matches` rows, whose ids come from Supabase's
+# own sequence and have no corpus counterpart. See api/src/ops/backup.py.
+#
+# 04:00 UTC, an hour after the calibration monitor, so a backup is never taken
+# mid-write of a calibration_runs row.
+#
+# workflow_dispatch as well, for the same reason calibration.yml has it: a
+# scheduled job whose first real execution is unattended is a job nobody has
+# tested.
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install api package
+        run: pip install -e "./api[dev]"
+
+      # pg_dump must not be older than the server: 17.6 refuses a 16.x client
+      # outright. The runner's bundled client tracks whatever Ubuntu ships, so
+      # the exact server image is used instead of hoping they match.
+      - name: Start a throwaway Postgres to restore into
+        run: |
+          docker run -d --name restore-target \
+            -e POSTGRES_PASSWORD=postgres \
+            -p 5434:5432 postgres:17.6
+          for _ in $(seq 1 30); do
+            docker exec restore-target pg_isready -U postgres && break
+            sleep 2
+          done
+          docker exec restore-target pg_isready -U postgres
+
+      - name: Dump the serving database
+        env:
+          # §2.4: SESSION mode, port 5432. The transaction pooler does not
+          # support the prepared statements and session state pg_dump needs,
+          # and fails partway through rather than refusing up front.
+          SUPABASE_SESSION_POOLER_URL: ${{ secrets.SUPABASE_SESSION_POOLER_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_SESSION_POOLER_URL" || {
+            echo "SUPABASE_SESSION_POOLER_URL is not set"; exit 1; }
+
+          # --no-owner/--no-acl: the restore target has no Supabase roles, and
+          # ownership is not what is being preserved here - the rows are.
+          docker run --rm --network host postgres:17.6 \
+            pg_dump "$SUPABASE_SESSION_POOLER_URL" \
+              --schema=public --no-owner --no-acl \
+            > "$RUNNER_TEMP/supabase.sql"
+
+          ls -l "$RUNNER_TEMP/supabase.sql"
+
+      - name: Restore it into the throwaway database
+        run: |
+          set -euo pipefail
+
+          # A FRESH database with NO public schema. The dump emits
+          # `CREATE SCHEMA public`, which collides with the one every new
+          # database already has - restoring into `postgres` fails with
+          # `schema "public" already exists` before a single row lands.
+          docker exec restore-target psql -U postgres -d postgres \
+            -c "CREATE DATABASE restored"
+          docker exec restore-target psql -U postgres -d restored \
+            -c "DROP SCHEMA IF EXISTS public CASCADE"
+
+          # The RLS policies name Supabase's roles, which a plain Postgres
+          # does not have. Derived from the dump rather than hardcoded: a
+          # migration adding a policy for a new role would otherwise break
+          # this job months later, at 04:00, for a reason nobody would guess.
+          ROLES=$(grep -oE 'CREATE POLICY .* TO [a-z_, ]+ ' "$RUNNER_TEMP/supabase.sql" \
+            | sed 's/.* TO //' | tr ',' '\n' | tr -d ' ' | grep -v '^$' | sort -u)
+          echo "roles required by the dump: $ROLES"
+          for role in $ROLES; do
+            docker exec restore-target psql -U postgres -d restored -c "CREATE ROLE $role"
+          done
+
+          # ON_ERROR_STOP so a restore that half-works fails here rather than
+          # producing a database that merely looks populated.
+          docker exec -i -e PGPASSWORD=postgres restore-target \
+            psql -v ON_ERROR_STOP=1 -U postgres -d restored \
+            < "$RUNNER_TEMP/supabase.sql" > /dev/null
+
+      # The step that makes this a backup rather than a file. Row counts and a
+      # per-table content digest on both sides; any mismatch fails the job.
+      - name: Verify the restore against the source
+        env:
+          SUPABASE_SESSION_POOLER_URL: ${{ secrets.SUPABASE_SESSION_POOLER_URL }}
+        working-directory: api/src
+        run: |
+          python -u -m ops.backup \
+            --dump "$RUNNER_TEMP/supabase.sql" \
+            --source-url "$SUPABASE_SESSION_POOLER_URL" \
+            --restored-url "postgresql://postgres:postgres@localhost:5434/restored"
+
+      - name: Compress
+        run: gzip -9 "$RUNNER_TEMP/supabase.sql"
+
+      # A rolling window, not an archive. Fourteen days is long enough to
+      # notice damage and reach back past it - the 2026-09-23 incident was
+      # found the same day - and short enough that this never becomes a
+      # storage problem nobody is watching.
+      #
+      # NOT committed to the repository: a nightly 22MB binary in git history
+      # is unremovable, and a database dump in a public repo is a credential
+      # leak waiting for one careless column.
+      - name: Keep the dump as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-backup-${{ github.run_id }}
+          path: ${{ runner.temp }}/supabase.sql.gz
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Stop the throwaway database
+        if: always()
+        run: docker rm -f restore-target || true

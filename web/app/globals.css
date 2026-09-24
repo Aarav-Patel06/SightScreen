@@ -87,3 +87,631 @@ a { color: var(--bat); }
    number. Thin is judged on MATCHES, not rows - see lib/accuracy.ts. */
 .grid tr.thin td { color: var(--muted); }
 h3 { font-size: 13px; margin: 14px 0 6px; font-weight: 600; }
+
+/* ------------------------------------------------------------------------
+   UI mini-phase §1.4/§1.5 tokens.
+
+   SCOPED TO A CLASS, NOT :root, AND DELIBERATELY SO. The palette above is
+   dark and all six existing pages depend on it - including --bat and --bowl,
+   which §1.4 redefines to light-palette values. Redefining those at :root
+   would turn every link and every win-probability bar in the app dark blue on
+   near-black in the same commit, and leave them that way until the last page
+   is retrofitted several sessions later. §5 asks that each session end with
+   something visible in a browser, so instead the new palette shadows the old
+   one inside a subtree.
+
+   Session 1 applies .theme-paper to /design only. Each later session adds it
+   to the page it retrofits; the last one moves it to <body>, drops the
+   .theme-paper selector, and deletes the dark :root block above. Nothing
+   needs renaming at that point, which is the advantage of shadowing over
+   prefixing the new names.
+   --------------------------------------------------------------------- */
+
+.theme-paper {
+  /* Cream base, warm tan chrome, teal and brown as the two data colours.
+     Repalette of 2026-09-24. The type scale, layout, component structure and
+     the texture system are unchanged - only hues moved.
+
+     PROVISIONAL: --bat and --bowl are DERIVED, not sampled. The reference
+     image did not reach the session, so these two were computed from the
+     stated constraints (teal / brown-tan, matched to each other, clearing
+     every floor below) rather than read off the design. Swapping them for
+     sampled values is a two-line change; every other token here is the
+     reference's own hex. */
+  --paper: #F9F5EA;
+  --paper-raised: #FDFBF6;
+  --chrome: #D5C3A5;
+  --chrome-deep: #C6A67B;
+  --rule: #E0D5BF;
+
+  --ink: #2A2419;
+  --ink-soft: #6B6152;
+
+  /* THREE BACKGROUNDS NOW, AND THAT CHANGES THE RULE. The old palette had
+     one surface, so "clears 4.5:1 against --paper" was the whole question.
+     On --chrome only --ink clears it: --ink-soft is 3.52:1 there, --bat
+     3.25:1, --flag 3.78:1. So chrome carries --ink and nothing else, and
+     lib/tokens.test.ts asserts it rather than leaving it to whoever styles
+     the next header. */
+
+  /* FILLS ARE AT ~5:1, NOT THE 3:1 WCAG 1.4.11 ASKS FOR, and the reason is
+     the texture system rather than contrast. Measured on this cream: a teal
+     at the 3.0 floor gives solid/hollow 2.84, solid/hatch 2.00 and
+     hatch/hollow 1.42 - against the old palette's 4.77 / 3.05 / 1.56. The
+     ladder collapses while every accessibility check still passes. At 5.14:1
+     it reads 4.81 / 3.07 / 1.57, at or above the old palette on all three,
+     with the hatch pitch untouched.
+
+     So the fill floor in lib/tokens.test.ts is 4.5, not 3.0. Nothing in this
+     design can use a 3:1 fill; leaving the test at the WCAG minimum would
+     leave a gap a future hue falls into silently. */
+  --bat: #1D727C;
+  --bowl: #935B2B;
+  --bat-text: #1D727C;
+  --bowl-text: #935B2B;
+  --flag: #A8324A;
+
+  --t-xs: 12.8px;
+  --t-s: 16px;
+  --t-m: 20px;
+  --t-l: 25px;
+  --t-xl: 31px;
+  --t-2xl: 39px;
+  --t-3xl: 49px;
+
+  --measure: 68ch;
+  --page: 1140px;
+  --column: 720px;
+
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-plex), ui-sans-serif, system-ui, sans-serif;
+  font-size: var(--t-s);
+  line-height: 1.6;
+}
+
+/* §1.5: every number that can change while you watch it. A win probability
+   that jitters horizontally as digits change width reads as broken. */
+.theme-paper .fig {
+  font-family: var(--font-plex-cond), var(--font-plex), ui-sans-serif, sans-serif;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.theme-paper .tnum { font-variant-numeric: tabular-nums; }
+
+.theme-paper .prose { max-width: var(--measure); }
+.theme-paper .soft { color: var(--ink-soft); }
+
+/* §1.6: a rule only where it separates genuinely different content. */
+.theme-paper .hr { border: 0; border-top: 1px solid var(--rule); margin: 0; }
+
+/* §5 acceptance: focus must be visible. Set here rather than in the
+   accessibility session because a component that ships without it gets
+   retrofitted rather than fixed. */
+.theme-paper :focus-visible {
+  outline: 2px solid var(--bat);
+  outline-offset: 2px;
+}
+
+/* /design needs the full 1140px; the global `main` rule caps at 720px for the
+   prose surfaces it was written for. */
+.theme-paper.design { max-width: var(--page); padding: 32px 16px 96px; }
+
+.theme-paper .grid th { color: var(--ink-soft); border-bottom-color: var(--rule); }
+.theme-paper .grid td { border-bottom-color: var(--rule); }
+.theme-paper .flag { color: var(--flag); }
+.theme-paper code { font-size: 0.9em; }
+.theme-paper a { color: var(--bat); }
+
+.theme-paper .tex-legend-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  font-size: var(--t-xs);
+}
+.theme-paper .tex-legend-list li { display: flex; align-items: center; gap: 8px; }
+
+/* ------------------------------------------------------------------------
+   The shell (§3.1). Header, footer, skip link, live slot.
+   --------------------------------------------------------------------- */
+
+.theme-paper .skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 8px;
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  padding: 8px 12px;
+  z-index: 10;
+}
+.theme-paper .skip-link:focus { left: 8px; }
+
+/* Screen-reader-only, but still focusable and still read. Not `display:none`,
+   which removes it from the accessibility tree entirely. */
+.theme-paper .visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0; border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.theme-paper .site-header { border-bottom: 1px solid var(--rule); }
+.theme-paper .site-header-inner {
+  max-width: var(--page);
+  margin: 0 auto;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.theme-paper .wordmark {
+  font-family: var(--font-plex-cond), var(--font-plex), sans-serif;
+  font-size: var(--t-m);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+/* Pushes the nav right and leaves the middle to the live slot, which is
+   usually absent - so the nav must sit right whether or not it renders. */
+.theme-paper .site-header nav { margin-left: auto; }
+.theme-paper .site-header nav ul {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; gap: 18px;
+  font-size: var(--t-xs);
+}
+.theme-paper .site-header nav a { color: var(--ink); text-decoration: none; }
+.theme-paper .site-header nav a:hover { text-decoration: underline; }
+
+.theme-paper .live-slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  color: var(--ink);
+  font-size: var(--t-xs);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  padding: 3px 10px 3px 8px;
+}
+.theme-paper .live-dot {
+  width: 7px; height: 7px; border-radius: 999px;
+  background: var(--flag);
+  flex: none;
+}
+.theme-paper .live-teams { color: var(--ink-soft); }
+.theme-paper .live-strip { width: 48px; flex: none; }
+.theme-paper .live-figure { font-size: var(--t-s); }
+
+.theme-paper .site-footer {
+  border-top: 1px solid var(--rule);
+  margin-top: 64px;
+}
+.theme-paper .site-footer p {
+  max-width: var(--page);
+  margin: 0 auto;
+  padding: 16px;
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+}
+.theme-paper .site-footer a { color: var(--ink-soft); }
+
+/* ------------------------------------------------------------------------
+   The landing page (§4.1).
+   --------------------------------------------------------------------- */
+
+.theme-paper .landing { max-width: var(--page); margin: 0 auto; padding: 0 16px; }
+
+.theme-paper .hero { padding: 40px 0 8px; }
+.theme-paper .hero-identity { font-size: var(--t-xs); margin: 0 0 4px; }
+.theme-paper .hero-teams {
+  font-family: var(--font-plex-cond), var(--font-plex), sans-serif;
+  font-size: var(--t-2xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0 0 6px;
+}
+.theme-paper .hero-state { font-size: var(--t-m); margin: 0 0 20px; }
+.theme-paper .hero-strip { margin-bottom: 14px; }
+.theme-paper .hero-note { margin: 0; font-size: var(--t-s); }
+
+.theme-paper .band { padding: 40px 0; border-top: 1px solid var(--rule); }
+.theme-paper .band:first-of-type { border-top: 0; }
+.theme-paper .band h2 {
+  font-size: var(--t-l);
+  font-weight: 600;
+  margin: 0 0 16px;
+}
+.theme-paper .band p { margin: 0 0 14px; }
+.theme-paper .corpus-line { font-size: var(--t-xs); }
+
+/* The figure leads, because it is the thing that proves the entry point is
+   real. Stacks under 640px so the number keeps its size rather than shrinking
+   to fit beside prose. */
+.theme-paper .entry { display: flex; gap: 24px; align-items: baseline; flex-wrap: wrap; }
+.theme-paper .entry-figure { font-size: var(--t-2xl); margin: 0; flex: none; }
+.theme-paper .entry-provenance { font-size: var(--t-xs); }
+
+.theme-paper .not-built { margin: 0; }
+.theme-paper .not-built > div { margin-bottom: 18px; }
+.theme-paper .not-built dt { font-weight: 600; margin-bottom: 2px; }
+.theme-paper .not-built dd { margin: 0; color: var(--ink-soft); }
+
+@media (max-width: 640px) {
+  .theme-paper .hero-teams { font-size: var(--t-xl); }
+  .theme-paper .entry-figure { font-size: var(--t-xl); }
+}
+
+/* §1.7: the page's single piece of non-user-triggered motion. The hero strip
+   draws itself left to right once on load, then stops.
+
+   Scoped to the clip rect, not the marks, so the geometry is identical
+   whether or not it animates - and declared here rather than in JS so the
+   server-rendered HTML already contains the finished strip. A visitor with
+   JavaScript off, or one who arrives before hydration, sees the complete
+   hero rather than an empty box. */
+@keyframes strip-draw {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+.strip-draw {
+  transform-origin: left center;
+  animation: strip-draw 1.2s cubic-bezier(0.2, 0.6, 0.2, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .strip-draw { animation: none; }
+}
+
+/* ------------------------------------------------------------------------
+   /matches (§4.2). A table, not cards: these are rows of the same shape.
+   --------------------------------------------------------------------- */
+
+.theme-paper .page-title {
+  font-family: var(--font-plex-cond), var(--font-plex), sans-serif;
+  font-size: var(--t-2xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0 0 8px;
+}
+
+.theme-paper .filters {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  font-size: var(--t-xs);
+  margin: 24px 0 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--rule);
+}
+.theme-paper .filters fieldset {
+  border: 0; margin: 0; padding: 0;
+  display: flex; gap: 14px;
+}
+.theme-paper .filters label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.theme-paper .filters input { accent-color: var(--bat); }
+.theme-paper .filter-count { margin: 0 0 0 auto; }
+
+.theme-paper .matches-table { width: 100%; font-size: var(--t-xs); }
+.theme-paper .matches-table td { padding: 7px 10px 7px 0; vertical-align: middle; }
+.theme-paper .matches-table th { padding-bottom: 6px; }
+.theme-paper .nowrap { white-space: nowrap; }
+
+/* The sparkline column. Fixed width so every strip shares a scale-per-row
+   and the eye can compare shapes down the column rather than across it. */
+.theme-paper .spark-cell { width: 120px; padding-right: 0; }
+.theme-paper .not-replayed { font-size: var(--t-xs); white-space: nowrap; }
+
+.theme-paper .notice { font-size: var(--t-xs); margin: 12px 0; }
+.theme-paper .footnote { font-size: var(--t-xs); margin-top: 16px; max-width: var(--measure); }
+
+@media (max-width: 640px) {
+  /* Competition is the first thing to go: the teams and the strip are what
+     someone is scanning for, and the competition is usually inferable. */
+  .theme-paper .matches-table td:nth-child(2),
+  .theme-paper .matches-table th:nth-child(2) { display: none; }
+  .theme-paper .spark-cell { width: 80px; }
+}
+
+/* ------------------------------------------------------------------------
+   /match/[matchId] retrofit (§4.3).
+
+   The legacy classes below (.panel, .chip, .wp-bar, .strip .cell) were built
+   against the dark :root and reference --panel, --line and --warn, none of
+   which exist inside .theme-paper. Until session 2 put the light palette on
+   <body> they resolved correctly; since then they have been falling through
+   to dark values on a paper background. These rules redefine them in terms of
+   tokens that exist, without touching the markup - the component's structure
+   is what the Realtime tests assert on.
+   --------------------------------------------------------------------- */
+
+.theme-paper .panel {
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--rule);
+  border-radius: 0;
+  padding: 24px 0;
+  margin-bottom: 0;
+}
+.theme-paper .panel:first-of-type { border-top: 0; }
+
+.theme-paper main { max-width: var(--column); padding: 0 16px 64px; }
+
+.theme-paper .muted { color: var(--ink-soft); }
+.theme-paper .small { font-size: var(--t-xs); }
+.theme-paper .tiny { font-size: var(--t-xs); }
+
+.theme-paper h1 { font-size: var(--t-xl); margin: 0 0 4px; font-weight: 600; }
+.theme-paper h2 { font-size: var(--t-m); margin: 0 0 12px; font-weight: 600; }
+.theme-paper h3 { font-size: var(--t-s); margin: 14px 0 6px; font-weight: 600; }
+
+.theme-paper .wp-number {
+  font-family: var(--font-plex-cond), var(--font-plex), sans-serif;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--t-3xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* Two-tone, bowling side behind and batting side in front. --bowl and --bat
+   are the FILL tokens; nothing here carries text. */
+.theme-paper .wp-bar { background: var(--bowl); border-radius: 2px; height: 8px; }
+.theme-paper .wp-bar > span { background: var(--bat); }
+
+/* The phase mark replaces .chip. No border, no pill: the swatch carries the
+   signal and the words carry the detail. */
+.theme-paper .phase-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+}
+.theme-paper .phase-swatch { flex: none; }
+
+.theme-paper .strip { gap: 8px; margin-top: 14px; }
+.theme-paper .strip .cell {
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  font-size: var(--t-xs);
+  color: var(--ink);
+}
+.theme-paper .strip .cell.absent { color: var(--ink-soft); border-style: dashed; }
+
+.theme-paper .absent-items { margin: 0; }
+.theme-paper .absent-items > div { margin-bottom: 14px; }
+.theme-paper .absent-items dt { font-weight: 600; font-size: var(--t-xs); }
+.theme-paper .absent-items dd {
+  margin: 2px 0 0;
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+  max-width: var(--measure);
+}
+
+/* ------------------------------------------------------------------------
+   /players and /player/[id] (§4.4).
+   --------------------------------------------------------------------- */
+
+.theme-paper .player-search { margin: 24px 0 8px; }
+.theme-paper .player-search label {
+  display: block;
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+  margin-bottom: 5px;
+}
+.theme-paper .player-search input {
+  width: 100%;
+  max-width: 380px;
+  font: inherit;
+  font-size: var(--t-s);
+  padding: 7px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.theme-paper .player-search p { font-size: var(--t-xs); margin: 6px 0 0; }
+
+.theme-paper .players-table, .theme-paper .player-table { width: 100%; font-size: var(--t-xs); }
+.theme-paper .num { text-align: right; }
+.theme-paper .players-table td, .theme-paper .player-table td { padding: 6px 10px 6px 0; }
+
+/* The career line reads as the summary of the rows under it. */
+.theme-paper .career-row td { font-weight: 600; }
+
+/* §1.3's hollow, for a rate computed from too few innings to trust. An
+   outline where a solid figure would be: present, readable, and visibly not
+   the same kind of object as the numbers around it. A lighter grey would
+   still read as a number you can use, which is what §12.2 rules out. */
+.theme-paper .hollow-figure {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+  border: 1px dashed var(--rule);
+  border-radius: 2px;
+  padding: 0 4px;
+}
+
+/* The form refusal. A rule above and below, because it is not an aside -
+   it is the page's argument, and §4.4 calls it the clearest demonstration
+   of the product's stance a visitor will see. */
+.theme-paper .refusal {
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  padding: 16px 0;
+  margin: 20px 0 0;
+}
+.theme-paper .refusal p { margin: 0 0 8px; font-size: var(--t-xs); }
+.theme-paper .refusal p:last-child { margin-bottom: 0; }
+
+/* ------------------------------------------------------------------------
+   Session 5: /accuracy, /model-card, /ask.
+   --------------------------------------------------------------------- */
+
+/* §4.5. The live/replayed distinction is structural, not just labelled: the
+   measurement gets a left rule in --bat, the demonstration gets none and
+   sits back in --ink-soft. A reader who never gets to the words should still
+   be able to see that these two sections are not peers. */
+.theme-paper .section-kicker {
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+  margin: 0 0 2px;
+  letter-spacing: 0.02em;
+}
+.theme-paper .accuracy-live {
+  border-left: 3px solid var(--bat);
+  padding-left: 16px;
+}
+.theme-paper .accuracy-replayed {
+  border-left: 3px solid var(--rule);
+  padding-left: 16px;
+}
+.theme-paper .accuracy-replayed h2,
+.theme-paper .accuracy-replayed .section-kicker { color: var(--ink-soft); }
+
+/* A decile whose 95% interval excludes its own predicted mean. --flag, and
+   hatched - the one cell on the page reporting a failure should not depend
+   on hue to say so. */
+.theme-paper .band-off {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--flag);
+  font-size: var(--t-xs);
+}
+.theme-paper .band-swatch { flex: none; }
+
+/* §4.6. The one page that should read as a document rather than an
+   interface: one column at the 68-character measure, no panels, no rules
+   between paragraphs, and line-height that invites reading rather than
+   scanning. */
+.theme-paper .document {
+  max-width: var(--column);
+  padding: 32px 16px 96px;
+}
+.theme-paper .document .panel {
+  border: 0;
+  padding: 0;
+  margin: 0 0 28px;
+}
+.theme-paper .document p { max-width: var(--measure); line-height: 1.7; }
+.theme-paper .document h1 { font-size: var(--t-xl); margin-bottom: 12px; }
+.theme-paper .document h2 { font-size: var(--t-m); margin-top: 32px; }
+.theme-paper .document .small { font-size: var(--t-s); }
+
+/* §4.7. Shell only - no logic here, and none in the markup this styles. */
+.theme-paper .ask { max-width: var(--column); padding: 32px 16px 96px; }
+.theme-paper .ask-form { margin: 28px 0; }
+.theme-paper .ask-form label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+}
+.theme-paper .ask-input {
+  font: inherit;
+  font-size: var(--t-s);
+  padding: 8px 10px;
+  width: 100%;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.theme-paper .ask-input-password { width: 18rem; max-width: 100%; }
+.theme-paper .ask-button {
+  font: inherit;
+  font-size: var(--t-xs);
+  margin-top: 8px;
+  padding: 8px 16px;
+  border: 1px solid var(--ink);
+  border-radius: 3px;
+  background: var(--ink);
+  color: var(--paper);
+  cursor: pointer;
+}
+.theme-paper .ask-button:disabled {
+  background: var(--paper);
+  color: var(--ink-soft);
+  border-color: var(--rule);
+  cursor: default;
+}
+.theme-paper .ask-input-password + .ask-button { margin-left: 8px; margin-top: 0; }
+
+.theme-paper .ask-exchange { border-top: 1px solid var(--rule); padding: 18px 0; }
+.theme-paper .ask-question { font-weight: 600; margin: 0 0 8px; max-width: var(--measure); }
+.theme-paper .ask-answer { white-space: pre-wrap; margin: 0; max-width: var(--measure); }
+.theme-paper .ask-transparency {
+  font-size: var(--t-xs);
+  max-width: var(--measure);
+  margin: 24px 0 0;
+}
+
+/* ------------------------------------------------------------------------
+   Repalette 2026-09-24: chrome surfaces.
+
+   ONLY --ink GOES ON CHROME. Measured against --chrome #D5C3A5:
+   --ink 8.92:1, --ink-soft 3.52:1, --bat 3.25:1, --flag 3.78:1. So the
+   header, the footer and the table header bands carry --ink for everything,
+   including the text that is secondary on a paper background. The visual
+   hierarchy there comes from weight and size, not from a lighter colour,
+   because a lighter colour on tan is not legible.
+   --------------------------------------------------------------------- */
+
+.theme-paper .site-header {
+  background: var(--chrome);
+  border-bottom: 1px solid var(--chrome-deep);
+}
+.theme-paper .site-header nav a,
+.theme-paper .wordmark { color: var(--ink); }
+/* Was --ink-soft. 3.52:1 on chrome; the weight change carries it instead. */
+.theme-paper .live-teams { color: var(--ink); font-weight: 500; }
+.theme-paper .live-slot { border-color: var(--ink); }
+
+.theme-paper .site-footer {
+  background: var(--chrome);
+  border-top: 1px solid var(--chrome-deep);
+  margin-top: 64px;
+}
+.theme-paper .site-footer p,
+.theme-paper .site-footer a { color: var(--ink); }
+
+/* Table header bands. --chrome-deep is the darkest surface (--ink is 6.70:1
+   on it), so it carries the header row and nothing else. */
+.theme-paper .grid thead th {
+  background: var(--chrome-deep);
+  color: var(--ink);
+  font-weight: 600;
+  padding: 7px 10px 7px 8px;
+  border-bottom: 0;
+}
+.theme-paper .grid thead th:first-child { border-radius: 3px 0 0 3px; }
+.theme-paper .grid thead th:last-child { border-radius: 0 3px 3px 0; }
+
+/* Raised surfaces: the hero and anything that should sit above the cream. */
+.theme-paper .hero {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 32px 24px 24px;
+  margin-top: 24px;
+}
+.theme-paper .entry {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 18px 20px;
+}
+
+/* The skip link lands on chrome. */
+.theme-paper .skip-link { background: var(--paper-raised); border-color: var(--ink); }

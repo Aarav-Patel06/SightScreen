@@ -58,6 +58,7 @@ import psycopg
 from dotenv import dotenv_values
 
 from eval.splits import second_innings_predicate
+from ingest.replay_log import _MIRRORED_COLUMNS, _REFRESHED_COLUMNS
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 ENV_PATH = REPO_ROOT / "api" / ".env"
@@ -75,12 +76,17 @@ _BALLS_QUERY = """
            ms.target, ms.runs_required, ms.current_run_rate, ms.required_run_rate,
            ms.rrr_minus_crr, ms.partnership_runs, ms.partnership_balls,
            ms.balls_since_wicket, ms.phase, ms.match_date,
-           m.venue_id, m.format, d.batting_team_id, d.bowling_team_id
+           m.venue_id, m.format, d.batting_team_id, d.bowling_team_id,
+           d.over_num, d.ball_in_over
     FROM match_states ms
     JOIN matches m ON m.match_id = ms.match_id
     JOIN deliveries d ON d.delivery_id = ms.delivery_id
     WHERE ms.match_id = %(match_id)s AND {predicate}
-    ORDER BY ms.balls_bowled
+    -- By the ball key, NOT by balls_bowled. An extra does not advance
+    -- balls_bowled, so an over containing a wide comes back with two rows
+    -- sharing a sort value and posts in arbitrary order. replay_log.py
+    -- orders the same way for the same reason.
+    ORDER BY d.over_num, d.ball_in_over
 """.format(predicate=second_innings_predicate("ms"))
 
 # Candidates worth demoing: a completed chase that went to the wire. A curve
@@ -157,6 +163,15 @@ def load_balls(local_url: str, match_id: int) -> list[dict]:
             "format": r[15],
             "batting_team_id": r[16],
             "bowling_team_id": r[17],
+            # THE BALL KEY. Without these the endpoint writes innings NULL,
+            # which sits outside the partial unique index - so its
+            # ON CONFLICT target is unsatisfiable, every retried POST writes
+            # a second row, and `logged: false` can never come back. That is
+            # what produced match 13143's 121 rows carrying 13 distinct
+            # payloads, and it is why those rows are invisible to /matches
+            # and to every calibration bin.
+            "over_num": r[18],
+            "ball_in_over": r[19],
         }
         for r in rows
     ]
@@ -166,10 +181,18 @@ def mirror_match_row(local_url: str, supabase_url: str, match_id: int) -> None:
     """predictions.match_id is a FK into a table holding only live/recent
     matches, so the one row has to exist on Supabase. Exactly what
     cricketdata.py's _ensure_match_row does for a real live match."""
+    # Column list and conflict behaviour come from replay_log so the two
+    # mirrors cannot drift: a demo driver that wrote fewer columns than the
+    # backfill would make a match look different depending on which tool
+    # last touched it.
+    columns = ", ".join(_MIRRORED_COLUMNS)
+    placeholders = ", ".join(["%s"] * len(_MIRRORED_COLUMNS))
+    refresh = ", ".join(f"{c} = EXCLUDED.{c}" for c in _REFRESHED_COLUMNS)
+    selected = ", ".join(c for c in _MIRRORED_COLUMNS if c != "match_id")
+
     with psycopg.connect(local_url, connect_timeout=20) as conn, conn.cursor() as cur:
         cur.execute(
-            "SELECT competition, format, venue_id, start_time, team_a, team_b, status "
-            "FROM matches WHERE match_id = %s",
+            f"SELECT {selected} FROM matches WHERE match_id = %s",
             (match_id,),
         )
         row = cur.fetchone()
@@ -178,9 +201,8 @@ def mirror_match_row(local_url: str, supabase_url: str, match_id: int) -> None:
     with psycopg.connect(supabase_url, connect_timeout=20) as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO matches (match_id, competition, format, venue_id, start_time, "
-                "team_a, team_b, status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
-                "ON CONFLICT (match_id) DO NOTHING",
+                f"INSERT INTO matches ({columns}) VALUES ({placeholders}) "
+                f"ON CONFLICT (match_id) DO UPDATE SET {refresh}",
                 (match_id, *row),
             )
         conn.commit()

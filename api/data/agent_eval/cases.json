@@ -138,7 +138,10 @@
       "must_call": [
         "get_live_prediction"
       ],
-      "why": "Supabase ids, not corpus ids. Replayed data, so this exercises the tool contract rather than a genuinely live match - the corpus ends 2026-08-24 and that is a calendar limit, not an engineering one."
+      "why": "Supabase ids, not corpus ids. Replayed data, so this exercises the tool contract rather than a genuinely live match - the corpus ends 2026-08-24 and that is a calendar limit, not an engineering one. The citation is on match_id rather than the probability because match_id is in both response shapes, so it holds when no match is live; what it cannot survive is the tool raising, which is how get_live_prediction shipped a query selecting a column that has never existed and kept must_call green through a paid run.",
+      "cite": [
+        "get_live_prediction.match_id"
+      ]
     },
     {
       "id": "live-prediction-why-moved",
@@ -147,7 +150,12 @@
       "must_call": [
         "get_live_prediction"
       ],
-      "why": "SPEC 10.1's fourth example query. The answer must come from model outputs, not from the LLM narrating raw deliveries, per 10.5."
+      "why": "SPEC 10.1's fourth example query. The answer must come from model outputs, not from the LLM narrating raw deliveries, per 10.5. must_say_any covers both branches: a real movement, or an honest statement that nothing is logged. An answer that says neither did not read the tool's result.",
+      "must_say_any": [
+        "win probability",
+        "no prediction",
+        "not available"
+      ]
     },
     {
       "id": "live-gap1-match-ref-confusion",

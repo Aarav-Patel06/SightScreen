@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+#
+# The staleness gates, run before the push rather than after it.
+#
+# WHY THIS EXISTS. On 2026-09-24, `web/lib/types.ts` was found to be missing
+# two tables that migrations had added four days earlier. The obvious
+# explanations were that CI's staleness job went red and nobody looked (rule
+# 14) or that it was skipped (rule 8). Neither was true. The job has no `if:`,
+# no path filter, and is its own job precisely so a sibling failure cannot
+# mask it - it was correctly built and it never ran, because **the work was
+# never pushed**. `origin/main` was 25 commits behind local, and the last CI
+# run of any kind was green.
+#
+# That is a third shape, and it is worth naming: a gate triggered by `push`
+# is blind to everything that has not been pushed. It does not matter how
+# well the gate is written. Twenty-five commits of drift accumulated in the
+# one window the gate cannot see, and every check in this repository - the
+# Python suite, the web suite, both generated-file diffs - was equally blind
+# for the same reason.
+#
+# So the same checks run here, at the last moment they can still be cheap and
+# the first moment the work leaves the machine.
+#
+# ENABLE WITH:
+#     git config core.hooksPath .githooks
+#
+# Not automatic: git will not run a committed hook unless it is pointed at
+# one, and a hook that silently starts intercepting pushes would be its own
+# surprise. The runbook says to run that line once per clone.
+#
+# SKIP WITH:  git push --no-verify
+# Legitimate for a work-in-progress branch. Not legitimate for main.
+#
+# WHAT THIS DOES NOT COVER, stated because a hook's name overstates its
+# reach: the Python suite (~9-13 minutes, too slow to sit in front of a
+# push), the deploy smoke test, and anything needing the local corpus. CI
+# remains the authority. This only catches the class of failure that made it
+# necessary - a generated file drifting from its source - plus the two cheap
+# web gates.
+
+set -uo pipefail
+
+failures=0
+root="$(git rev-parse --show-toplevel)"
+
+step() {
+  printf '\n\033[1m› %s\033[0m\n' "$1"
+}
+
+fail() {
+  failures=$((failures + 1))
+  printf '\033[31m  FAIL  %s\033[0m\n' "$1"
+}
+
+pass() {
+  printf '\033[32m  ok    %s\033[0m\n' "$1"
+}
+
+# --- 1. web/lib/types.ts against the live schema --------------------------
+# The exact command ci.yml runs. --project-id rather than --linked because a
+# fresh clone has no supabase/.temp/project-ref.
+
+step "web/lib/types.ts is not stale"
+generated="$(mktemp)"
+if npx --yes supabase gen types typescript \
+     --project-id xrvgmjmvgmtepgryyulk > "$generated" 2>/dev/null && [ -s "$generated" ]; then
+  if diff -q "$root/web/lib/types.ts" "$generated" >/dev/null; then
+    pass "matches the live schema"
+  else
+    fail "stale - run: npx supabase gen types typescript --project-id xrvgmjmvgmtepgryyulk > web/lib/types.ts"
+    diff "$root/web/lib/types.ts" "$generated" | head -12
+  fi
+else
+  # Not a failure. This needs the network and a logged-in Supabase CLI, and a
+  # hook that blocks a push on an offline laptop is a hook people disable.
+  # Said out loud rather than passed silently, so the gap is visible.
+  printf '  ----  skipped: could not reach Supabase (offline, or CLI not logged in)\n'
+fi
+rm -f "$generated"
+
+# --- 2. the generated agent files -----------------------------------------
+# Same class of bug, different pair of files. These two are emitted from
+# Python; if they drift, the served route and the eval harness run different
+# agents, which is invisible from either side.
+
+step "web/lib/agent-{prompt,tools}.ts are not stale"
+if (cd "$root/api/src" && python -m agent_eval.prompt --emit-ts >/dev/null 2>&1 \
+    && python -m agent_eval.tools --emit-ts >/dev/null 2>&1); then
+  if git -C "$root" diff --quiet -- web/lib/agent-prompt.ts web/lib/agent-tools.ts; then
+    pass "match their Python sources"
+  else
+    fail "stale - the emit above rewrote them; review and commit"
+    git -C "$root" diff --stat -- web/lib/agent-prompt.ts web/lib/agent-tools.ts
+  fi
+else
+  printf '  ----  skipped: could not run the emitters (no venv on PATH?)\n'
+fi
+
+# --- 3. the two cheap web gates -------------------------------------------
+
+step "web typecheck"
+if (cd "$root/web" && npx tsc --noEmit >/dev/null 2>&1); then
+  pass "clean"
+else
+  fail "tsc --noEmit failed - run it in web/ to see why"
+fi
+
+step "web tests"
+if (cd "$root/web" && npx vitest run >/dev/null 2>&1); then
+  pass "passing"
+else
+  fail "vitest failed - run 'npm test' in web/ to see why"
+fi
+
+# --- verdict ---------------------------------------------------------------
+
+printf '\n'
+if [ "$failures" -gt 0 ]; then
+  printf '\033[31m%s check(s) failed. Push refused.\033[0m\n' "$failures"
+  printf 'Override with --no-verify if you mean to push anyway.\n\n'
+  exit 1
+fi
+printf '\033[32mpre-push checks passed.\033[0m  (The Python suite is NOT covered - CI is still the authority.)\n\n'
+exit 0

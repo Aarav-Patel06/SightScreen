@@ -140,6 +140,7 @@ class LivePredictor:
         self._builders: dict[int, object] = {}
         self._as_of: dict[int, dict] = {}
         self._declined: set[int] = set()
+        self._finished: set[int] = set()
         self.logged = 0
 
     def _decline(self, match_id: int, reason: str) -> None:
@@ -247,6 +248,34 @@ class LivePredictor:
             )
             return 1 if cur.fetchone() else 0
 
+    def record_status(self, match_id: int, status: str) -> bool:
+        """Persist the match lifecycle column. Returns True if it changed.
+
+        `matches.status` was write-once until this existed. `_ensure_match_row`
+        early-returns an existing row and then `ON CONFLICT DO NOTHING`, and
+        this loop read match-end from an in-memory snapshot without writing it
+        back - so a match inserted as 'live' stayed 'live' forever, and four
+        rows on Supabase still said 'live' months after they ended. Any surface
+        keying off the column got a permanently frozen answer that looked like
+        the product working.
+
+        NOT an outcome, and this does not weaken `finish`'s boundary below.
+        Status is where the match is in its own lifecycle, which the provider
+        snapshot knows; the outcome is who won, which only the corpus knows.
+
+        `IS DISTINCT FROM` makes the overwhelmingly common unchanged case a
+        no-op that touches no row and returns False, so the caller can log
+        transitions only. That matters because this runs on every poll of
+        every live match.
+        """
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "UPDATE matches SET status = %s "
+                "WHERE match_id = %s AND status IS DISTINCT FROM %s",
+                (status, match_id, status),
+            )
+            return cur.rowcount > 0
+
     def finish(self, match_id: int, *, log=None) -> None:
         """section 7.2's `match_end`. Stops tracking - and deliberately does
         NOT resolve outcomes.
@@ -262,6 +291,14 @@ class LivePredictor:
         scoring the predictions is `models/resolve_outcomes.py`, run where
         the corpus is.
         """
+        if match_id in self._finished:
+            # A completed match stays in the provider's live list for a while,
+            # so this is reached on every poll until it drops off. Standing
+            # rule 14: a line that repeats becomes furniture, and the next real
+            # one is read past.
+            return
+        self._finished.add(match_id)
+
         (log or self._log)(
             f"match {match_id}: complete; outcomes resolve separately "
             f"(models.resolve_outcomes, where the corpus is)"
@@ -298,13 +335,28 @@ def run_once(
         deliveries = client.poll(match_id)
         tracked[match_id] = tracked.get(match_id, 0) + len(deliveries)
         scored = ""
+
+        # Status is read on EVERY poll, not only when balls arrive. It used to
+        # sit inside the `and deliveries` branch below, which meant a match
+        # that ended on a poll returning nothing new never transitioned and
+        # never finished - and the last poll of a match is exactly the one
+        # most likely to be empty. `get_match_state` reads the snapshot
+        # `list_live_matches` already fetched plus one local row, so this
+        # costs no provider quota.
+        state = client.get_match_state(match_id) if predictor is not None else None
+
+        if state is not None and predictor.record_status(match_id, state.status):
+            log(f"match {match_id}: status -> {state.status}")
+
         if predictor is not None and deliveries:
-            state = client.get_match_state(match_id)
             written = predictor.observe(client, state, deliveries)
             scored = f", {written} prediction(s) logged"
-            # section 7.2's match_end: resolve once the result is known.
-            if state.status == "complete":
-                predictor.finish(match_id, log=log)
+
+        # section 7.2's match_end: resolve once the result is known. Outside
+        # the deliveries branch for the same reason as the status read.
+        if state is not None and state.status == "complete":
+            predictor.finish(match_id, log=log)
+
         log(
             f"match {match_id}: +{len(deliveries)} deliveries "
             f"({tracked[match_id]} this session){scored}"
