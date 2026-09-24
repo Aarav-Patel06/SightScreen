@@ -112,6 +112,18 @@ else
   fail "vitest failed - run 'npm test' in web/ to see why"
 fi
 
+# --- 4. did the work land at all? -----------------------------------------
+# Cheap, and the one that would have mattered most: the UI phase was reported
+# complete five times while every file in it was untracked. See standing
+# rule 18.
+
+step "nothing left in the working tree"
+if node "$root/scripts/verify-session.mjs" >/dev/null 2>&1; then
+  pass "clean, and HEAD has moved"
+else
+  fail "uncommitted work, or HEAD did not move - run: node scripts/verify-session.mjs"
+fi
+
 # --- verdict ---------------------------------------------------------------
 
 printf '\n'

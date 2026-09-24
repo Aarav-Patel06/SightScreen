@@ -25,6 +25,10 @@ and no model was called.
 
 **"CI is passing" was true and meaningless.**
 
+*Added 2026-09-24, after the fact: so was "the phase is closed". This
+document was written while every file it describes was untracked. See
+standing rule 18 below.*
+
 All four of the first four sessions were validated locally against a CI
 history that was green on commit `1503062` — a commit that predated every
 line of them. `origin/main` sat 25 commits behind for four days. The api
@@ -98,7 +102,7 @@ sits in the directory the author is already in.
 
 ## Standing rules added this phase
 
-Three, in `docs/ui-session1.md` and `docs/ui-session3-and-4.md`.
+Four, in `docs/ui-session1.md`, `docs/ui-session3-and-4.md` and below.
 
 **15. A value imported across the Server/Client boundary arrives as an opaque
 reference, and a NaN comparison returns FALSE rather than throwing.** Both
@@ -115,6 +119,56 @@ is gone.
 execute, because its TRIGGER never fired.** Distinct from 8 (ran, was masked)
 and 14 (spoke, was ignored). This one produced no result to mask or ignore.
 Only fixable by moving the gate to a moment that cannot be skipped.
+
+**18. "Done" is a claim about the repository, and a claim about the
+repository must be READ BACK from it. A summary of what was built is not
+evidence that any of it landed.**
+
+Five sessions of the UI phase were reported as complete — "Session 5 is done
+and verified", "the UI phase is closed", with test counts, build output and
+route checks behind each one. Every file in them sat untracked in a working
+tree. `git reflog` shows **no commit at all** between `03c706a` on
+2026-09-22 and the one the repository owner made by hand on 2026-09-24.
+Nothing failed and nothing was reset; the commits were never run. Vercel
+served `03c706a` for the whole phase.
+
+**The evidence was on screen every single time.** `git status --short` was
+run at the end of nearly every session, and it printed `?? web/components/`,
+`?? docs/ui-session1.md`, `?? tests/ops/` — sixty-odd lines of it. That
+output was read as an inventory of work completed. It is the opposite: `??`
+means the file exists in one directory on one machine and nowhere else. The
+number at the bottom of `git status` was quoted as a measure of how much had
+been done.
+
+**This is rule 17's shape one turn further out, and worse.** Rule 17 is a
+check that never executed. This is a *deliverable* that never executed —
+and the pre-push hook written to catch exactly this class of problem was
+itself untracked, so it was never installed and never ran. The fix and the
+bug had the same shape, which is the detail worth remembering: a safeguard
+that lives only in the working tree protects nothing, because the working
+tree is what it exists to get work out of.
+
+The general form: **every verb in a completion report needs a subject that
+can be interrogated.** "Tests pass" is checkable and was checked. "The build
+succeeds" is checkable and was checked. "This is done" was not checkable as
+stated, because "done" was never defined as a property of anything — and so
+nobody checked it, five times running, while the thing that would have
+answered it scrolled past.
+
+Scope limit: this is not "run git status more". `git status` was run. The
+rule is about what a report is allowed to assert. A session may say "165
+tests pass" because a command produced that number. It may say "committed as
+032b5ca" only if it read that sha back out of git after the commit. Anything
+between those — file counts, diffstats, lists of what was written — describes
+a working tree and must not be phrased as delivery.
+
+Closed by `scripts/verify-session.mjs`, which asserts the tree is clean,
+reports every commit since a baseline read back from `git log`, and states
+separately whether the work was pushed — because committed and pushed are
+different claims and rule 17 lives in the gap. It is a tracked script whose
+output is meant to be quoted verbatim, not a hook that has to be installed:
+the previous safeguard failed precisely because it required a step nobody
+took.
 
 ## What the UI still does not show, and why
 

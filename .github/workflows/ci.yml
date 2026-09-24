@@ -134,17 +134,44 @@ jobs:
           # changes what it was ASKED. Only the first was checked until
           # 2026-09-21, so renaming three mis-specified cases would have left
           # stale results looking current.
+          # A KNOWN staleness that the file itself records is a decision;
+          # an unrecorded one is a surprise. Standing rule 14 says a
+          # tolerated error must be FIXED or SILENCED deliberately, and a
+          # job that goes red on every push for a reason already written
+          # down is how the next real failure gets read past.
+          #
+          # So: stale AND marked -> warn and pass. Stale and silent -> fail.
+          # The marker is not cheap to fake - it needs a reason and a
+          # statement of what clears it, and tests/agent/test_agent_eval_set
+          # asserts it disappears once the fingerprints match again.
+          marked = bool(data.get("stale")) and bool(data.get("stale_reason"))                    and bool(data.get("stale_clears_when"))
+          drift = []
           for key, current, what in (
               ("prompt_fingerprint", fingerprint(), "the prompt or tool definitions"),
               ("cases_fingerprint", cases_fingerprint(), "the eval cases"),
           ):
               recorded = data.get(key)
               if recorded != current:
-                  sys.exit(f"::error::eval results are STALE: {key} recorded {recorded}, "
-                           f"current {current}. {what} changed since the last paid run. "
-                           "Re-run `python -m agent_eval.runner --all` and commit "
-                           "api/data/agent_eval/results.json.")
-          print("eval results match both fingerprints")
+                  drift.append(f"{key} recorded {recorded}, current {current} ({what} changed)")
+
+          if drift and not marked:
+              sys.exit("::error::eval results are STALE and the file does not say so: "
+                       + "; ".join(drift)
+                       + ". Either re-run `python -m agent_eval.runner --all` and commit "
+                         "api/data/agent_eval/results.json, or mark it with `stale`, "
+                         "`stale_reason` and `stale_clears_when` if the re-run is "
+                         "deliberately deferred.")
+          if drift:
+              print("::warning::eval results are stale, and the file says so: "
+                    + "; ".join(drift))
+              print("  reason:      " + str(data.get("stale_reason"))[:300])
+              print("  clears when: " + str(data.get("stale_clears_when"))[:300])
+          else:
+              if marked:
+                  sys.exit("::error::api/data/agent_eval/results.json is marked stale but "
+                           "matches both fingerprints. A marker that outlives its cause "
+                           "trains everyone to ignore the next one - remove it.")
+              print("eval results match both fingerprints")
           PY
 
   web:
