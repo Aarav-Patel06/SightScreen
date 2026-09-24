@@ -36,7 +36,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Literal
 
@@ -103,6 +103,45 @@ def _classify_date(d: date) -> Split:
     if d <= _VAL_END:
         return "val"
     return "test"
+
+
+# The first day of the TEST split, derived from _VAL_END rather than written
+# out. Exported because the replay path needs it and the alternative is what
+# was there before: the literal "2025-01-01" hand-copied into
+# ingest/replay_log.build_manifest, which is exactly the drift this module's
+# docstring warns about. A derived constant is not the same invitation as an
+# exported boundary - callers still cannot build their own split from it,
+# because _TRAIN_END stays private and one date does not make a split.
+TEST_SPLIT_START = _VAL_END + timedelta(days=1)
+
+
+class NotInTestSplit(ValueError):
+    """A match outside the test window was handed to the replay path."""
+
+
+def assert_in_test_split(match_id: int, match_date: date) -> None:
+    """Refuse a match the model may have been trained or selected on.
+
+    WHY THIS IS AN ASSERTION AND NOT A FILTER. Backfilled predictions land in
+    the same `predictions` table /accuracy reads. A training-era match in
+    there would have the accuracy page measuring the model on data it was fit
+    to - the single failure the whole evaluation apparatus exists to prevent,
+    and one that is invisible after the fact because the rows look identical.
+
+    A filter would silently drop such a match and leave a short run nobody
+    questions. This raises, because there is no correct way to reach here
+    with a 2023 match and the caller needs to find out which of its
+    assumptions is wrong.
+    """
+    if not isinstance(match_date, date):
+        raise TypeError(f"match {match_id}: match_date must be a date, got {type(match_date).__name__}")
+    if match_date < TEST_SPLIT_START:
+        raise NotInTestSplit(
+            f"match {match_id} is dated {match_date.isoformat()}, before the test "
+            f"split starts on {TEST_SPLIT_START.isoformat()}. Replaying it would put "
+            f"predictions on data the model was trained or selected on into the same "
+            f"table /accuracy reads."
+        )
 
 
 def _date_bounds(split: Split) -> tuple[date | None, date | None]:

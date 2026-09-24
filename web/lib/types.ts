@@ -896,16 +896,19 @@ export type Database = {
       }
       teams: {
         Row: {
+          full_member: boolean
           name: string
           short_name: string | null
           team_id: number
         }
         Insert: {
+          full_member?: boolean
           name: string
           short_name?: string | null
           team_id?: number
         }
         Update: {
+          full_member?: boolean
           name?: string
           short_name?: string | null
           team_id?: number

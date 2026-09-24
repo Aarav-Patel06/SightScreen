@@ -1,0 +1,23 @@
+{
+  "test_start": "2025-01-01",
+  "selection": "explicit ids [9337, 9339, 13143]",
+  "predicate": "ms.innings = 2 AND ms.batting_team_won IS NOT NULL AND NOT ms.has_reconciliation_anomaly AND ms.required_run_rate IS NOT NULL",
+  "matches": [
+    {
+      "match_id": 9337,
+      "balls": 125,
+      "match_date": "2026-08-20"
+    },
+    {
+      "match_id": 9339,
+      "balls": 125,
+      "match_date": "2026-08-22"
+    },
+    {
+      "match_id": 13143,
+      "balls": 122,
+      "match_date": "2026-01-18"
+    }
+  ],
+  "expected_rows": 372
+}

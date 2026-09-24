@@ -8,7 +8,7 @@ py, test_elo.py) - CI doesn't have LOCAL_DATABASE_URL pointed at real data.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -19,7 +19,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
 from eval.metrics import brier_score
-from eval.splits import _TRAIN_END, _VAL_END, _classify_date, get_second_innings_split
+from eval.splits import _TRAIN_END, _VAL_END, _classify_date, get_second_innings_split, NotInTestSplit, TEST_SPLIT_START, assert_in_test_split
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 ENV_PATH = REPO_ROOT / "api" / ".env"
@@ -200,3 +200,53 @@ def test_shuffled_ball_level_split_scores_implausibly_well(datasets):
         "expected the leaking (shuffled) split to score better than the honest one - "
         f"got shuffled={shuffled_brier:.4f} vs honest={real_brier:.4f}"
     )
+
+
+# --- the replay path's test-split gate ------------------------------------
+#
+# UI-PHASE-2.md section 2.1 requires the window be "asserted in code rather
+# than observed". Before this, the boundary reached the replay path as the
+# literal string "2025-01-01" in ingest/replay_log.build_manifest and was
+# never re-checked per match. These prove the gate exists AND that it fires -
+# a test that only calls it with valid input proves nothing (standing rule 8).
+
+
+def test_test_split_start_is_derived_from_the_val_boundary():
+    """Not a hand-written date. If _VAL_END moves, this moves with it."""
+    assert TEST_SPLIT_START == _VAL_END + timedelta(days=1)
+    assert TEST_SPLIT_START == date(2025, 1, 1)
+    assert _classify_date(TEST_SPLIT_START) == "test"
+    assert _classify_date(TEST_SPLIT_START - timedelta(days=1)) == "val"
+
+
+def test_the_gate_accepts_the_first_test_day():
+    assert_in_test_split(8154, date(2025, 1, 1))  # must not raise
+
+
+@pytest.mark.parametrize(
+    "match_date,split",
+    [
+        (date(2024, 12, 31), "the last val day"),
+        (date(2024, 1, 1), "mid-val"),
+        (date(2023, 12, 31), "the last train day"),
+        (date(2019, 6, 2), "deep in train"),
+    ],
+)
+def test_the_gate_refuses_everything_before_the_window(match_date, split):
+    with pytest.raises(NotInTestSplit) as excinfo:
+        assert_in_test_split(4242, match_date)
+    message = str(excinfo.value)
+    # The message has to name the match and both dates, because the caller
+    # that trips this is a 250-match replay loop and "out of range" would
+    # send someone back to the database to find out which one.
+    assert "4242" in message
+    assert match_date.isoformat() in message
+    assert TEST_SPLIT_START.isoformat() in message
+
+
+def test_the_gate_rejects_a_string_rather_than_comparing_it():
+    """A str would compare against a date and raise TypeError deep in the
+    comparison; an ISO string that happened to sort correctly would be worse.
+    Caught at the boundary with a message that says which argument."""
+    with pytest.raises(TypeError, match="match_date"):
+        assert_in_test_split(1, "2025-01-01")

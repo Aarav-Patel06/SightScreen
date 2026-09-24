@@ -51,7 +51,12 @@ ENV_PATH = REPO_ROOT / "api" / ".env"
 # Order matters: aliases reference their parent table's id.
 TABLES = (
     ("venues", "venue_id", ("venue_id", "name", "city", "country")),
-    ("teams", "team_id", ("team_id", "name", "short_name")),
+    # full_member is in this tuple deliberately. Anything absent from it is
+    # never copied, so the flag would read correctly on the corpus and
+    # silently revert to the column DEFAULT of FALSE on Supabase the next
+    # time reference tables sync - the exact DIVERGENCE shape
+    # docs/column-census.md exists to surface.
+    ("teams", "team_id", ("team_id", "name", "short_name", "full_member")),
     ("players", "player_id", ("player_id", "canonical_name", "batting_hand", "bowling_style", "dob")),
     ("venue_aliases", "alias_id", ("alias_id", "venue_id", "source", "source_name", "source_id")),
     ("team_aliases", "alias_id", ("alias_id", "team_id", "source", "source_name", "source_id")),

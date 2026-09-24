@@ -9,11 +9,21 @@
  * the model has been run on. It is not a fixture list and must not read like
  * one; the page says so above the table.
  *
- * Of those 107, five have no usable predictions: two live-worker rows that
- * never got any, and three pre-Phase-3 demo replays whose rows carry
- * `innings IS NULL` and are filtered out by every Phase 3 reader. They are
- * listed, because they are real, with a line saying what is missing rather
- * than an empty chart.
+ * UNNAMEABLE MATCHES ARE EXCLUDED. Three live-worker rows (ids 1-3) lost
+ * `team_a`, `team_b` and `venue_id` to a backfill incident; the provider
+ * UUIDs survive in `external_ids`, but recovering the names would buy three
+ * rows that still have no strip and can never be scored, because there is no
+ * corpus counterpart to resolve outcomes against. So the rule is stated as a
+ * property rather than as an id list: a match whose two sides cannot be named
+ * is not listed. An id list would silently stop matching the day the ids
+ * changed; this keeps working.
+ *
+ * The three pre-Phase-3 demo replays that used to appear here as "Not
+ * replayed" were repaired in UI Phase 2 step 1 rather than relabelled. Their
+ * rows carried `innings IS NULL` - written before migration 20260918000003
+ * added the ball key - which put them outside the partial unique index and
+ * made them invisible to resolve_outcomes, calibration_monitor and the filter
+ * below alike. They were deleted and replayed properly.
  *
  * THE SWEEP. Each row shows a 120px sparkline, so the loader needs every
  * prediction: 12,121 rows, paged 1000 at a time because that is PostgREST's
@@ -187,6 +197,10 @@ export async function loadMatchIndex(): Promise<MatchIndex> {
       .select(
         "match_id, competition, format, start_time, team_a, team_b, venue_id, winner, target_runs, result_method"
       )
+      // See UNNAMEABLE MATCHES above. Filtered in the query rather than after
+      // the fetch so the count the page reports is the count it renders.
+      .not("team_a", "is", null)
+      .not("team_b", "is", null)
       .order("start_time", { ascending: false }),
     loadPredictionsByMatch(),
   ]);

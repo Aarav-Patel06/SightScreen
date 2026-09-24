@@ -1,0 +1,1248 @@
+{
+  "test_start": "2025-01-01",
+  "selection": "both teams full_member, format in ('T20', 'ODI'), all eligible",
+  "predicate": "ms.innings = 2 AND ms.batting_team_won IS NOT NULL AND NOT ms.has_reconciliation_anomaly AND ms.required_run_rate IS NOT NULL",
+  "matches": [
+    {
+      "match_id": 6949,
+      "balls": 78,
+      "match_date": "2025-01-22"
+    },
+    {
+      "match_id": 6950,
+      "balls": 122,
+      "match_date": "2025-01-25"
+    },
+    {
+      "match_id": 6951,
+      "balls": 126,
+      "match_date": "2025-01-28"
+    },
+    {
+      "match_id": 6952,
+      "balls": 119,
+      "match_date": "2025-01-31"
+    },
+    {
+      "match_id": 6953,
+      "balls": 65,
+      "match_date": "2025-02-02"
+    },
+    {
+      "match_id": 6954,
+      "balls": 237,
+      "match_date": "2025-02-06"
+    },
+    {
+      "match_id": 6955,
+      "balls": 274,
+      "match_date": "2025-02-09"
+    },
+    {
+      "match_id": 6956,
+      "balls": 209,
+      "match_date": "2025-02-12"
+    },
+    {
+      "match_id": 6968,
+      "balls": 293,
+      "match_date": "2025-02-08"
+    },
+    {
+      "match_id": 6969,
+      "balls": 304,
+      "match_date": "2025-02-10"
+    },
+    {
+      "match_id": 6970,
+      "balls": 301,
+      "match_date": "2025-02-12"
+    },
+    {
+      "match_id": 6971,
+      "balls": 284,
+      "match_date": "2025-02-14"
+    },
+    {
+      "match_id": 7027,
+      "balls": 128,
+      "match_date": "2025-01-02"
+    },
+    {
+      "match_id": 7028,
+      "balls": 168,
+      "match_date": "2025-01-05"
+    },
+    {
+      "match_id": 7029,
+      "balls": 188,
+      "match_date": "2025-01-08"
+    },
+    {
+      "match_id": 7030,
+      "balls": 193,
+      "match_date": "2025-01-11"
+    },
+    {
+      "match_id": 7031,
+      "balls": 61,
+      "match_date": "2025-03-16"
+    },
+    {
+      "match_id": 7032,
+      "balls": 84,
+      "match_date": "2025-03-18"
+    },
+    {
+      "match_id": 7033,
+      "balls": 101,
+      "match_date": "2025-03-21"
+    },
+    {
+      "match_id": 7034,
+      "balls": 106,
+      "match_date": "2025-03-23"
+    },
+    {
+      "match_id": 7035,
+      "balls": 62,
+      "match_date": "2025-03-26"
+    },
+    {
+      "match_id": 7036,
+      "balls": 278,
+      "match_date": "2025-03-29"
+    },
+    {
+      "match_id": 7037,
+      "balls": 262,
+      "match_date": "2025-04-02"
+    },
+    {
+      "match_id": 7038,
+      "balls": 255,
+      "match_date": "2025-04-05"
+    },
+    {
+      "match_id": 7159,
+      "balls": 167,
+      "match_date": "2025-05-29"
+    },
+    {
+      "match_id": 7160,
+      "balls": 301,
+      "match_date": "2025-06-01"
+    },
+    {
+      "match_id": 7161,
+      "balls": 183,
+      "match_date": "2025-06-03"
+    },
+    {
+      "match_id": 7162,
+      "balls": 136,
+      "match_date": "2025-06-06"
+    },
+    {
+      "match_id": 7163,
+      "balls": 120,
+      "match_date": "2025-06-08"
+    },
+    {
+      "match_id": 7164,
+      "balls": 125,
+      "match_date": "2025-06-10"
+    },
+    {
+      "match_id": 7165,
+      "balls": 130,
+      "match_date": "2025-09-02"
+    },
+    {
+      "match_id": 7166,
+      "balls": 308,
+      "match_date": "2025-09-04"
+    },
+    {
+      "match_id": 7167,
+      "balls": 132,
+      "match_date": "2025-09-07"
+    },
+    {
+      "match_id": 7168,
+      "balls": 31,
+      "match_date": "2025-09-10"
+    },
+    {
+      "match_id": 7169,
+      "balls": 100,
+      "match_date": "2025-09-12"
+    },
+    {
+      "match_id": 7170,
+      "balls": 111,
+      "match_date": "2025-09-17"
+    },
+    {
+      "match_id": 7171,
+      "balls": 108,
+      "match_date": "2025-09-21"
+    },
+    {
+      "match_id": 7425,
+      "balls": 209,
+      "match_date": "2025-02-12"
+    },
+    {
+      "match_id": 7694,
+      "balls": 288,
+      "match_date": "2025-02-19"
+    },
+    {
+      "match_id": 7695,
+      "balls": 282,
+      "match_date": "2025-02-20"
+    },
+    {
+      "match_id": 7696,
+      "balls": 289,
+      "match_date": "2025-02-22"
+    },
+    {
+      "match_id": 7697,
+      "balls": 263,
+      "match_date": "2025-02-23"
+    },
+    {
+      "match_id": 7698,
+      "balls": 279,
+      "match_date": "2025-02-24"
+    },
+    {
+      "match_id": 7699,
+      "balls": 185,
+      "match_date": "2025-03-01"
+    },
+    {
+      "match_id": 7700,
+      "balls": 278,
+      "match_date": "2025-03-02"
+    },
+    {
+      "match_id": 7701,
+      "balls": 292,
+      "match_date": "2025-03-04"
+    },
+    {
+      "match_id": 7702,
+      "balls": 307,
+      "match_date": "2025-03-05"
+    },
+    {
+      "match_id": 7703,
+      "balls": 300,
+      "match_date": "2025-03-09"
+    },
+    {
+      "match_id": 7704,
+      "balls": 293,
+      "match_date": "2025-02-14"
+    },
+    {
+      "match_id": 7705,
+      "balls": 301,
+      "match_date": "2025-02-16"
+    },
+    {
+      "match_id": 7706,
+      "balls": 242,
+      "match_date": "2025-02-18"
+    },
+    {
+      "match_id": 7708,
+      "balls": 122,
+      "match_date": "2025-02-23"
+    },
+    {
+      "match_id": 7716,
+      "balls": 148,
+      "match_date": "2025-02-14"
+    },
+    {
+      "match_id": 7762,
+      "balls": 211,
+      "match_date": "2025-05-21"
+    },
+    {
+      "match_id": 7764,
+      "balls": 181,
+      "match_date": "2025-05-25"
+    },
+    {
+      "match_id": 7765,
+      "balls": 128,
+      "match_date": "2025-06-15"
+    },
+    {
+      "match_id": 7766,
+      "balls": 115,
+      "match_date": "2025-07-20"
+    },
+    {
+      "match_id": 7767,
+      "balls": 97,
+      "match_date": "2025-07-22"
+    },
+    {
+      "match_id": 7768,
+      "balls": 105,
+      "match_date": "2025-07-25"
+    },
+    {
+      "match_id": 7769,
+      "balls": 133,
+      "match_date": "2025-07-26"
+    },
+    {
+      "match_id": 7770,
+      "balls": 110,
+      "match_date": "2025-07-28"
+    },
+    {
+      "match_id": 7771,
+      "balls": 129,
+      "match_date": "2025-07-31"
+    },
+    {
+      "match_id": 7772,
+      "balls": 128,
+      "match_date": "2025-08-02"
+    },
+    {
+      "match_id": 7773,
+      "balls": 125,
+      "match_date": "2025-08-03"
+    },
+    {
+      "match_id": 7774,
+      "balls": 309,
+      "match_date": "2025-08-08"
+    },
+    {
+      "match_id": 7775,
+      "balls": 200,
+      "match_date": "2025-08-10"
+    },
+    {
+      "match_id": 7776,
+      "balls": 178,
+      "match_date": "2025-08-12"
+    },
+    {
+      "match_id": 7905,
+      "balls": 111,
+      "match_date": "2026-01-27"
+    },
+    {
+      "match_id": 7906,
+      "balls": 109,
+      "match_date": "2026-01-29"
+    },
+    {
+      "match_id": 7907,
+      "balls": 61,
+      "match_date": "2026-01-31"
+    },
+    {
+      "match_id": 7965,
+      "balls": 98,
+      "match_date": "2025-07-14"
+    },
+    {
+      "match_id": 7966,
+      "balls": 115,
+      "match_date": "2025-07-16"
+    },
+    {
+      "match_id": 7967,
+      "balls": 85,
+      "match_date": "2025-07-18"
+    },
+    {
+      "match_id": 7968,
+      "balls": 109,
+      "match_date": "2025-07-20"
+    },
+    {
+      "match_id": 7969,
+      "balls": 104,
+      "match_date": "2025-07-22"
+    },
+    {
+      "match_id": 7970,
+      "balls": 120,
+      "match_date": "2025-07-24"
+    },
+    {
+      "match_id": 7971,
+      "balls": 127,
+      "match_date": "2025-07-26"
+    },
+    {
+      "match_id": 7972,
+      "balls": 124,
+      "match_date": "2025-08-10"
+    },
+    {
+      "match_id": 7973,
+      "balls": 116,
+      "match_date": "2025-08-12"
+    },
+    {
+      "match_id": 7974,
+      "balls": 124,
+      "match_date": "2025-08-16"
+    },
+    {
+      "match_id": 7975,
+      "balls": 250,
+      "match_date": "2025-08-19"
+    },
+    {
+      "match_id": 7976,
+      "balls": 228,
+      "match_date": "2025-08-22"
+    },
+    {
+      "match_id": 7977,
+      "balls": 151,
+      "match_date": "2025-08-24"
+    },
+    {
+      "match_id": 7978,
+      "balls": 131,
+      "match_date": "2025-10-19"
+    },
+    {
+      "match_id": 7979,
+      "balls": 284,
+      "match_date": "2025-10-23"
+    },
+    {
+      "match_id": 7980,
+      "balls": 239,
+      "match_date": "2025-10-25"
+    },
+    {
+      "match_id": 7982,
+      "balls": 82,
+      "match_date": "2025-10-31"
+    },
+    {
+      "match_id": 7983,
+      "balls": 116,
+      "match_date": "2025-11-02"
+    },
+    {
+      "match_id": 7984,
+      "balls": 111,
+      "match_date": "2025-11-06"
+    },
+    {
+      "match_id": 7994,
+      "balls": 299,
+      "match_date": "2025-11-30"
+    },
+    {
+      "match_id": 7995,
+      "balls": 308,
+      "match_date": "2025-12-03"
+    },
+    {
+      "match_id": 7996,
+      "balls": 248,
+      "match_date": "2025-12-06"
+    },
+    {
+      "match_id": 7997,
+      "balls": 76,
+      "match_date": "2025-12-09"
+    },
+    {
+      "match_id": 7998,
+      "balls": 116,
+      "match_date": "2025-12-11"
+    },
+    {
+      "match_id": 7999,
+      "balls": 97,
+      "match_date": "2025-12-14"
+    },
+    {
+      "match_id": 8000,
+      "balls": 130,
+      "match_date": "2025-12-19"
+    },
+    {
+      "match_id": 8095,
+      "balls": 118,
+      "match_date": "2025-05-28"
+    },
+    {
+      "match_id": 8096,
+      "balls": 116,
+      "match_date": "2025-05-30"
+    },
+    {
+      "match_id": 8097,
+      "balls": 106,
+      "match_date": "2025-06-01"
+    },
+    {
+      "match_id": 8148,
+      "balls": 219,
+      "match_date": "2025-07-02"
+    },
+    {
+      "match_id": 8149,
+      "balls": 297,
+      "match_date": "2025-07-05"
+    },
+    {
+      "match_id": 8150,
+      "balls": 244,
+      "match_date": "2025-07-08"
+    },
+    {
+      "match_id": 8151,
+      "balls": 114,
+      "match_date": "2025-07-10"
+    },
+    {
+      "match_id": 8152,
+      "balls": 96,
+      "match_date": "2025-07-13"
+    },
+    {
+      "match_id": 8153,
+      "balls": 99,
+      "match_date": "2025-07-16"
+    },
+    {
+      "match_id": 8218,
+      "balls": 302,
+      "match_date": "2026-01-11"
+    },
+    {
+      "match_id": 8219,
+      "balls": 289,
+      "match_date": "2026-01-14"
+    },
+    {
+      "match_id": 8220,
+      "balls": 283,
+      "match_date": "2026-01-18"
+    },
+    {
+      "match_id": 8221,
+      "balls": 122,
+      "match_date": "2026-01-21"
+    },
+    {
+      "match_id": 8222,
+      "balls": 101,
+      "match_date": "2026-01-23"
+    },
+    {
+      "match_id": 8223,
+      "balls": 62,
+      "match_date": "2026-01-25"
+    },
+    {
+      "match_id": 8224,
+      "balls": 115,
+      "match_date": "2026-01-28"
+    },
+    {
+      "match_id": 8225,
+      "balls": 120,
+      "match_date": "2026-01-31"
+    },
+    {
+      "match_id": 8262,
+      "balls": 104,
+      "match_date": "2025-10-01"
+    },
+    {
+      "match_id": 8264,
+      "balls": 110,
+      "match_date": "2025-10-04"
+    },
+    {
+      "match_id": 8266,
+      "balls": 117,
+      "match_date": "2025-10-20"
+    },
+    {
+      "match_id": 8268,
+      "balls": 235,
+      "match_date": "2025-10-26"
+    },
+    {
+      "match_id": 8269,
+      "balls": 203,
+      "match_date": "2025-10-29"
+    },
+    {
+      "match_id": 8270,
+      "balls": 274,
+      "match_date": "2025-11-01"
+    },
+    {
+      "match_id": 8271,
+      "balls": 123,
+      "match_date": "2025-11-05"
+    },
+    {
+      "match_id": 8272,
+      "balls": 125,
+      "match_date": "2025-11-06"
+    },
+    {
+      "match_id": 8273,
+      "balls": 124,
+      "match_date": "2025-11-09"
+    },
+    {
+      "match_id": 8275,
+      "balls": 98,
+      "match_date": "2025-11-13"
+    },
+    {
+      "match_id": 8276,
+      "balls": 314,
+      "match_date": "2025-11-16"
+    },
+    {
+      "match_id": 8277,
+      "balls": 207,
+      "match_date": "2025-11-19"
+    },
+    {
+      "match_id": 8278,
+      "balls": 190,
+      "match_date": "2025-11-22"
+    },
+    {
+      "match_id": 8279,
+      "balls": 104,
+      "match_date": "2026-03-15"
+    },
+    {
+      "match_id": 8280,
+      "balls": 96,
+      "match_date": "2026-03-17"
+    },
+    {
+      "match_id": 8281,
+      "balls": 104,
+      "match_date": "2026-03-20"
+    },
+    {
+      "match_id": 8282,
+      "balls": 117,
+      "match_date": "2026-03-22"
+    },
+    {
+      "match_id": 8283,
+      "balls": 125,
+      "match_date": "2026-03-25"
+    },
+    {
+      "match_id": 8284,
+      "balls": 96,
+      "match_date": "2025-07-20"
+    },
+    {
+      "match_id": 8285,
+      "balls": 120,
+      "match_date": "2025-07-22"
+    },
+    {
+      "match_id": 8286,
+      "balls": 107,
+      "match_date": "2025-07-24"
+    },
+    {
+      "match_id": 8287,
+      "balls": 316,
+      "match_date": "2025-08-29"
+    },
+    {
+      "match_id": 8288,
+      "balls": 302,
+      "match_date": "2025-08-31"
+    },
+    {
+      "match_id": 8289,
+      "balls": 119,
+      "match_date": "2025-09-03"
+    },
+    {
+      "match_id": 8290,
+      "balls": 88,
+      "match_date": "2025-09-06"
+    },
+    {
+      "match_id": 8291,
+      "balls": 110,
+      "match_date": "2025-09-07"
+    },
+    {
+      "match_id": 8423,
+      "balls": 121,
+      "match_date": "2026-07-04"
+    },
+    {
+      "match_id": 8424,
+      "balls": 70,
+      "match_date": "2026-07-07"
+    },
+    {
+      "match_id": 8425,
+      "balls": 90,
+      "match_date": "2026-07-09"
+    },
+    {
+      "match_id": 8426,
+      "balls": 124,
+      "match_date": "2026-07-11"
+    },
+    {
+      "match_id": 8427,
+      "balls": 283,
+      "match_date": "2026-07-14"
+    },
+    {
+      "match_id": 8428,
+      "balls": 277,
+      "match_date": "2026-07-16"
+    },
+    {
+      "match_id": 8429,
+      "balls": 305,
+      "match_date": "2026-07-19"
+    },
+    {
+      "match_id": 8444,
+      "balls": 95,
+      "match_date": "2025-09-13"
+    },
+    {
+      "match_id": 8445,
+      "balls": 96,
+      "match_date": "2025-09-14"
+    },
+    {
+      "match_id": 8450,
+      "balls": 121,
+      "match_date": "2025-09-20"
+    },
+    {
+      "match_id": 8451,
+      "balls": 116,
+      "match_date": "2025-09-21"
+    },
+    {
+      "match_id": 8452,
+      "balls": 110,
+      "match_date": "2025-09-23"
+    },
+    {
+      "match_id": 8453,
+      "balls": 122,
+      "match_date": "2025-09-24"
+    },
+    {
+      "match_id": 8454,
+      "balls": 120,
+      "match_date": "2025-09-25"
+    },
+    {
+      "match_id": 8456,
+      "balls": 120,
+      "match_date": "2025-09-28"
+    },
+    {
+      "match_id": 8547,
+      "balls": 117,
+      "match_date": "2025-10-28"
+    },
+    {
+      "match_id": 8548,
+      "balls": 81,
+      "match_date": "2025-10-31"
+    },
+    {
+      "match_id": 8549,
+      "balls": 119,
+      "match_date": "2025-11-01"
+    },
+    {
+      "match_id": 8550,
+      "balls": 304,
+      "match_date": "2025-11-04"
+    },
+    {
+      "match_id": 8551,
+      "balls": 246,
+      "match_date": "2025-11-06"
+    },
+    {
+      "match_id": 8552,
+      "balls": 152,
+      "match_date": "2025-11-08"
+    },
+    {
+      "match_id": 8553,
+      "balls": 120,
+      "match_date": "2025-11-18"
+    },
+    {
+      "match_id": 8554,
+      "balls": 126,
+      "match_date": "2025-11-20"
+    },
+    {
+      "match_id": 8555,
+      "balls": 95,
+      "match_date": "2025-11-22"
+    },
+    {
+      "match_id": 8556,
+      "balls": 117,
+      "match_date": "2025-11-23"
+    },
+    {
+      "match_id": 8557,
+      "balls": 104,
+      "match_date": "2025-11-25"
+    },
+    {
+      "match_id": 8558,
+      "balls": 128,
+      "match_date": "2025-11-27"
+    },
+    {
+      "match_id": 8559,
+      "balls": 114,
+      "match_date": "2025-11-29"
+    },
+    {
+      "match_id": 8563,
+      "balls": 318,
+      "match_date": "2025-11-11"
+    },
+    {
+      "match_id": 8564,
+      "balls": 301,
+      "match_date": "2025-11-14"
+    },
+    {
+      "match_id": 8565,
+      "balls": 278,
+      "match_date": "2025-11-16"
+    },
+    {
+      "match_id": 8608,
+      "balls": 237,
+      "match_date": "2025-10-18"
+    },
+    {
+      "match_id": 8610,
+      "balls": 184,
+      "match_date": "2025-10-23"
+    },
+    {
+      "match_id": 8611,
+      "balls": 123,
+      "match_date": "2025-10-27"
+    },
+    {
+      "match_id": 8612,
+      "balls": 126,
+      "match_date": "2025-10-29"
+    },
+    {
+      "match_id": 8613,
+      "balls": 102,
+      "match_date": "2025-10-31"
+    },
+    {
+      "match_id": 8614,
+      "balls": 130,
+      "match_date": "2025-11-27"
+    },
+    {
+      "match_id": 8615,
+      "balls": 122,
+      "match_date": "2025-11-29"
+    },
+    {
+      "match_id": 8616,
+      "balls": 87,
+      "match_date": "2025-12-02"
+    },
+    {
+      "match_id": 8630,
+      "balls": 306,
+      "match_date": "2026-01-22"
+    },
+    {
+      "match_id": 8631,
+      "balls": 280,
+      "match_date": "2026-01-24"
+    },
+    {
+      "match_id": 8632,
+      "balls": 281,
+      "match_date": "2026-01-27"
+    },
+    {
+      "match_id": 8633,
+      "balls": 93,
+      "match_date": "2026-01-30"
+    },
+    {
+      "match_id": 8634,
+      "balls": 106,
+      "match_date": "2026-02-01"
+    },
+    {
+      "match_id": 8635,
+      "balls": 118,
+      "match_date": "2026-02-03"
+    },
+    {
+      "match_id": 8704,
+      "balls": 121,
+      "match_date": "2026-02-08"
+    },
+    {
+      "match_id": 8711,
+      "balls": 101,
+      "match_date": "2026-02-11"
+    },
+    {
+      "match_id": 8712,
+      "balls": 117,
+      "match_date": "2026-02-11"
+    },
+    {
+      "match_id": 8716,
+      "balls": 119,
+      "match_date": "2026-02-13"
+    },
+    {
+      "match_id": 8721,
+      "balls": 109,
+      "match_date": "2026-02-14"
+    },
+    {
+      "match_id": 8724,
+      "balls": 111,
+      "match_date": "2026-02-15"
+    },
+    {
+      "match_id": 8726,
+      "balls": 112,
+      "match_date": "2026-02-16"
+    },
+    {
+      "match_id": 8733,
+      "balls": 122,
+      "match_date": "2026-02-19"
+    },
+    {
+      "match_id": 8735,
+      "balls": 102,
+      "match_date": "2026-02-22"
+    },
+    {
+      "match_id": 8736,
+      "balls": 117,
+      "match_date": "2026-02-22"
+    },
+    {
+      "match_id": 8737,
+      "balls": 111,
+      "match_date": "2026-02-23"
+    },
+    {
+      "match_id": 8738,
+      "balls": 118,
+      "match_date": "2026-02-24"
+    },
+    {
+      "match_id": 8739,
+      "balls": 124,
+      "match_date": "2026-02-25"
+    },
+    {
+      "match_id": 8740,
+      "balls": 100,
+      "match_date": "2026-02-26"
+    },
+    {
+      "match_id": 8741,
+      "balls": 129,
+      "match_date": "2026-02-26"
+    },
+    {
+      "match_id": 8742,
+      "balls": 118,
+      "match_date": "2026-02-27"
+    },
+    {
+      "match_id": 8743,
+      "balls": 126,
+      "match_date": "2026-02-28"
+    },
+    {
+      "match_id": 8744,
+      "balls": 111,
+      "match_date": "2026-03-01"
+    },
+    {
+      "match_id": 8745,
+      "balls": 123,
+      "match_date": "2026-03-01"
+    },
+    {
+      "match_id": 8746,
+      "balls": 77,
+      "match_date": "2026-03-04"
+    },
+    {
+      "match_id": 8747,
+      "balls": 130,
+      "match_date": "2026-03-05"
+    },
+    {
+      "match_id": 8748,
+      "balls": 121,
+      "match_date": "2026-03-08"
+    },
+    {
+      "match_id": 8903,
+      "balls": 103,
+      "match_date": "2026-01-07"
+    },
+    {
+      "match_id": 8904,
+      "balls": 79,
+      "match_date": "2026-01-11"
+    },
+    {
+      "match_id": 8958,
+      "balls": 122,
+      "match_date": "2026-01-29"
+    },
+    {
+      "match_id": 8959,
+      "balls": 95,
+      "match_date": "2026-01-31"
+    },
+    {
+      "match_id": 8960,
+      "balls": 103,
+      "match_date": "2026-02-01"
+    },
+    {
+      "match_id": 9022,
+      "balls": 97,
+      "match_date": "2026-03-11"
+    },
+    {
+      "match_id": 9023,
+      "balls": 144,
+      "match_date": "2026-03-13"
+    },
+    {
+      "match_id": 9024,
+      "balls": 305,
+      "match_date": "2026-03-15"
+    },
+    {
+      "match_id": 9110,
+      "balls": 304,
+      "match_date": "2026-04-17"
+    },
+    {
+      "match_id": 9111,
+      "balls": 220,
+      "match_date": "2026-04-20"
+    },
+    {
+      "match_id": 9112,
+      "balls": 274,
+      "match_date": "2026-04-23"
+    },
+    {
+      "match_id": 9113,
+      "balls": 117,
+      "match_date": "2026-04-27"
+    },
+    {
+      "match_id": 9114,
+      "balls": 71,
+      "match_date": "2026-05-02"
+    },
+    {
+      "match_id": 9124,
+      "balls": 121,
+      "match_date": "2026-06-26"
+    },
+    {
+      "match_id": 9125,
+      "balls": 125,
+      "match_date": "2026-06-28"
+    },
+    {
+      "match_id": 9232,
+      "balls": 86,
+      "match_date": "2026-07-23"
+    },
+    {
+      "match_id": 9233,
+      "balls": 110,
+      "match_date": "2026-07-25"
+    },
+    {
+      "match_id": 9234,
+      "balls": 130,
+      "match_date": "2026-07-26"
+    },
+    {
+      "match_id": 9255,
+      "balls": 267,
+      "match_date": "2026-06-09"
+    },
+    {
+      "match_id": 9256,
+      "balls": 214,
+      "match_date": "2026-06-11"
+    },
+    {
+      "match_id": 9257,
+      "balls": 300,
+      "match_date": "2026-06-14"
+    },
+    {
+      "match_id": 9258,
+      "balls": 110,
+      "match_date": "2026-06-17"
+    },
+    {
+      "match_id": 9259,
+      "balls": 124,
+      "match_date": "2026-06-19"
+    },
+    {
+      "match_id": 9260,
+      "balls": 67,
+      "match_date": "2026-06-21"
+    },
+    {
+      "match_id": 9401,
+      "balls": 258,
+      "match_date": "2026-05-30"
+    },
+    {
+      "match_id": 9402,
+      "balls": 269,
+      "match_date": "2026-06-02"
+    },
+    {
+      "match_id": 9403,
+      "balls": 256,
+      "match_date": "2026-06-04"
+    },
+    {
+      "match_id": 9436,
+      "balls": 206,
+      "match_date": "2026-07-06"
+    },
+    {
+      "match_id": 9437,
+      "balls": 304,
+      "match_date": "2026-07-09"
+    },
+    {
+      "match_id": 9438,
+      "balls": 229,
+      "match_date": "2026-07-11"
+    },
+    {
+      "match_id": 9439,
+      "balls": 119,
+      "match_date": "2026-07-15"
+    },
+    {
+      "match_id": 9440,
+      "balls": 122,
+      "match_date": "2026-07-17"
+    },
+    {
+      "match_id": 9441,
+      "balls": 121,
+      "match_date": "2026-07-19"
+    },
+    {
+      "match_id": 9442,
+      "balls": 306,
+      "match_date": "2026-06-03"
+    },
+    {
+      "match_id": 9443,
+      "balls": 120,
+      "match_date": "2026-06-11"
+    },
+    {
+      "match_id": 9444,
+      "balls": 113,
+      "match_date": "2026-06-13"
+    },
+    {
+      "match_id": 9445,
+      "balls": 127,
+      "match_date": "2026-06-14"
+    },
+    {
+      "match_id": 9464,
+      "balls": 301,
+      "match_date": "2026-07-11"
+    },
+    {
+      "match_id": 9465,
+      "balls": 201,
+      "match_date": "2026-07-13"
+    },
+    {
+      "match_id": 9466,
+      "balls": 240,
+      "match_date": "2026-07-16"
+    },
+    {
+      "match_id": 9467,
+      "balls": 269,
+      "match_date": "2026-07-19"
+    },
+    {
+      "match_id": 9468,
+      "balls": 292,
+      "match_date": "2026-07-21"
+    }
+  ],
+  "expected_rows": 40822
+}

@@ -43,12 +43,14 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import date
+from collections.abc import Sequence
 from pathlib import Path
 
 import psycopg
 from dotenv import dotenv_values
 
-from eval.splits import second_innings_predicate
+from eval.splits import TEST_SPLIT_START, assert_in_test_split, second_innings_predicate
 from features.as_of import compute_as_of_features
 from features.match_state import MatchStateRow
 from ingest.replay import predict_win_prob
@@ -93,6 +95,38 @@ _MANIFEST_QUERY = f"""
     GROUP BY ms.match_id
     ORDER BY md5(ms.match_id::text || 'phase3-session1')
     LIMIT %(count)s
+"""
+
+# Full Member vs Full Member, both formats, NO LIMIT - the whole eligible set
+# rather than a sample of it. UI-PHASE-2.md section 2.1 wants these matches to
+# exist so the landing hero has something recent to show; a random 100 of them
+# would leave the hero stale for the same reason the fixture did.
+#
+# teams.full_member is the flag from 20260924000003. Joining on it rather than
+# matching names here keeps the twelve-name list in exactly one place.
+_FULL_MEMBER_MANIFEST_QUERY = f"""
+    SELECT ms.match_id, count(*) AS balls, min(ms.match_date) AS match_date
+    FROM match_states ms
+    JOIN matches m ON m.match_id = ms.match_id
+    JOIN teams a ON a.team_id = m.team_a
+    JOIN teams b ON b.team_id = m.team_b
+    WHERE {second_innings_predicate("ms")} AND ms.match_date >= %(test_start)s
+      AND a.full_member AND b.full_member
+      AND m.format = ANY(%(formats)s)
+    GROUP BY ms.match_id
+    ORDER BY ms.match_id
+"""
+
+# An explicit id list, for repairing known-bad matches (the pre-ball-key
+# residue). Same predicate and the same test_start floor as everything else -
+# an id passed by hand is still not allowed out of the window.
+_EXPLICIT_MANIFEST_QUERY = f"""
+    SELECT ms.match_id, count(*) AS balls, min(ms.match_date) AS match_date
+    FROM match_states ms
+    WHERE {second_innings_predicate("ms")} AND ms.match_date >= %(test_start)s
+      AND ms.match_id = ANY(%(match_ids)s)
+    GROUP BY ms.match_id
+    ORDER BY ms.match_id
 """
 
 # Everything predict_win_prob needs, plus the ball key. Ordered by the true
@@ -374,15 +408,65 @@ def mirror_only(
     return 0
 
 
-def build_manifest(local_conn, count: int, test_start: str = "2025-01-01") -> dict:
+def build_manifest(
+    local_conn,
+    count: int | None = None,
+    *,
+    full_member: bool = False,
+    formats: Sequence[str] = ("T20", "ODI"),
+    match_ids: Sequence[int] | None = None,
+    test_start: str | None = None,
+) -> dict:
+    """One of three selections: a random `count`, all Full Member fixtures, or
+    an explicit id list.
+
+    `test_start` defaults to eval.splits.TEST_SPLIT_START rather than to a
+    literal. It used to be the string "2025-01-01" written out here, which is
+    a hand-copy of _VAL_END + 1 in a module whose own docstring says boundary
+    dates are private so that nobody does exactly that.
+    """
+    test_start = test_start or TEST_SPLIT_START.isoformat()
+    if full_member and match_ids:
+        raise ValueError("--full-member and --match-ids select different sets; pick one")
+
+    if full_member:
+        query, params = _FULL_MEMBER_MANIFEST_QUERY, {
+            "test_start": test_start,
+            "formats": list(formats),
+        }
+        selection = f"both teams full_member, format in {tuple(formats)}, all eligible"
+    elif match_ids:
+        query, params = _EXPLICIT_MANIFEST_QUERY, {
+            "test_start": test_start,
+            "match_ids": list(match_ids),
+        }
+        selection = f"explicit ids {list(match_ids)}"
+    else:
+        query, params = _MANIFEST_QUERY, {"count": count, "test_start": test_start}
+        selection = "ORDER BY md5(match_id::text || 'phase3-session1')"
+
     with local_conn.cursor() as cur:
-        cur.execute(_MANIFEST_QUERY, {"count": count, "test_start": test_start})
+        cur.execute(query, params)
         rows = cur.fetchall()
-    if len(rows) < count:
+
+    if count is not None and len(rows) < count:
         sys.exit(f"only {len(rows)} eligible matches, asked for {count}")
+    if match_ids:
+        # Silence here would be the failure: an id that is filtered out by the
+        # predicate or the date floor would simply vanish from the manifest and
+        # the run would report success over a shorter list.
+        missing = sorted(set(match_ids) - {m for m, _b, _d in rows})
+        if missing:
+            sys.exit(
+                f"{len(missing)} requested id(s) are not eligible - outside the test "
+                f"window, or excluded by the second-innings predicate: {missing}"
+            )
+    if not rows:
+        sys.exit("no eligible matches for this selection")
+
     return {
         "test_start": test_start,
-        "selection": "ORDER BY md5(match_id::text || 'phase3-session1')",
+        "selection": selection,
         "predicate": second_innings_predicate("ms"),
         "matches": [
             {"match_id": m, "balls": b, "match_date": d.isoformat()} for m, b, d in rows
@@ -650,6 +734,15 @@ def run(manifest: dict, deployed_count: int, base_url: str, limit: int | None = 
             match_id = entry["match_id"]
             confirm_model_version(supabase_conn, version)
 
+            # THE TEST-SPLIT GATE, checked twice on purpose.
+            #
+            # Here, against the manifest's own claim - cheap, and it runs
+            # before the already-logged skip below, so an out-of-window match
+            # is reported even when this run would have written nothing.
+            # Again after load_balls, against the corpus, because a manifest
+            # is a file and a file can be edited.
+            assert_in_test_split(match_id, date.fromisoformat(entry["match_date"]))
+
             existing = already_logged(supabase_conn, match_id, version)
             if existing >= entry["balls"]:
                 total_skipped += 1
@@ -657,6 +750,10 @@ def run(manifest: dict, deployed_count: int, base_url: str, limit: int | None = 
                 continue
 
             balls = load_balls(local_conn, match_id)
+            # The authoritative date: match_states.match_date, as the corpus
+            # holds it, not as the manifest reports it.
+            if balls:
+                assert_in_test_split(match_id, balls[0]["match_date"])
             if len(balls) != entry["balls"]:
                 # The manifest counted with the same predicate, so a mismatch
                 # means the corpus changed underneath it. Report, do not adapt.
@@ -823,8 +920,21 @@ def main(argv: list[str] | None = None) -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     m = sub.add_parser("manifest", help="choose the matches and write the manifest")
-    m.add_argument("--count", type=int, default=100)
+    m.add_argument("--count", type=int, default=None, help="random sample size (default 100 when no other selector is given)")
     m.add_argument("--out", type=Path, default=MANIFEST_PATH)
+    m.add_argument(
+        "--full-member",
+        action="store_true",
+        help="all Full Member v Full Member fixtures in the test split, not a sample",
+    )
+    m.add_argument("--formats", nargs="+", default=["T20", "ODI"], help="with --full-member")
+    m.add_argument(
+        "--match-ids",
+        nargs="+",
+        type=int,
+        default=None,
+        help="an explicit id list, for repairing known-bad matches",
+    )
 
     r = sub.add_parser("run", help="score and log the manifest's matches")
     r.add_argument("--manifest", type=Path, default=MANIFEST_PATH)
@@ -862,8 +972,16 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     if args.command == "manifest":
+        if args.count is None and not args.full_member and not args.match_ids:
+            args.count = 100
         with psycopg.connect(_env()["LOCAL_DATABASE_URL"], connect_timeout=30) as conn:
-            manifest = build_manifest(conn, args.count)
+            manifest = build_manifest(
+                conn,
+                args.count,
+                full_member=args.full_member,
+                formats=args.formats,
+                match_ids=args.match_ids,
+            )
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         print(
