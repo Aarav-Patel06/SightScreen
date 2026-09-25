@@ -1204,9 +1204,19 @@ body { margin: 0; }
   background: var(--chrome);
   border-bottom: 1px solid var(--rule);
   /* The edge the fill no longer carries. chrome/paper fell from 1.853 to
-     1.110 when chrome lightened, so the separation moves into a shadow -
-     --shadow-1 from the existing elevation scale, not a new one. */
-  box-shadow: var(--shadow-1);
+     1.110 when chrome lightened, so the separation moves into a shadow.
+
+     --shadow-2, not --shadow-1, and the reason is measurement rather than
+     taste. shadow-1 is 0 1px 2px at 5%, whose darkest point is 1.098:1
+     against paper spread over two pixels - on a full-width bar with no
+     corner or edge to read it against, that is invisible. shadow-2 is
+     1.141:1 over eight, and the spread matters more than the ratio here: a
+     2px shadow under a 1px border reads as part of the border.
+
+     Still from the existing scale. The header is not level 2 - it has no
+     radius and no raised fill - it just needs the stronger of the two
+     shadows to do the one job its fill can no longer do. */
+  box-shadow: var(--shadow-2);
 }
 .theme-paper .site-header nav a,
 .theme-paper .wordmark { color: var(--ink); }
