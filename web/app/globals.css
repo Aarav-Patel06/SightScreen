@@ -482,6 +482,134 @@ body { margin: 0; }
 .theme-paper main { max-width: var(--column); padding: 0 16px 64px; }
 
 /* ------------------------------------------------------------------------
+   THE LANDING PAGE (UI-PHASE-2 section 6). Closes the phase.
+   --------------------------------------------------------------------- */
+
+/* THE SPLIT WORDMARK, and the only place it appears. Section 4.2 reserves it
+   for this page: the header sits on --chrome, where teal is 2.94:1 and
+   crimson 3.49:1. Here it is on --paper. Measured on all three paper
+   surfaces before shipping - teal 5.44 / 5.71 / 5.08, crimson 6.47 / 6.79 /
+   6.05 - so it clears 4.5:1 even at the foot of the page wash. */
+.theme-paper .landing-wordmark {
+  font-family: var(--font-plex-cond), var(--font-plex), sans-serif;
+  font-size: var(--t-3xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: var(--space-6) 0 var(--space-5);
+  line-height: 1.05;
+}
+.theme-paper .wm-sight { color: var(--bat); }
+.theme-paper .wm-screen { color: var(--flag); }
+
+.theme-paper .hero-kicker {
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+  margin: 0 0 var(--space-1);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.theme-paper .hero-teams {
+  font-family: var(--font-plex-cond), var(--font-plex), sans-serif;
+  font-size: var(--t-2xl);
+  font-weight: 600;
+  margin: 0 0 var(--space-1);
+}
+.theme-paper .hero-result { margin: 0 0 var(--space-4); font-size: var(--t-s); }
+
+/* LIVE NOW: a fact, not a badge (section 6). No pill, no background, no
+   border - a dot and ink text at the size of the kicker it sits in. The
+   colour is --flag, which is 6.47:1 on paper, and the text is --ink, so the
+   tag does not depend on hue to be readable. */
+.theme-paper .live-now {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--ink);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.theme-paper .live-now-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--flag);
+  animation: live-pulse 2.4s ease-in-out infinite;
+}
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+/* Section 6 says respect it, so it is switched off rather than slowed. A
+   vestibular trigger does not become acceptable by being gentle. */
+@media (prefers-reduced-motion: reduce) {
+  .theme-paper .live-now-dot { animation: none; }
+}
+
+/* THE SCORECARD. Level 2, and the most carefully worded panel on the site. */
+.theme-paper .scorecard { margin-bottom: var(--space-6); }
+.theme-paper .scorecard h2 { margin-top: 0; }
+.theme-paper .scorecard-headline {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin: 0 0 var(--space-2);
+}
+.theme-paper .scorecard-number {
+  font-family: var(--font-plex-cond), var(--font-plex), sans-serif;
+  font-size: var(--t-3xl);
+  font-weight: 600;
+  line-height: 1;
+}
+.theme-paper .scorecard-unit { font-size: var(--t-xs); color: var(--ink-soft); }
+.theme-paper .scorecard-gloss { margin-bottom: var(--space-4); }
+
+/* The two baselines share a block so neither can be read without the other.
+   That is the whole point: one is the real claim and one is the null result,
+   and separating them is how a page cherry-picks. */
+.theme-paper .scorecard-baselines {
+  border-left: 3px solid var(--rule);
+  padding-left: var(--space-4);
+  margin: var(--space-4) 0;
+}
+.theme-paper .scorecard-baselines p { margin: 0 0 var(--space-3); }
+.theme-paper .scorecard-baselines p:last-child { margin-bottom: 0; }
+.theme-paper .scorecard-turn { color: var(--ink); }
+.theme-paper .scorecard-miscalibrated { margin-top: var(--space-4); }
+.theme-paper .scorecard-link { margin: var(--space-4) 0 0; font-size: var(--t-xs); }
+
+/* THE FOUR PREVIEW MODULES. Level 1 each - they are discrete objects. */
+.theme-paper .previews {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+.theme-paper .preview h2 { margin: 0 0 var(--space-3); font-size: var(--t-m); }
+.theme-paper .preview h2 a { text-decoration: none; }
+.theme-paper .preview-list { list-style: none; margin: 0; padding: 0; }
+.theme-paper .preview-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--rule);
+  font-size: var(--t-xs);
+}
+.theme-paper .preview-list li:last-child { border-bottom: 0; }
+.theme-paper .preview-date { margin-left: auto; }
+.theme-paper .preview-question {
+  font-size: var(--t-xs);
+  color: var(--ink);
+  font-weight: 500;
+  margin: 0 0 var(--space-2);
+}
+.theme-paper .preview-answer { margin: 0 0 var(--space-2); color: var(--ink-soft); }
+
+/* ------------------------------------------------------------------------
    THE ELEVATION PASS (UI-PHASE-2 section 5).
 
    Levels are assigned by hierarchy, not applied uniformly. What did NOT get

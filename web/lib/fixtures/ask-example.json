@@ -1,0 +1,7 @@
+{
+  "_comment": "A REAL recorded exchange, not a live call - the landing page must not spend on the model to render. Extracted verbatim from api/data/agent_eval/proof-citation-venue.json, which is the artifact of a paid eval run. lib/ask-example.test.ts asserts this still matches that file, and the figures were re-verified against the corpus on 2026-09-25: North Sydney Oval 81 balls at 10.89 rpo, and the next three rows, all exact.",
+  "question": "Which venue has the highest average runs per over in T20s, and how many balls has been bowled there?",
+  "excerpt": "The venue with the highest average runs per over in T20s (across the whole corpus) is **North Sydney Oval, Sydney**, at **10.89 runs per over**, but this is based on only **81 balls bowled** there \u2014 a very small sample, so it's not a reliable indicator (likely just one or two matches).",
+  "askedAt": "2026-09-22",
+  "model": "claude-sonnet-5"
+}

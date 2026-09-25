@@ -32,6 +32,8 @@
  */
 
 import HERO_FIXTURE from "./fixtures/hero-match.json";
+import { toMarks, type Mark } from "./ball-strip";
+import { parsePrediction } from "./prediction";
 import { supabaseServer } from "./supabase-server";
 
 /**
@@ -54,10 +56,26 @@ export interface HeroMatch {
   teamB: string;
   /** The winning side's name, or null for a match with no mirrored result. */
   winner: string | null;
+  /**
+   * Is this match in progress right now?
+   *
+   * Read from `matches.status`, which the live worker owns and which the
+   * mirror deliberately never refreshes. Today every row is 'complete', so
+   * the LIVE NOW tag renders for nobody - which is correct, and is why the
+   * tag is tested rather than eyeballed.
+   */
+  isLive: boolean;
 }
 
 export interface HeroResult {
   match: HeroMatch;
+  /**
+   * The strip for this match, or null when it could not be loaded.
+   *
+   * Separate from `stale`: the identity can be live while the strip is not,
+   * and a hero with real teams and no chart is better than a fixture.
+   */
+  marks: Mark[] | null;
   /** True when the query failed or found nothing and the fixture was used. */
   stale: boolean;
   /** Set only when stale: when the fixture was taken. */
@@ -86,9 +104,37 @@ function fallback(reason: string): HeroResult {
   console.warn(`[hero] using the committed fixture: ${reason}`);
   return {
     match: HERO_FIXTURE.match,
+    marks: null,
     stale: true,
     capturedAt: HERO_FIXTURE.capturedAt,
   };
+}
+
+/**
+ * The chosen match's strip.
+ *
+ * Its own failure path: returns null rather than throwing, and the caller
+ * renders the hero without a chart. PostgREST caps a response at 1000 rows
+ * and the longest ODI chase logged is 305 predictions, so one request is
+ * always enough - but the limit is stated rather than assumed.
+ */
+async function loadMarks(matchId: number): Promise<Mark[] | null> {
+  const supabase = supabaseServer();
+  const { data, error } = await supabase
+    .from("predictions")
+    .select("prediction_id, created_at, model_version, payload")
+    .eq("match_id", matchId)
+    .eq("prediction_type", "win_prob")
+    .not("innings", "is", null)
+    .order("prediction_id", { ascending: true })
+    .limit(1000);
+
+  if (error || !data?.length) {
+    console.warn(`[hero] no strip for match ${matchId}: ${describe(error)}`);
+    return null;
+  }
+  const parsed = data.map((row) => parsePrediction(row as never)).filter((p) => p !== null);
+  return parsed.length > 1 ? toMarks(parsed) : null;
 }
 
 export async function loadHeroMatch(): Promise<HeroResult> {
@@ -108,7 +154,7 @@ export async function loadHeroMatch(): Promise<HeroResult> {
 
   const matchesResult = await supabase
     .from("matches")
-    .select("match_id, competition, format, start_time, team_a, team_b, winner")
+    .select("match_id, competition, format, start_time, team_a, team_b, winner, status")
     .in("team_a", ids)
     .in("team_b", ids)
     .order("start_time", { ascending: false })
@@ -147,6 +193,7 @@ export async function loadHeroMatch(): Promise<HeroResult> {
   }
 
   return {
+    marks: await loadMarks(hit.match_id),
     match: {
       matchId: hit.match_id,
       competition: hit.competition,
@@ -155,6 +202,7 @@ export async function loadHeroMatch(): Promise<HeroResult> {
       teamA,
       teamB,
       winner: hit.winner === null ? null : (names.get(hit.winner) ?? null),
+      isLive: hit.status === "live",
     },
     stale: false,
   };

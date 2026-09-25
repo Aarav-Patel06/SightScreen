@@ -149,6 +149,20 @@ export function withInterval(point: number, low: number, high: number): string {
 }
 
 /**
+ * An interval with every bound signed.
+ *
+ * `withInterval` prints `[0.0218, 0.0539]` and `[-0.0027, 0.0188]`. On the
+ * landing scorecard those two look alike at a glance, and the difference
+ * between them is the entire point: one interval is wholly above zero and
+ * the other straddles it. Signing both bounds makes "clears zero" and
+ * "includes zero" visible without reading the numbers.
+ */
+export function withSignedInterval(point: number, low: number, high: number): string {
+  const sign = (n: number) => (n >= 0 ? `+${score(n)}` : score(n));
+  return `${sign(point)}  [${sign(low)}, ${sign(high)}]`;
+}
+
+/**
  * The one-line verdict for a baseline comparison.
  *
  * Deliberately refuses to say "better" when the interval includes zero. The

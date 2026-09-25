@@ -18,6 +18,7 @@ import HERO_FIXTURE from "./fixtures/hero-match.json";
 const teamsQuery = vi.fn();
 const matchesQuery = vi.fn();
 const predictionsQuery = vi.fn();
+const stripQuery = vi.fn();
 
 vi.mock("./supabase-server", () => ({
   supabaseServer: () => ({
@@ -34,7 +35,19 @@ vi.mock("./supabase-server", () => ({
           }),
         };
       }
-      return { select: () => ({ in: () => ({ not: () => predictionsQuery() }) }) };
+      // `predictions` is queried twice, with different chains: once to find
+      // which candidates have keyed rows (.in().not()), and once to load the
+      // chosen match's strip (.eq().eq().not().order().limit()).
+      return {
+        select: () => ({
+          in: () => ({ not: () => predictionsQuery() }),
+          eq: () => ({
+            eq: () => ({
+              not: () => ({ order: () => ({ limit: () => stripQuery() }) }),
+            }),
+          }),
+        }),
+      };
     },
   }),
 }));
@@ -54,6 +67,7 @@ const MATCHES = [
     team_a: 3,
     team_b: 7,
     winner: 3,
+    status: "complete",
   },
   {
     match_id: 9400,
@@ -63,14 +77,34 @@ const MATCHES = [
     team_a: 7,
     team_b: 3,
     winner: null,
+    status: "complete",
   },
 ];
+
+/** Four deliveries, enough for toMarks to produce three swings and a tail. */
+const STRIP_ROWS = [0.5, 0.62, 0.41, 0.77].map((p, i) => ({
+  prediction_id: i + 1,
+  created_at: "2026-07-26T14:00:00+00:00",
+  model_version: "winprob2-20260910",
+  payload: {
+    p,
+    innings: 2,
+    balls_bowled: i,
+    balls_remaining: 120 - i,
+    runs_required: 150 - i,
+    score: i,
+    wickets: 0,
+    target: 151,
+    phase: "powerplay",
+  },
+}));
 
 beforeEach(() => {
   vi.spyOn(console, "warn").mockImplementation(() => {});
   teamsQuery.mockReset();
   matchesQuery.mockReset();
   predictionsQuery.mockReset();
+  stripQuery.mockReset();
 });
 
 afterEach(() => {
@@ -81,6 +115,7 @@ function healthy() {
   teamsQuery.mockResolvedValue({ data: TEAMS, error: null });
   matchesQuery.mockResolvedValue({ data: MATCHES, error: null });
   predictionsQuery.mockResolvedValue({ data: [{ match_id: 9500 }], error: null });
+  stripQuery.mockResolvedValue({ data: STRIP_ROWS, error: null });
 }
 
 describe("when the database answers", () => {
@@ -98,6 +133,7 @@ describe("when the database answers", () => {
       teamA: "India",
       teamB: "Australia",
       winner: "India",
+      isLive: false,
     });
   });
 
@@ -192,5 +228,67 @@ describe("the committed fixture itself", () => {
     expect(HERO_FIXTURE.match.teamB).toBeTruthy();
     expect(HERO_FIXTURE.match.matchId).toBeGreaterThan(0);
     expect(HERO_FIXTURE.capturedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+describe("the hero strip", () => {
+  it("is loaded for the chosen match", async () => {
+    healthy();
+    const result = await loadHeroMatch();
+    expect(result.marks).not.toBeNull();
+    expect(result.marks!.length).toBe(STRIP_ROWS.length);
+  });
+
+  it("is null, but the hero still renders, when the strip query fails", async () => {
+    // A live identity with no chart beats a fixture. These are separate
+    // failures and the page treats them separately.
+    healthy();
+    stripQuery.mockResolvedValue({ data: null, error: { message: "timeout" } });
+
+    const result = await loadHeroMatch();
+    expect(result.stale).toBe(false);
+    expect(result.match.teamA).toBe("India");
+    expect(result.marks).toBeNull();
+  });
+
+  it("is null when a match has too few predictions to make marks", async () => {
+    healthy();
+    stripQuery.mockResolvedValue({ data: [STRIP_ROWS[0]], error: null });
+    expect((await loadHeroMatch()).marks).toBeNull();
+  });
+
+  it("is null on the fixture path, because the fixture has no strip of its own", async () => {
+    healthy();
+    teamsQuery.mockResolvedValue({ data: null, error: { message: "fetch failed" } });
+    const result = await loadHeroMatch();
+    expect(result.stale).toBe(true);
+    expect(result.marks).toBeNull();
+  });
+});
+
+describe("the LIVE NOW flag", () => {
+  it("is true only when the match row says live", async () => {
+    healthy();
+    matchesQuery.mockResolvedValue({
+      data: [{ ...MATCHES[0], status: "live" }],
+      error: null,
+    });
+    expect((await loadHeroMatch()).match.isLive).toBe(true);
+  });
+
+  it("is false for a completed match", async () => {
+    healthy();
+    expect((await loadHeroMatch()).match.isLive).toBe(false);
+  });
+
+  it("is false on the fixture path", async () => {
+    // A committed hero cannot be in progress, and a landing page claiming a
+    // live match while the database is unreachable would be the worst
+    // possible thing for this page to get wrong.
+    healthy();
+    teamsQuery.mockResolvedValue({ data: null, error: { message: "fetch failed" } });
+    const result = await loadHeroMatch();
+    expect(result.stale).toBe(true);
+    expect(result.match.isLive).toBe(false);
   });
 });

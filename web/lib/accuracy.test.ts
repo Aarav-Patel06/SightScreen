@@ -22,6 +22,7 @@ import {
   type BaselineComparison,
   type Decile,
   withInterval,
+  withSignedInterval,
 } from "./accuracy";
 
 function decile(overrides: Partial<Decile> = {}): Decile {
@@ -203,5 +204,20 @@ describe("the committed prior for the logistic comparison", () => {
     expect(LOGISTIC_PRIOR.ciLow).toBeGreaterThan(0);
     expect(LOGISTIC_PRIOR.improvement).toBeGreaterThan(LOGISTIC_PRIOR.ciLow);
     expect(LOGISTIC_PRIOR.nMatches).toBe(100);
+  });
+});
+
+describe("withSignedInterval", () => {
+  it("signs every bound of a wholly positive interval", () => {
+    expect(withSignedInterval(0.0375, 0.0218, 0.0539)).toBe("+0.0375  [+0.0218, +0.0539]");
+  });
+
+  it("makes an interval that straddles zero obvious", () => {
+    // The landing scorecard's whole job: these two must not look alike.
+    expect(withSignedInterval(0.0083, -0.0027, 0.0188)).toBe("+0.0083  [-0.0027, +0.0188]");
+  });
+
+  it("signs a negative point estimate too", () => {
+    expect(withSignedInterval(-0.01, -0.03, 0.01)).toBe("-0.0100  [-0.0300, +0.0100]");
   });
 });

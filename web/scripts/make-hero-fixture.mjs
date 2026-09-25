@@ -35,7 +35,7 @@ console.log(`${names.size} Full Member teams`);
 
 const matches = await supabase
   .from("matches")
-  .select("match_id, competition, format, start_time, team_a, team_b, winner")
+  .select("match_id, competition, format, start_time, team_a, team_b, winner, status")
   .in("team_a", [...names.keys()])
   .in("team_b", [...names.keys()])
   .order("start_time", { ascending: false })
@@ -72,6 +72,8 @@ const fixture = {
     teamA: names.get(hit.team_a),
     teamB: names.get(hit.team_b),
     winner: hit.winner === null ? null : (names.get(hit.winner) ?? null),
+    // A committed hero cannot be in progress.
+    isLive: false,
   },
 };
 

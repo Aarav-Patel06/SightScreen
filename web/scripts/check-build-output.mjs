@@ -39,7 +39,30 @@ const APP = ".next/server/app";
  * Checking the count alone here would have been the same mistake this script
  * exists to correct: asserting something adjacent to the claim.
  */
-const STALE_MARKER = "As of ";
+const STALE_MARKER = "as of ";
+
+/**
+ * The marker has to exist in the page SOURCE too.
+ *
+ * Added 2026-09-25, immediately after this check passed vacuously. Step 5
+ * rewrote the landing page and changed the marker's capitalisation from
+ * "As of " to "as of ". The grep below stopped matching anything, so the
+ * assertion reported "landing figures are live, not the committed fallback"
+ * on every build - including one where they were not.
+ *
+ * A check that greps for a literal is only as good as the literal. This
+ * fails loudly when the string it depends on leaves the page, instead of
+ * quietly becoming an assertion about nothing.
+ */
+function assertMarkerStillReachable() {
+  const source = readFileSync("app/page.tsx", "utf8");
+  if (!source.toLowerCase().includes(STALE_MARKER)) {
+    fail(
+      `the staleness marker ${JSON.stringify(STALE_MARKER)} no longer appears in ` +
+        `app/page.tsx, so the check below asserts nothing. Update both together.`
+    );
+  }
+}
 
 const checks = [
   {
@@ -93,7 +116,9 @@ if (!existsSync(landingPath)) {
 } else {
   const html = readFileSync(landingPath, "utf8");
 
-  if (html.includes(STALE_MARKER)) {
+  assertMarkerStillReachable();
+
+  if (html.toLowerCase().includes(STALE_MARKER)) {
     fail(
       `the landing figures are flagged stale ("${STALE_MARKER}..."), so at least one ` +
         `came from the committed fallback rather than the database`
