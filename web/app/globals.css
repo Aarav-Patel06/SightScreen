@@ -1,111 +1,27 @@
-/* Mobile-first, per SPEC.md 12.2 - most cricket viewing is second-screen. */
-:root {
-  --bg: #0f1113;
-  --panel: #171a1d;
-  --line: #262b30;
-  --text: #e8eaed;
-  --muted: #9aa3ab;
-  --bat: #4ea1ff;
-  --bowl: #ff7a59;
-  --warn: #f0b429;
-}
+/* Mobile-first, per SPEC.md 12.2 - most cricket viewing is second-screen.
+
+   THE DARK BLOCK THAT USED TO BE HERE IS GONE (2026-09-25, UI-PHASE-2 step 3).
+   It was described in step 2's write-up as "110 unreachable lines". That was
+   wrong, and the way it was wrong is the point: the check behind the claim
+   looked at `font-size` only, found every one shadowed by a `.theme-paper`
+   rule, and generalised to the whole block. A cascade analysis of all 45
+   declarations found the block was carrying live layout - `box-sizing`,
+   `body { margin }`, `main { margin: 0 auto }`, and the structural halves of
+   .row, .wp-bar, .strip and .grid, none of which the theme redefines.
+
+   It was also carrying a live accessibility failure. `.grid tr.thin td` took
+   its colour from the DARK palette's --muted (#9aa3ab), which is 2.35:1 on
+   cream, and /accuracy applies `thin` to every decile under 30 matches. The
+   page has been shipping that.
+
+   So the block was not deleted wholesale. The genuinely dead parts went - the
+   dark :root palette, and .chip/.chip-low, which the phase mark replaced -
+   and the live parts moved below, into the theme, with tokens instead of the
+   dark variables they were quietly still reading. */
 
 * { box-sizing: border-box; }
 
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-}
-
-main { max-width: 720px; margin: 0 auto; padding: 16px; }
-
-.panel {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 14px;
-  margin-bottom: 12px;
-}
-
-.muted { color: var(--muted); }
-.small { font-size: 13px; }
-.tiny { font-size: 12px; }
-
-h1 { font-size: 19px; margin: 0 0 4px; }
-h2 { font-size: 15px; margin: 0 0 10px; font-weight: 600; }
-
-a { color: var(--bat); }
-
-.row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-
-.wp-number { font-size: 34px; font-weight: 650; letter-spacing: -0.5px; }
-
-.wp-bar {
-  position: relative;
-  height: 10px;
-  border-radius: 999px;
-  background: var(--bowl);
-  overflow: hidden;
-  margin: 10px 0 6px;
-}
-.wp-bar > span { display: block; height: 100%; background: var(--bat); }
-
-.chip {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  font-size: 12px;
-  color: var(--muted);
-}
-.chip-low { border-color: var(--warn); color: var(--warn); }
-
-.strip { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
-.strip .cell {
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 4px 8px;
-  font-size: 12px;
-}
-.strip .cell.absent { color: var(--muted); border-style: dashed; }
-
-/* The accuracy page's tables (SPEC.md 8.5). A decile row carries six
-   numbers and reads better aligned than as prose. */
-.grid { width: 100%; border-collapse: collapse; font-size: 13px; margin: 8px 0; }
-.grid th {
-  text-align: left;
-  font-weight: 500;
-  color: var(--muted);
-  font-size: 12px;
-  border-bottom: 1px solid var(--line);
-  padding: 4px 6px 4px 0;
-}
-.grid td { padding: 3px 6px 3px 0; border-bottom: 1px solid #1d2125; }
-/* 12.2: grey out small samples rather than showing a misleading precise
-   number. Thin is judged on MATCHES, not rows - see lib/accuracy.ts. */
-.grid tr.thin td { color: var(--muted); }
-h3 { font-size: 13px; margin: 14px 0 6px; font-weight: 600; }
-
-/* ------------------------------------------------------------------------
-   UI mini-phase §1.4/§1.5 tokens.
-
-   SCOPED TO A CLASS, NOT :root, AND DELIBERATELY SO. The palette above is
-   dark and all six existing pages depend on it - including --bat and --bowl,
-   which §1.4 redefines to light-palette values. Redefining those at :root
-   would turn every link and every win-probability bar in the app dark blue on
-   near-black in the same commit, and leave them that way until the last page
-   is retrofitted several sessions later. §5 asks that each session end with
-   something visible in a browser, so instead the new palette shadows the old
-   one inside a subtree.
-
-   Session 1 applies .theme-paper to /design only. Each later session adds it
-   to the page it retrofits; the last one moves it to <body>, drops the
-   .theme-paper selector, and deletes the dark :root block above. Nothing
-   needs renaming at that point, which is the advantage of shadowing over
-   prefixing the new names.
-   --------------------------------------------------------------------- */
+body { margin: 0; }
 
 .theme-paper {
   /* Cream base, warm tan chrome, teal and brown as the two data colours.
@@ -327,8 +243,12 @@ h3 { font-size: 13px; margin: 14px 0 6px; font-weight: 600; }
 }
 
 .theme-paper .wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   font-family: var(--font-plex-cond), var(--font-plex), sans-serif;
-  font-size: var(--t-m);
+  /* Larger than the --t-m it was, per section 4.2. */
+  font-size: var(--t-l);
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--ink);
@@ -548,6 +468,55 @@ h3 { font-size: 13px; margin: 14px 0 6px; font-weight: 600; }
 }
 
 .theme-paper main { max-width: var(--column); padding: 0 16px 64px; }
+
+/* ------------------------------------------------------------------------
+   STRUCTURE CARRIED OVER FROM THE DELETED DARK BLOCK.
+
+   Every declaration here was live before step 3 and had no .theme-paper
+   equivalent, so removing the old block without re-homing them would have
+   changed the rendering. They are layout, not theme - which is why they
+   survived a palette migration unnoticed for five sessions.
+   --------------------------------------------------------------------- */
+
+.theme-paper main { margin: 0 auto; }
+
+.theme-paper .row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.theme-paper .wp-bar {
+  position: relative;
+  overflow: hidden;
+  margin: var(--space-2) 0 var(--space-2);
+}
+.theme-paper .wp-bar > span { display: block; height: 100%; }
+
+.theme-paper .strip { display: flex; flex-wrap: wrap; }
+.theme-paper .strip .cell { padding: var(--space-1) var(--space-2); }
+
+.theme-paper .grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--t-xs);
+  margin: var(--space-2) 0;
+}
+.theme-paper .grid th {
+  text-align: left;
+  font-weight: 500;
+  font-size: var(--t-xs);
+  padding: var(--space-1) var(--space-2) var(--space-1) 0;
+}
+.theme-paper .grid td { padding: var(--space-1) var(--space-2) var(--space-1) 0; }
+
+/* 12.2: grey out small samples rather than showing a misleading precise
+   number. Thin is judged on MATCHES, not rows - see lib/accuracy.ts.
+
+   --ink-soft (5.58:1), NOT the dark palette's --muted, which is what this
+   rule read until 2026-09-25 and which measures 2.35:1 on cream. */
+.theme-paper .grid tr.thin td { color: var(--ink-soft); }
 
 .theme-paper .muted { color: var(--ink-soft); }
 .theme-paper .small { font-size: var(--t-xs); }

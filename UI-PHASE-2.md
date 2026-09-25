@@ -151,13 +151,21 @@ Spacing on a 4px base: 4 / 8 / 12 / 16 / 24 / 32 / 48 / 64. One vertical rhythm 
 
 The full mark is a batsman, a bar chart, a ball and a circle. At 32px that's illegible; at 16px it's a smudge. Design the simplified mark deliberately rather than scaling the full one down and hoping.
 
-Favicon: `app/icon.svg` for modern browsers, `app/icon.png` at 32px as fallback, `app/apple-icon.png` at 180px. Next's file conventions handle the rest.
+Favicon: `app/icon.svg` for modern browsers, `app/icon.png` at 32px as fallback, `app/apple-icon.png` at 180px. ~~Next's file conventions handle the rest.~~
+
+**They do not.** With both `icon.svg` and `icon.png` present, Next builds routes for both and then emits exactly **one** `<link rel="icon">`, choosing the PNG — verified by removing the PNG and rebuilding, at which point the SVG link appears. So the intended "SVG for modern browsers, PNG as fallback" silently became "PNG only, plus an SVG nothing references". Both links are now declared explicitly in `app/layout.tsx`'s `metadata.icons`, SVG first.
 
 ### 4.2 Header
 
 Simplified mark plus the wordmark, larger than now. The wordmark keeps the two-colour split from the logo — "Sight" in teal, "Screen" in crimson — but **only if both clear 4.5:1 against `--chrome`**. Teal does not (3.15:1). So either the wordmark sits on a paper-coloured band, or it renders in ink with the split reserved for the landing page.
 
 Measure before committing to the split. Do not ship it failing.
+
+**DECIDED 2026-09-25: the header wordmark is `--ink`, and the split moves to the landing page.**
+
+Measured on `--chrome`: teal 3.25:1, crimson 3.78:1. Both fail. The third option — a paper-coloured band behind the wordmark inside the chrome header — would make the split legal and was rejected: a cream rectangle floating in a tan bar reads as a badge, and inventing a container to make a colour legal is how decoration gets in. On `--paper` both halves clear comfortably (teal 5.14:1, crimson 5.99:1), which is where the split belongs.
+
+**Carried into Step 5:** the landing page hero renders the wordmark with the teal/crimson split on `--paper`. Nothing renders it today — the landing page mentions "SightScreen" only in prose — so this is new work there, not a retrofit.
 
 ---
 

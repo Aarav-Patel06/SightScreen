@@ -49,6 +49,27 @@ const plexCondensed = IBM_Plex_Sans_Condensed({
 export const metadata: Metadata = {
   title: "SightScreen",
   description: "Live cricket win probability, with its own track record on display",
+  /*
+   * BOTH ICON LINKS, DECLARED EXPLICITLY (UI-PHASE-2 section 4.1).
+   *
+   * The file convention alone does not do what the brief assumes. With
+   * app/icon.svg and app/icon.png both present, Next builds routes for both
+   * and then emits exactly ONE <link rel="icon">, choosing the PNG - verified
+   * by removing the PNG and rebuilding, at which point the SVG link appears.
+   * So "SVG for modern browsers, PNG as fallback" silently became "PNG only,
+   * and an SVG nothing references".
+   *
+   * Declared here instead, SVG first so a browser that understands it takes
+   * it and stays sharp on a hi-dpi tab, with the 32px PNG behind it for
+   * anything that does not.
+   */
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/icon.png", type: "image/png", sizes: "32x32" },
+    ],
+    apple: [{ url: "/apple-icon.png", sizes: "180x180" }],
+  },
 };
 
 /**

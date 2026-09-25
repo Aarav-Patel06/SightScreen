@@ -13,6 +13,7 @@
 
 import Link from "next/link";
 
+import { BallMark } from "@/components/ball-mark";
 import { LiveSlot } from "@/components/live-slot";
 
 /** Complete as of session 4: §3.1's four items all have pages. */
@@ -27,8 +28,23 @@ export function SiteHeader() {
   return (
     <header className="site-header">
       <div className="site-header-inner">
+        {/*
+          Mark plus wordmark (UI-PHASE-2 section 4.2). The wordmark is INK, not
+          the teal/crimson split from the logo, and that is a measurement
+          rather than a preference: the header sits on --chrome, where teal is
+          3.25:1 and crimson 3.78:1. Both fail 4.5:1 for text.
+
+          The split is not lost - it moves to the landing page, where the
+          wordmark sits on --paper and both halves clear comfortably (teal
+          5.14:1, crimson 5.99:1). The alternative considered was a
+          paper-coloured band behind the wordmark inside the chrome header,
+          which would make the split legal; it was rejected because a cream
+          rectangle floating in a tan bar reads as a badge, and inventing a
+          container to make a colour legal is how decoration gets in.
+        */}
         <Link href="/" className="wordmark">
-          SightScreen
+          <BallMark size={22} />
+          <span>SightScreen</span>
         </Link>
 
         <LiveSlot />

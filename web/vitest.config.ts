@@ -23,12 +23,30 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./vitest.setup.ts"],
+    // Every directory that can hold a test, listed explicitly.
+    //
     // `app/**/*.test.ts` as well as `.tsx`: route handlers are plain
     // TypeScript, and the pattern that only matched components would have
     // silently collected nothing for app/api/agent/route.test.ts - a test
     // file that exists, passes locally when named directly, and never runs
     // in `npm test`. That is the quietest way to have no coverage at all.
-    include: ["lib/**/*.test.ts", "app/**/*.test.ts", "app/**/*.test.tsx"],
+    //
+    // `components/**` added 2026-09-25, and it is the SAME BUG a second time:
+    // the first test written under components/ reported "filter: ... no test
+    // files found" because the list above never covered that directory. A
+    // glob that enumerates directories fails silently every time a new one
+    // appears, and it fails by passing.
+    //
+    // tests/ops/test_include_pattern is the guard: it asserts that every
+    // *.test.* file in this package is matched by one of these globs, so the
+    // next directory cannot be missed the same way.
+    include: [
+      "lib/**/*.test.ts",
+      "app/**/*.test.ts",
+      "app/**/*.test.tsx",
+      "components/**/*.test.ts",
+      "components/**/*.test.tsx",
+    ],
     globals: false,
   },
 });
