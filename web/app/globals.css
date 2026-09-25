@@ -156,6 +156,22 @@ body { margin: 0; }
   --space-7: 48px;
   --space-8: 64px;
 
+  /* THE GAP BETWEEN TOP-LEVEL BOXES, and it is its own name rather than a
+     bare --space-5 because it is a distinct decision: how far apart two
+     panels sit is not the same question as how much padding is inside one.
+
+     There was no such value before. .band, .panel, .page-links, .ask-intro,
+     .match-hero and .match-figure each carried 16px; .scorecard and
+     .previews carried 32px; and .level-1, .level-2 and .hero carried NOTHING
+     - which is why the hero and the scorecard rendered touching. Four
+     behaviours, none of them chosen together: the same drift the spacing and
+     radius scales were built to end.
+
+     24px, not 16: the boxes carry a 12px radius and a shadow with up to 16px
+     of blur, so at 16px the shadows of adjacent panels overlap and the gap
+     reads as a seam rather than as space. */
+  --gap-section: var(--space-5);
+
   /* ELEVATION (section 3.4). Two shadows, not a ramp: a thing is either a
      discrete object or it is not. Level 0 - prose, /model-card, the landing
      paragraphs - takes no panel at all, which is the level that stops this
@@ -433,6 +449,22 @@ body { margin: 0; }
 .theme-paper .hero-strip { margin-bottom: var(--space-4); }
 .theme-paper .hero-note { margin: 0; font-size: var(--t-s); }
 
+/* ONE GAP, DECLARED ONCE. Every top-level box takes --gap-section and none
+   of them declare their own margin-bottom - lib/borders.test.ts's
+   duplicate-declaration guard is what keeps it that way. */
+.theme-paper .band,
+.theme-paper .panel,
+.theme-paper .level-1,
+.theme-paper .level-2,
+.theme-paper .previews,
+.theme-paper .page-links,
+.theme-paper .ask-intro,
+.theme-paper .ask-history { margin-bottom: var(--gap-section); }
+
+/* The preview cards are grid children, so the grid's own gap spaces them.
+   A margin here would push them out of alignment with each other. */
+.theme-paper .previews .level-1 { margin-bottom: 0; }
+
 /* The cross-link line at the foot of a page. Boxed like everything else, but
    at level 0 weight - it is navigation, not content, and a full panel around
    three links would out-weigh the page it sits under. */
@@ -442,7 +474,6 @@ body { margin: 0; }
   border-radius: var(--radius-panel);
   box-shadow: var(--shadow-1);
   padding: var(--space-3) var(--space-4);
-  margin-bottom: var(--space-4);
   font-size: var(--t-xs);
   color: var(--ink-soft);
 }
@@ -459,7 +490,6 @@ body { margin: 0; }
   border-radius: var(--radius-panel);
   box-shadow: var(--shadow-1);
   padding: var(--space-5);
-  margin-bottom: var(--space-4);
 }
 .theme-paper .band:first-of-type { border-top: 0; }
 .theme-paper .band h2 {
@@ -590,7 +620,6 @@ body { margin: 0; }
   border-radius: var(--radius-panel);
   box-shadow: var(--shadow-1);
   padding: var(--space-5);
-  margin-bottom: var(--space-4);
 }
 
 /* LEVEL 1 - content sections and table containers. */
@@ -684,7 +713,6 @@ body { margin: 0; }
   border-radius: var(--radius-panel);
   box-shadow: var(--shadow-1);
   padding: var(--space-5);
-  margin-bottom: var(--space-4);
   max-width: var(--measure);
 }
 
@@ -821,7 +849,6 @@ body { margin: 0; }
 }
 
 /* THE SCORECARD. Level 2, and the most carefully worded panel on the site. */
-.theme-paper .scorecard { margin-bottom: var(--space-6); }
 .theme-paper .scorecard h2 { margin-top: 0; }
 .theme-paper .scorecard-headline {
   display: flex;
@@ -857,8 +884,7 @@ body { margin: 0; }
 .theme-paper .previews {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: var(--space-4);
-  margin-bottom: var(--space-6);
+  gap: var(--gap-section);
 }
 .theme-paper .preview h2 { margin: 0 0 var(--space-3); font-size: var(--t-m); }
 .theme-paper .preview h2 a { text-decoration: none; }
@@ -931,8 +957,6 @@ body { margin: 0; }
    strip share a single level-1 because they share an x-axis and are indexed
    by the same delivery position, so two panels would draw a line through the
    middle of one figure. */
-.theme-paper .match-hero { margin-bottom: var(--space-4); }
-.theme-paper .match-figure { margin-bottom: var(--space-4); }
 .theme-paper .match-figure > div + div { margin-top: var(--space-5); }
 .theme-paper .match-figure h2 { margin-top: 0; }
 
