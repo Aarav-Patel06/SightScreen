@@ -30,6 +30,11 @@ import { describe, expect, it } from "vitest";
 
 const css = readFileSync(resolve(process.cwd(), "app/globals.css"), "utf8");
 
+/** CSS comments, removed. They sit between rules and break naive rule matching. */
+function stripComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
 /**
  * Widths a border is allowed to be.
  *
@@ -87,6 +92,103 @@ describe("border widths", () => {
       offenders,
       `border widths outside {${[...ALLOWED].join(", ")}} - if a new kind of ` +
         `line is intended, add it to ALLOWED with a reason`
+    ).toEqual([]);
+  });
+});
+
+// --- the radius scale (step 6 part two) ----------------------------------
+//
+// WHY THIS EXISTS. The hero rendered with 4px corners while the scorecard
+// beside it had 12px, and both are `.level-2`. The cause was a pre-elevation
+// `.theme-paper .hero` rule that declared its own 4px radius and happened to
+// sit later in the file at equal specificity, so source order won silently.
+//
+// That is the second time a value with an implied standard turned out to have
+// no scale behind it - spacing was the first - and the symptom was identical:
+// a handful of nearly-equal raw numbers nobody had chosen together. 2px, 3px,
+// 4px, 10px, 12px and 999px were all in use.
+
+const RADIUS_TOKENS = ["--radius-panel", "--radius-control", "--radius-sm", "--radius-pill"];
+
+describe("border radius", () => {
+  const declarations = [...css.matchAll(/(?<![-\w])border-radius\s*:\s*([^;{}]+)/g)].map(
+    (m) => m[1].trim()
+  );
+
+  it("finds the radii at all", () => {
+    expect(declarations.length).toBeGreaterThan(5);
+  });
+
+  it("declares the whole scale", () => {
+    for (const token of RADIUS_TOKENS) {
+      expect(css, `${token} is missing from .theme-paper`).toContain(`${token}:`);
+    }
+  });
+
+  it("uses a token everywhere, or an explicit zero", () => {
+    // `0` is allowed and meaningful: level 0 is a real level, and .panel
+    // says so by having no radius at all.
+    const offenders = declarations.filter(
+      (value) => value !== "0" && !/var\(--radius-/.test(value)
+    );
+    expect(
+      offenders,
+      `raw border-radius values - add them to the scale in .theme-paper or use ` +
+        `an existing token: ${offenders.join(", ")}`
+    ).toEqual([]);
+  });
+
+  it("gives every panel level the same radius", () => {
+    // The user-visible rule this bug produced: the scorecard was right and
+    // the hero was not. Two panel radii differing by 2px is drift, not a
+    // scale - so there is one.
+    const block = css.slice(css.indexOf(".theme-paper {"));
+    for (const level of [".theme-paper .level-1 {", ".theme-paper .level-2 {"]) {
+      const i = block.indexOf(level);
+      expect(i, `${level} not found`).toBeGreaterThan(-1);
+      const body = block.slice(i, block.indexOf("}", i));
+      expect(body, `${level} must use --radius-panel`).toContain("var(--radius-panel)");
+    }
+  });
+});
+
+describe("no selector sets a radius twice", () => {
+  // THE BUG CLASS, caught twice in one session and both times by looking at
+  // the rendered page rather than the stylesheet.
+  //
+  //   .theme-paper .hero        - declared at 563 via .level-2 and again at
+  //                               1147 with its own 4px, later wins
+  //   .theme-paper .ask-button  - declared in the shared control rule and
+  //                               again below it with 2px, later wins
+  //
+  // A second block adding DIFFERENT properties is normal and useful - the
+  // chrome section legitimately re-colours the footer. A second block
+  // redeclaring border-radius has no legitimate use here, and equal
+  // specificity means the winner is decided by file position, which is not a
+  // decision anyone makes on purpose.
+  it("declares border-radius at most once per selector", () => {
+    // COMMENTS ARE STRIPPED FIRST, and the first version of this did not do
+    // it. The matcher required each rule to be preceded by `}`, so any rule
+    // introduced by a comment - which in this stylesheet is most of them -
+    // produced a "selector" beginning `*/`, failed the .theme-paper prefix
+    // test, and was skipped. It saw 4 of the 14 radius declarations and
+    // passed on a file containing the exact duplicate it was written to
+    // catch. Found by probing it rather than by trusting a green run.
+    const block = stripComments(css.slice(css.indexOf(".theme-paper {")));
+    const seen = new Map<string, number>();
+    for (const m of block.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      if (!/border-radius\s*:/.test(m[2])) continue;
+      for (const raw of m[1].split(",")) {
+        const sel = raw.split(/\s+/).filter(Boolean).join(" ");
+        if (!sel.startsWith(".theme-paper")) continue;
+        seen.set(sel, (seen.get(sel) ?? 0) + 1);
+      }
+    }
+    const twice = [...seen.entries()].filter(([, n]) => n > 1).map(([s, n]) => `${s} (${n}x)`);
+    expect(
+      twice,
+      "these set border-radius in more than one block, so file position decides " +
+        "which wins - fold them into one rule"
     ).toEqual([]);
   });
 });

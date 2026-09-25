@@ -150,8 +150,19 @@ body { margin: 0; }
      paragraphs - takes no panel at all, which is the level that stops this
      becoming the templated default of boxing every section into identical
      rounded cards. */
-  --radius-1: 10px;
-  --radius-2: 12px;
+  /* THE RADIUS SCALE (step 6 part two). Four values, each with a distinct
+     job, because this is the SECOND time a value with an implied standard
+     turned out to have no scale behind it - spacing was the first, and the
+     symptom is identical: a handful of nearly-equal raw numbers that nobody
+     chose together.
+
+     Panels are one radius, not two. The old --radius-1 (10px) and
+     --radius-2 (12px) differed by 2px, which nobody could see and which
+     invited exactly the drift below. */
+  --radius-panel: 12px;
+  --radius-control: 4px;
+  --radius-sm: 2px;
+  --radius-pill: 999px;
   --shadow-1: 0 1px 2px rgba(42, 36, 25, 0.05);
   --shadow-2: 0 2px 8px rgba(42, 36, 25, 0.07);
 
@@ -161,7 +172,6 @@ body { margin: 0; }
      anywhere - so the Ask form's button was shorter than the input beside
      it purely because it used --t-xs and the input used --t-s. */
   --control-h: 40px;
-  --control-radius: 4px;
   --control-pad-x: var(--space-3);
 
   --measure: 68ch;
@@ -268,7 +278,7 @@ body { margin: 0; }
   background: var(--paper);
   border: 1px solid var(--ink);
   padding: var(--space-2) var(--space-3);
-  border-radius: var(--control-radius);
+  border-radius: var(--radius-control);
   z-index: 10;
 }
 .theme-paper .skip-link:focus { left: var(--space-2); }
@@ -361,7 +371,7 @@ body { margin: 0; }
 .theme-paper a:hover { text-decoration: underline; }
 .theme-paper .site-header nav a:hover { border-bottom-color: var(--rule); }
 .theme-paper .site-header nav a[aria-current="page"]:hover { border-bottom-color: var(--flag); }
-.theme-paper .ask-button:hover:not([disabled]) { background: var(--paper-deep); }
+.theme-paper .ask-button:hover:not([disabled]) { background: var(--ink-soft); }
 .theme-paper .level-1:hover .preview-list a { text-decoration: none; }
 .theme-paper .preview h2 a:hover { text-decoration: underline; }
 .theme-paper .preview-list li:hover { background: var(--paper-deep); }
@@ -375,11 +385,11 @@ body { margin: 0; }
   color: var(--ink);
   font-size: var(--t-xs);
   border: 1px solid var(--rule);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: var(--space-1) var(--space-2) var(--space-1) var(--space-2);
 }
 .theme-paper .live-dot {
-  width: 7px; height: 7px; border-radius: 999px;
+  width: 7px; height: 7px; border-radius: var(--radius-pill);
   background: var(--flag);
   flex: none;
 }
@@ -406,7 +416,6 @@ body { margin: 0; }
 
 .theme-paper .landing { max-width: var(--page); margin: 0 auto; padding: 0 16px; }
 
-.theme-paper .hero { padding: 40px 0 8px; }
 .theme-paper .hero-identity { font-size: var(--t-xs); margin: 0 0 4px; }
 .theme-paper .hero-teams {
   font-family: var(--font-plex-cond), var(--font-plex), sans-serif;
@@ -420,6 +429,15 @@ body { margin: 0; }
 .theme-paper .hero-note { margin: 0; font-size: var(--t-s); }
 
 .theme-paper .band { padding: 40px 0; border-top: 1px solid var(--rule); }
+
+/* A band directly under a panel draws no rule of its own. Its border-top
+   landed at exactly the panel's bottom edge - measured, both at y=583.5 and
+   both spanning 16 to 1124 - so two lines sat on the same pixel row. The
+   panel's corners curve inward and the band's do not, so the band's line
+   continued straight past the curve and read as the panel's own edge
+   escaping. It was a second element all along. */
+.theme-paper .level-1 + .band,
+.theme-paper .level-2 + .band { border-top: 0; }
 .theme-paper .band:first-of-type { border-top: 0; }
 .theme-paper .band h2 {
   font-size: var(--t-l);
@@ -553,7 +571,7 @@ body { margin: 0; }
 .theme-paper .level-1 {
   background: var(--paper-raised);
   border: 1px solid var(--rule);
-  border-radius: var(--radius-1);
+  border-radius: var(--radius-panel);
   box-shadow: var(--shadow-1);
   padding: var(--space-4);
 }
@@ -563,7 +581,7 @@ body { margin: 0; }
 .theme-paper .level-2 {
   background: var(--paper-raised);
   border: 1px solid var(--rule);
-  border-radius: var(--radius-2);
+  border-radius: var(--radius-panel);
   box-shadow: var(--shadow-2);
   padding: var(--space-5);
 }
@@ -673,7 +691,7 @@ body { margin: 0; }
 .theme-paper .live-now-dot {
   width: 7px;
   height: 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--flag);
   animation: live-pulse 2.4s ease-in-out infinite;
 }
@@ -886,7 +904,7 @@ body { margin: 0; }
 
 /* Two-tone, bowling side behind and batting side in front. --bowl and --bat
    are the FILL tokens; nothing here carries text. */
-.theme-paper .wp-bar { background: var(--bowl); border-radius: 2px; height: 8px; }
+.theme-paper .wp-bar { background: var(--bowl); border-radius: var(--radius-sm); height: 8px; }
 .theme-paper .wp-bar > span { background: var(--bat); }
 
 /* The phase mark replaces .chip. No border, no pill: the swatch carries the
@@ -903,7 +921,7 @@ body { margin: 0; }
 .theme-paper .strip { gap: 8px; margin-top: var(--space-4); }
 .theme-paper .strip .cell {
   border: 1px solid var(--rule);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   font-size: var(--t-xs);
   color: var(--ink);
 }
@@ -948,7 +966,7 @@ body { margin: 0; }
 .theme-paper .player-search input {
   height: var(--control-h);
   padding: 0 var(--control-pad-x);
-  border-radius: var(--control-radius);
+  border-radius: var(--radius-control);
   font: inherit;
   font-size: var(--t-s);
   line-height: calc(var(--control-h) - 2px);
@@ -987,7 +1005,7 @@ body { margin: 0; }
   font-variant-numeric: tabular-nums;
   color: var(--ink-soft);
   border: 1px dashed var(--rule);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   padding: 0 4px;
 }
 
@@ -1069,16 +1087,18 @@ body { margin: 0; }
   width: 100%;
 }
 .theme-paper .ask-input-password { width: 18rem; max-width: 100%; }
+/* The FILLED treatment only. Geometry - height, radius, padding, font size -
+   comes from the shared control rule above and is not repeated here.
+   This block used to redeclare all of it, and because it sits later at equal
+   specificity it won: the button rendered at 2px radius and 13.6px while the
+   input beside it was 4px and 17px, which is exactly the mismatch step 6
+   claimed to have fixed. The claim was made from the stylesheet; the render
+   disagreed. */
 .theme-paper .ask-button {
-  font: inherit;
-  font-size: var(--t-xs);
-  margin-top: 8px;
-  padding: 8px 16px;
-  border: 1px solid var(--ink);
-  border-radius: 3px;
+  margin-top: var(--space-2);
   background: var(--ink);
   color: var(--paper);
-  cursor: pointer;
+  border-color: var(--ink);
 }
 .theme-paper .ask-button:disabled {
   background: var(--paper);
@@ -1086,7 +1106,7 @@ body { margin: 0; }
   border-color: var(--rule);
   cursor: default;
 }
-.theme-paper .ask-input-password + .ask-button { margin-left: 8px; margin-top: 0; }
+.theme-paper .ask-input-password + .ask-button { margin-left: var(--space-2); margin-top: 0; }
 
 .theme-paper .ask-exchange { border-top: 1px solid var(--rule); padding: var(--space-4) 0; }
 .theme-paper .ask-question { font-weight: 600; margin: 0 0 8px; max-width: var(--measure); }
@@ -1140,23 +1160,18 @@ body { margin: 0; }
   font-weight: 600;
   padding: var(--space-2) var(--space-2) var(--space-2) var(--space-2);
 }
-.theme-paper .grid thead th:first-child { border-radius: 3px 0 0 3px; }
-.theme-paper .grid thead th:last-child { border-radius: 0 3px 3px 0; }
+.theme-paper .grid thead th:first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+.theme-paper .grid thead th:last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
 
-/* Raised surfaces: the hero and anything that should sit above the cream. */
-.theme-paper .hero {
-  background: var(--paper-raised);
-  border: 1px solid var(--rule);
-  border-radius: 4px;
-  padding: 32px 24px 24px;
-  margin-top: 24px;
-}
-.theme-paper .entry {
-  background: var(--paper-raised);
-  border: 1px solid var(--rule);
-  border-radius: 4px;
-  padding: var(--space-4) var(--space-5);
-}
+/* The pre-elevation .hero and .entry rules that used to sit here are DELETED.
+   They dated from session 2, before levels existed, and declared their own
+   background, border, 4px radius and padding. Step 4 gave the hero
+   `.level-2` - but this block sits LATER in the file at equal specificity, so
+   source order silently won and the hero rendered with level 2's shadow and
+   session 2's 4px corners. That is the whole of the "square bottom edge" bug:
+   not a border escaping a radius, just a radius that was never 12px.
+
+   .entry went with it - the step 5 rewrite removed its last use. */
 
 /* The skip link lands on chrome. */
 .theme-paper .skip-link { background: var(--paper-raised); border-color: var(--ink); }
