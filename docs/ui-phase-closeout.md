@@ -224,8 +224,28 @@ strip *is* the content — keeps its description.
    are queued (the eval cases gained output assertions, `get_matchup`'s
    dismissals FILTER was corrected, a tool-description batch is pending).
    Running now would buy one stale file for another.
+
+   **The batch, as of 2026-09-25** — one visit to this machinery, not five:
+
+   - tool descriptions
+   - `get_matchup`'s dismissal FILTER
+   - `get_live_prediction`'s column fix
+   - the citation case
+   - **the agent prompt/tools staleness gate, extracted out of `ci.yml`.**
+     Added by the safeguard audit (docs/safeguard-audit.md F5) as the last
+     guard in the repository whose failure path is unreachable: the check is
+     correct, but it lives inside a CI job, so firing it costs a red build on
+     `main`. Same fix as `PARITY_TOLERANCE` — move the comparison into a
+     script that can be run and failed locally, have CI call it, and prove it
+     fires by editing a Python source without re-emitting. Batched here rather
+     than done standalone because this work is already inside the emitters.
 2. **The pre-push hook is opt-in per clone.** `git config core.hooksPath
    .githooks`. A hook nobody enables is rule 17 again.
+
+   **SUPERSEDED 2026-09-25 — and the prediction in that last sentence was
+   correct.** Nobody ever enabled it: `core.hooksPath` was still unset and
+   `.git/hooks/pre-push` absent when the safeguard audit checked. It never ran
+   once. `.githooks/` is deleted; see docs/safeguard-audit.md F1.
 3. **`teams.short_name` is NULL for 347 rows.** Abbreviations derived from
    the name.
 4. **The player summary is only as fresh as its last rebuild.** Nothing

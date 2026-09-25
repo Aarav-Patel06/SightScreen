@@ -190,10 +190,49 @@ jobs:
       # The build is the only check that exercises the App Router's own
       # type generation and the server/client component boundary - tsc
       # alone will happily typecheck a client component that imports a
-      # server-only module. Env vars are placeholders: every page is
-      # force-dynamic, so nothing is prerendered and nothing connects.
+      # server-only module.
+      #
+      # WHAT THIS DOES NOT PROVE, corrected 2026-09-25. This comment used to
+      # say "every page is force-dynamic, so nothing is prerendered and
+      # nothing connects". That is false: only /accuracy is force-dynamic,
+      # while /, /matches and /players use `revalidate = 3600` and ARE
+      # prerendered here, against the placeholder credentials below.
+      #
+      # They do not fail. Every loader takes the degradation path built so a
+      # paused free-tier database yields a page instead of a 500, so the build
+      # succeeds and the pages render empty. Measured: with these exact
+      # values, `matches.html` prerenders with ZERO rows and the job is green.
+      #
+      # So this step proves the app compiles and the component boundary holds.
+      # It does NOT prove any page renders data, and it must not be read that
+      # way. Closing the gap needs read-only credentials and a row-count
+      # assertion; until then the limit is written here rather than implied.
+      #
+      # The secrets are used WHEN THEY EXIST and fall back to placeholders
+      # otherwise, so the day read-only credentials are added to this
+      # repository both the build and the check below become real with no
+      # further edit. That is the whole of the open item.
       - run: npm run build
         env:
-          NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
-          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
-          SUPABASE_SECRET_KEY: sb_secret_ci_placeholder
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://ci-placeholder.supabase.co' }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_ci_placeholder' }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY || 'sb_secret_ci_placeholder' }}
+
+      # Does the build contain DATA, not just compile? See docs/safeguard-audit.md
+      # F2: with placeholder credentials this job was green on a /matches that
+      # prerendered zero rows, because every loader has a deliberate
+      # degradation path and the build cannot tell degraded from working.
+      #
+      # Skipped loudly rather than silently while the credentials are absent.
+      # A ::warning:: appears on every run, which is the honest state - the
+      # check exists, it is proven to fire, and it is not yet guarding this
+      # job. It is NOT marked as passing.
+      - name: Built pages contain real data
+        env:
+          HAVE_DB: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+        run: |
+          if [ -z "$HAVE_DB" ]; then
+            echo "::warning::check-build-output.mjs NOT RUN - this job builds with placeholder credentials, so every prerendered page is empty by construction. Add NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY and SUPABASE_SECRET_KEY (read-only) as repository secrets and this starts guarding automatically. See docs/safeguard-audit.md F2."
+            exit 0
+          fi
+          node scripts/check-build-output.mjs

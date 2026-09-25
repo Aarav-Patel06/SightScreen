@@ -159,6 +159,27 @@ h3 { font-size: 13px; margin: 14px 0 6px; font-weight: 600; }
   --t-2xl: 39px;
   --t-3xl: 49px;
 
+  /* THE SPACING SCALE, added 2026-09-25 (UI-PHASE-2 section 3).
+     There was no spacing scale before this - a seven-step type scale and
+     nothing for space - so five sessions of raw pixels accumulated against a
+     4px rhythm nobody had written down. The audit found 8/16/24/32 used 77
+     times, alongside 3, 5, 6, 7, 10, 14 and 18. That is drift around an
+     implied scale, not an absence of intent, so the scale is written down and
+     the strays are snapped to it.
+
+     NOT tokenised, deliberately: 1px and 2px hairlines and every border
+     width, which are physical rather than rhythmic, and the pill radii. A
+     border is one or three device pixels of a drawn line; snapping a 3px
+     accent border to 4px makes it a different object, not a tidier one. The
+     first pass of this migration did exactly that, because `border-left`
+     ends in `left` and a careless regex treated it as a position. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
   --measure: 68ch;
   --page: 1140px;
   --column: 720px;
@@ -246,7 +267,7 @@ h3 { font-size: 13px; margin: 14px 0 6px; font-weight: 600; }
 .theme-paper .site-header-inner {
   max-width: var(--page);
   margin: 0 auto;
-  padding: 14px 16px;
+  padding: var(--space-4) var(--space-4);
   display: flex;
   align-items: center;
   gap: 16px;
@@ -266,7 +287,7 @@ h3 { font-size: 13px; margin: 14px 0 6px; font-weight: 600; }
 .theme-paper .site-header nav { margin-left: auto; }
 .theme-paper .site-header nav ul {
   list-style: none; margin: 0; padding: 0;
-  display: flex; gap: 18px;
+  display: flex; gap: var(--space-4);
   font-size: var(--t-xs);
 }
 .theme-paper .site-header nav a { color: var(--ink); text-decoration: none; }
@@ -281,7 +302,7 @@ h3 { font-size: 13px; margin: 14px 0 6px; font-weight: 600; }
   font-size: var(--t-xs);
   border: 1px solid var(--rule);
   border-radius: 999px;
-  padding: 3px 10px 3px 8px;
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-2);
 }
 .theme-paper .live-dot {
   width: 7px; height: 7px; border-radius: 999px;
@@ -318,10 +339,10 @@ h3 { font-size: 13px; margin: 14px 0 6px; font-weight: 600; }
   font-size: var(--t-2xl);
   font-weight: 600;
   letter-spacing: -0.02em;
-  margin: 0 0 6px;
+  margin: 0 0 var(--space-2);
 }
 .theme-paper .hero-state { font-size: var(--t-m); margin: 0 0 20px; }
-.theme-paper .hero-strip { margin-bottom: 14px; }
+.theme-paper .hero-strip { margin-bottom: var(--space-4); }
 .theme-paper .hero-note { margin: 0; font-size: var(--t-s); }
 
 .theme-paper .band { padding: 40px 0; border-top: 1px solid var(--rule); }
@@ -331,7 +352,7 @@ h3 { font-size: 13px; margin: 14px 0 6px; font-weight: 600; }
   font-weight: 600;
   margin: 0 0 16px;
 }
-.theme-paper .band p { margin: 0 0 14px; }
+.theme-paper .band p { margin: 0 0 var(--space-4); }
 .theme-paper .corpus-line { font-size: var(--t-xs); }
 
 /* The figure leads, because it is the thing that proves the entry point is
@@ -342,7 +363,7 @@ h3 { font-size: 13px; margin: 14px 0 6px; font-weight: 600; }
 .theme-paper .entry-provenance { font-size: var(--t-xs); }
 
 .theme-paper .not-built { margin: 0; }
-.theme-paper .not-built > div { margin-bottom: 18px; }
+.theme-paper .not-built > div { margin-bottom: var(--space-4); }
 .theme-paper .not-built dt { font-weight: 600; margin-bottom: 2px; }
 .theme-paper .not-built dd { margin: 0; color: var(--ink-soft); }
 
@@ -397,15 +418,15 @@ h3 { font-size: 13px; margin: 14px 0 6px; font-weight: 600; }
 }
 .theme-paper .filters fieldset {
   border: 0; margin: 0; padding: 0;
-  display: flex; gap: 14px;
+  display: flex; gap: var(--space-4);
 }
-.theme-paper .filters label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.theme-paper .filters label { display: flex; align-items: center; gap: var(--space-1); cursor: pointer; }
 .theme-paper .filters input { accent-color: var(--bat); }
 .theme-paper .filter-count { margin: 0 0 0 auto; }
 
 .theme-paper .matches-table { width: 100%; font-size: var(--t-xs); }
-.theme-paper .matches-table td { padding: 7px 10px 7px 0; vertical-align: middle; }
-.theme-paper .matches-table th { padding-bottom: 6px; }
+.theme-paper .matches-table td { padding: var(--space-2) var(--space-2) var(--space-2) 0; vertical-align: middle; }
+.theme-paper .matches-table th { padding-bottom: var(--space-2); }
 .theme-paper .nowrap { white-space: nowrap; }
 
 /* The sparkline column. Fixed width so every strip shares a scale-per-row
@@ -454,7 +475,7 @@ h3 { font-size: 13px; margin: 14px 0 6px; font-weight: 600; }
 
 .theme-paper h1 { font-size: var(--t-xl); margin: 0 0 4px; font-weight: 600; }
 .theme-paper h2 { font-size: var(--t-m); margin: 0 0 12px; font-weight: 600; }
-.theme-paper h3 { font-size: var(--t-s); margin: 14px 0 6px; font-weight: 600; }
+.theme-paper h3 { font-size: var(--t-s); margin: var(--space-4) 0 var(--space-2); font-weight: 600; }
 
 .theme-paper .wp-number {
   font-family: var(--font-plex-cond), var(--font-plex), sans-serif;
@@ -474,13 +495,13 @@ h3 { font-size: 13px; margin: 14px 0 6px; font-weight: 600; }
 .theme-paper .phase-mark {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--space-2);
   font-size: var(--t-xs);
   color: var(--ink-soft);
 }
 .theme-paper .phase-swatch { flex: none; }
 
-.theme-paper .strip { gap: 8px; margin-top: 14px; }
+.theme-paper .strip { gap: 8px; margin-top: var(--space-4); }
 .theme-paper .strip .cell {
   border: 1px solid var(--rule);
   border-radius: 3px;
@@ -490,7 +511,7 @@ h3 { font-size: 13px; margin: 14px 0 6px; font-weight: 600; }
 .theme-paper .strip .cell.absent { color: var(--ink-soft); border-style: dashed; }
 
 .theme-paper .absent-items { margin: 0; }
-.theme-paper .absent-items > div { margin-bottom: 14px; }
+.theme-paper .absent-items > div { margin-bottom: var(--space-4); }
 .theme-paper .absent-items dt { font-weight: 600; font-size: var(--t-xs); }
 .theme-paper .absent-items dd {
   margin: 2px 0 0;
@@ -508,24 +529,24 @@ h3 { font-size: 13px; margin: 14px 0 6px; font-weight: 600; }
   display: block;
   font-size: var(--t-xs);
   color: var(--ink-soft);
-  margin-bottom: 5px;
+  margin-bottom: var(--space-1);
 }
 .theme-paper .player-search input {
   width: 100%;
   max-width: 380px;
   font: inherit;
   font-size: var(--t-s);
-  padding: 7px 10px;
+  padding: var(--space-2) var(--space-2);
   border: 1px solid var(--rule);
   border-radius: 3px;
   background: var(--paper);
   color: var(--ink);
 }
-.theme-paper .player-search p { font-size: var(--t-xs); margin: 6px 0 0; }
+.theme-paper .player-search p { font-size: var(--t-xs); margin: var(--space-2) 0 0; }
 
 .theme-paper .players-table, .theme-paper .player-table { width: 100%; font-size: var(--t-xs); }
 .theme-paper .num { text-align: right; }
-.theme-paper .players-table td, .theme-paper .player-table td { padding: 6px 10px 6px 0; }
+.theme-paper .players-table td, .theme-paper .player-table td { padding: var(--space-2) var(--space-2) var(--space-2) 0; }
 
 /* The career line reads as the summary of the rows under it. */
 .theme-paper .career-row td { font-weight: 600; }
@@ -585,7 +606,7 @@ h3 { font-size: 13px; margin: 14px 0 6px; font-weight: 600; }
 .theme-paper .band-off {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--space-1);
   color: var(--flag);
   font-size: var(--t-xs);
 }
@@ -614,14 +635,14 @@ h3 { font-size: 13px; margin: 14px 0 6px; font-weight: 600; }
 .theme-paper .ask-form { margin: 28px 0; }
 .theme-paper .ask-form label {
   display: block;
-  margin-bottom: 6px;
+  margin-bottom: var(--space-2);
   font-size: var(--t-xs);
   color: var(--ink-soft);
 }
 .theme-paper .ask-input {
   font: inherit;
   font-size: var(--t-s);
-  padding: 8px 10px;
+  padding: var(--space-2) var(--space-2);
   width: 100%;
   border: 1px solid var(--rule);
   border-radius: 3px;
@@ -648,7 +669,7 @@ h3 { font-size: 13px; margin: 14px 0 6px; font-weight: 600; }
 }
 .theme-paper .ask-input-password + .ask-button { margin-left: 8px; margin-top: 0; }
 
-.theme-paper .ask-exchange { border-top: 1px solid var(--rule); padding: 18px 0; }
+.theme-paper .ask-exchange { border-top: 1px solid var(--rule); padding: var(--space-4) 0; }
 .theme-paper .ask-question { font-weight: 600; margin: 0 0 8px; max-width: var(--measure); }
 .theme-paper .ask-answer { white-space: pre-wrap; margin: 0; max-width: var(--measure); }
 .theme-paper .ask-transparency {
@@ -692,7 +713,7 @@ h3 { font-size: 13px; margin: 14px 0 6px; font-weight: 600; }
   background: var(--chrome-deep);
   color: var(--ink);
   font-weight: 600;
-  padding: 7px 10px 7px 8px;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-2);
   border-bottom: 0;
 }
 .theme-paper .grid thead th:first-child { border-radius: 3px 0 0 3px; }
@@ -710,7 +731,7 @@ h3 { font-size: 13px; margin: 14px 0 6px; font-weight: 600; }
   background: var(--paper-raised);
   border: 1px solid var(--rule);
   border-radius: 4px;
-  padding: 18px 20px;
+  padding: var(--space-4) var(--space-5);
 }
 
 /* The skip link lands on chrome. */

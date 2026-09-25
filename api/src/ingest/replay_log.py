@@ -617,6 +617,31 @@ class ModelVersionChanged(RuntimeError):
     """
 
 
+def parity_verdict(comparisons) -> tuple[float, tuple | None]:
+    """(worst absolute difference, the ball that produced it) for one match.
+
+    EXTRACTED 2026-09-25 SO IT CAN BE PROVEN TO FIRE. This is the only check
+    that the deployed service and the local recomputation agree, and until now
+    it lived inline in `run()`'s 120-line loop, reachable only by driving a
+    full replay against a service returning wrong numbers. That is not a
+    testable failure path, and a guard whose failure path cannot be reached is
+    indistinguishable from a comment - which is the finding this extraction
+    came out of.
+
+    `comparisons` is an iterable of (ball, remote_p, local_p). Returning the
+    worst rather than a boolean keeps the caller's message - which ball, both
+    values, the magnitude - because "parity failed" without the numbers sends
+    someone back to re-run the whole thing to find out by how much.
+    """
+    max_diff = 0.0
+    worst = None
+    for ball, remote_p, local_p in comparisons:
+        diff = abs(remote_p - local_p)
+        if diff > max_diff:
+            max_diff, worst = diff, (ball, remote_p, local_p)
+    return max_diff, worst
+
+
 def confirm_model_version(supabase_conn, expected: str) -> None:
     version, _path, _notes = active_model_row(supabase_conn)
     if version != expected:
@@ -770,18 +795,16 @@ def run(manifest: dict, deployed_count: int, base_url: str, limit: int | None = 
             if via_service:
                 # The deployed service writes its own rows; this loop only
                 # posts, then checks the local recomputation agrees.
-                max_diff = 0.0
-                worst = None
                 have = logged_ball_keys(supabase_conn, match_id, version)
                 posted = 0
+                comparisons = []
                 for ball, local in zip(balls, scored):
                     if (ball["innings"], ball["over_num"], ball["ball_in_over"]) in have:
                         continue
                     posted += 1
                     remote_p, _logged = post_ball(base_url, match_id, ball)
-                    diff = abs(remote_p - local["p"])
-                    if diff > max_diff:
-                        max_diff, worst = diff, (ball, remote_p, local["p"])
+                    comparisons.append((ball, remote_p, local["p"]))
+                max_diff, worst = parity_verdict(comparisons)
                 if max_diff > PARITY_TOLERANCE:
                     failures += 1
                     ball, remote_p, local_p = worst

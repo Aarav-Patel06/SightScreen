@@ -21,14 +21,17 @@ import {
   AA_TEXT,
   CHROME_SAFE_TEXT,
   CHROME_TOKENS,
-  FILL_FLOOR,
   EXEMPT_TOKENS,
+  FILL_FLOOR,
   FILL_TOKENS,
   NON_COLOUR_PREFIXES,
   PAPER,
+  SPACE_STEP_PX,
+  SPACE_TOKENS,
   TEXT_TOKENS,
   contrast,
   luminance,
+  parseLengthTokens,
   parseThemeTokens,
 } from "./tokens";
 
@@ -155,5 +158,38 @@ describe("contrast", () => {
     expect(contrast("#000000", "#FFFFFF")).toBeCloseTo(21, 1);
     expect(contrast("#FFFFFF", "#000000")).toBeCloseTo(21, 1);
     expect(contrast("#777777", "#777777")).toBeCloseTo(1, 5);
+  });
+});
+
+// --- the spacing scale (UI-PHASE-2 step 2) --------------------------------
+//
+// There was no spacing scale before 2026-09-25 - a seven-step type scale and
+// nothing for space - so 3, 5, 6, 7, 10, 14 and 18px accumulated across five
+// sessions. These assert the scale exists, is a scale, and stays one.
+
+describe("the spacing scale", () => {
+  const lengths = parseLengthTokens(css);
+  const px = (token: string) => {
+    const value = lengths[token];
+    expect(value, `${token} is missing from the stylesheet`).toBeDefined();
+    return value;
+  };
+
+  it.each(SPACE_TOKENS)("%s is declared and on the 4px rhythm", (token) => {
+    const value = px(token);
+    expect(Number.isFinite(value)).toBe(true);
+    expect(value % SPACE_STEP_PX).toBe(0);
+  });
+
+  it("increases monotonically, so the steps are ordered", () => {
+    const values = SPACE_TOKENS.map(px);
+    for (let i = 1; i < values.length; i += 1) {
+      expect(values[i]).toBeGreaterThan(values[i - 1]);
+    }
+  });
+
+  it("has no two steps with the same value", () => {
+    const values = SPACE_TOKENS.map(px);
+    expect(new Set(values).size).toBe(values.length);
   });
 });

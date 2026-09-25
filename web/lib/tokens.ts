@@ -73,7 +73,52 @@ export const EXEMPT_TOKENS = [
 ] as const;
 
 /** Type-scale, measure and layout tokens - not colours, so not classified. */
-export const NON_COLOUR_PREFIXES = ["--t-", "--measure", "--page", "--column", "--font-"];
+export const NON_COLOUR_PREFIXES = [
+  "--t-",
+  "--space-",
+  "--measure",
+  "--page",
+  "--column",
+  "--font-",
+];
+
+/**
+ * The spacing scale, asserted rather than trusted.
+ *
+ * Added with the scale itself in UI-PHASE-2 step 2. A scale is only a scale
+ * while every step is on it: the whole reason 3, 5, 6, 7, 10, 14 and 18px
+ * accumulated over five sessions is that there was nothing to be off.
+ */
+export const SPACE_TOKENS = [
+  "--space-1",
+  "--space-2",
+  "--space-3",
+  "--space-4",
+  "--space-5",
+  "--space-6",
+] as const;
+
+/** The rhythm every step must land on. */
+export const SPACE_STEP_PX = 4;
+
+/**
+ * Length tokens from the theme block, in pixels.
+ *
+ * Separate from `parseThemeTokens` rather than folded into it: that one
+ * deliberately matches only six-digit hex, because every consumer of it is a
+ * contrast calculation and a `68ch` in that map would become `NaN` inside a
+ * luminance function rather than a failure anyone could read.
+ */
+export function parseLengthTokens(css: string): Record<string, number> {
+  const block = css.match(/\.theme-paper\s*\{([\s\S]*?)\}/);
+  if (!block) return {};
+
+  const lengths: Record<string, number> = {};
+  for (const match of block[1].matchAll(/(--[a-z0-9-]+)\s*:\s*(-?[0-9.]+)px\s*;/g)) {
+    lengths[match[1]] = Number(match[2]);
+  }
+  return lengths;
+}
 
 /** WCAG 2.1 relative luminance of an #RRGGBB string. */
 export function luminance(hex: string): number {
