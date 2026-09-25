@@ -24,12 +24,37 @@ import { useState } from "react";
 
 type Exchange = { question: string; answer?: string; note?: string };
 
+/**
+ * Four example questions, and every one was checked against the corpus before
+ * it shipped.
+ *
+ * The reference design proposed "Which bowlers have the best economy vs
+ * left-handers?" and "How does Rohit Sharma perform at home vs away?". Both
+ * were DROPPED: `players.batting_hand` is NULL for all 18,468 rows and
+ * `venues.country` is NULL for all 349, so neither question has an answer in
+ * this data. Shipping them as inviting buttons would spend real money on
+ * questions guaranteed to return a non-answer.
+ *
+ * The four below were each run as SQL against the corpus first:
+ *   death-over strike rate  - AB de Villiers 202.8 over 1,309 balls
+ *   death-over economy      - Virandeep Singh 6.17 over 436 balls
+ *   Kohli v Starc           - ODI 174 balls, 162 runs, 2 dismissals
+ *   2024 batting average    - K Kadowaki-Fleming 50.6
+ */
+const EXAMPLES = [
+  "Which batters have the best strike rate in the death overs?",
+  "Which bowlers are hardest to score off at the death?",
+  "How does Virat Kohli fare against Mitchell Starc?",
+  "Who averaged most with the bat in 2024?",
+] as const;
+
 export default function AskPage() {
   const [signedIn, setSignedIn] = useState(false);
   const [password, setPassword] = useState("");
   const [question, setQuestion] = useState("");
   const [history, setHistory] = useState<Exchange[]>([]);
   const [notice, setNotice] = useState("");
+  const [capped, setCapped] = useState(false);
   const [busy, setBusy] = useState(false);
 
   async function signIn(event: React.FormEvent) {
@@ -60,6 +85,7 @@ export default function AskPage() {
     if (!asked || busy) return;
     setBusy(true);
     setNotice("");
+    setCapped(false);
     setQuestion("");
     setHistory((prior) => [...prior, { question: asked }]);
     try {
@@ -69,6 +95,20 @@ export default function AskPage() {
         body: JSON.stringify({ question: asked }),
       });
       const body = await response.json().catch(() => ({}));
+      if (response.status === 429) {
+        // THE CAP, SURFACED PROPERLY. It used to land in `item.note`, which
+        // renders as small muted text inside the exchange - four sentences of
+        // explanation styled as an aside. A visitor who has just hit a
+        // spending limit needs to read it, so it goes to the notice slot the
+        // 401 path already uses and gets its own treatment.
+        //
+        // The cap LOGIC is untouched: this reads the status the route already
+        // returns and the message lib/agent-usage.ts already writes.
+        setNotice(body.error ?? "This demo has reached its daily budget.");
+        setCapped(true);
+        setHistory((prior) => prior.slice(0, -1));
+        return;
+      }
       if (response.status === 401) {
         // The session lapsed or was never valid. Back to the password field
         // rather than a dead-end message.
@@ -116,21 +156,52 @@ export default function AskPage() {
           </button>
         </form>
       ) : (
-        <form onSubmit={ask} className="ask-form">
-          <input
-            aria-label="Your question"
-            value={question}
-            onChange={(event) => setQuestion(event.target.value)}
-            placeholder="How does Virat Kohli fare against Mitchell Starc?"
-            className="ask-input"
-          />
-          <button type="submit" disabled={busy || !question.trim()} className="ask-button">
-            {busy ? "Thinking…" : "Ask"}
-          </button>
-        </form>
+        <>
+          <form onSubmit={ask} className="ask-form ask-form-wide">
+            <input
+              aria-label="Your question"
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+              placeholder="Ask about players, matches or the model"
+              className="ask-input"
+            />
+            <button type="submit" disabled={busy || !question.trim()} className="ask-button">
+              {busy ? "Thinking…" : "Ask"}
+            </button>
+          </form>
+
+          <ul className="ask-examples">
+            {EXAMPLES.map((example) => (
+              <li key={example}>
+                <button
+                  type="button"
+                  className="ask-chip"
+                  disabled={busy}
+                  onClick={() => setQuestion(example)}
+                >
+                  {example}
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          {/* Each of these is a real model call. Four inviting buttons beside
+              a $2 daily cap is an easy way to exhaust it by accident, so the
+              cost is stated where the buttons are rather than discovered when
+              the cap trips. They FILL the box rather than submitting, so a
+              click costs nothing until you press Ask. */}
+          <p className="tiny muted ask-examples-note">
+            Clicking one fills the box; it does not ask. Each question costs
+            roughly 1.7&nbsp;cents of model time against a $2 daily cap.
+          </p>
+        </>
       )}
 
-      {notice ? <p role="status">{notice}</p> : null}
+      {notice ? (
+        <p role="status" className={capped ? "ask-cap" : undefined}>
+          {notice}
+        </p>
+      ) : null}
 
       {/* §4.7 asks for tool calls to render as a collapsed line the visitor
           can expand - "queried 3.78M deliveries" opening to the SQL. It is

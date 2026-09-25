@@ -45,7 +45,7 @@ export function PlayerSearch({ players }: { players: PlayerRow[] }) {
           type="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Kohli, or Virat Kohli"
+          placeholder="Try a last name"
           autoComplete="off"
         />
         <p className="soft tnum" aria-live="polite">

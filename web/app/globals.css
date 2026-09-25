@@ -628,6 +628,84 @@ body { margin: 0; }
 .theme-paper .corner-graphic { z-index: -1; }
 
 /* ------------------------------------------------------------------------
+   VISUAL HIERARCHY: the primary action (step 6 part two, item 2).
+
+   Only pages that HAVE an action get one. /ask is its input, /players its
+   search, /matches its rows. /match, /player, /accuracy and /model-card are
+   read-only, and nothing is invented for them - the headline number or the
+   strip carries the weight there, and everything else stays subdued. A page
+   with a manufactured call to action reads as a page trying to sell you
+   something.
+   --------------------------------------------------------------------- */
+
+/* /ask - the input is the page. Full width within the margins, at level 1, so
+   it is the first thing the eye lands on after the heading. */
+.theme-paper .ask-form-wide {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  width: 100%;
+  margin: var(--space-5) 0 var(--space-3);
+}
+.theme-paper .ask-form-wide .ask-input { flex: 1 1 auto; min-width: 0; }
+.theme-paper .ask-form-wide .ask-button { flex: none; }
+
+/* The example chips. Controls, so they take the control radius and font;
+   shorter than a control because they are suggestions, not the action. */
+.theme-paper .ask-examples {
+  list-style: none;
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.theme-paper .ask-chip {
+  font: inherit;
+  font-size: var(--t-xs);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: var(--paper-raised);
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+.theme-paper .ask-chip:hover:not([disabled]) { background: var(--paper-deep); }
+.theme-paper .ask-chip[disabled] { opacity: 0.5; cursor: not-allowed; }
+.theme-paper .ask-examples-note { margin: 0 0 var(--space-5); }
+
+/* THE CAP MESSAGE, when it trips. It used to render as small muted text
+   inside the exchange list - four sentences of explanation styled as an
+   aside. Someone who has just hit a spending limit has to be able to read
+   it, so it gets a panel and body-sized type. --flag on the left edge
+   because it is a stop, not an error: nothing is broken. */
+.theme-paper .ask-cap {
+  border-left: 3px solid var(--flag);
+  background: var(--paper-raised);
+  border-radius: var(--radius-control);
+  padding: var(--space-4);
+  margin: var(--space-4) 0;
+  font-size: var(--t-s);
+  max-width: var(--measure);
+}
+
+/* /players - the search is the action. */
+.theme-paper .player-search input { box-shadow: var(--shadow-1); }
+.theme-paper .ask-form-wide .ask-input { box-shadow: var(--shadow-1); }
+
+/* THE FOOTER (item 4). Mark, then three pipe-separated sections. */
+.theme-paper .footer-source {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.theme-paper .footer-sep {
+  margin: 0 var(--space-2);
+  color: var(--rule);
+}
+
+/* ------------------------------------------------------------------------
    THE LANDING PAGE (UI-PHASE-2 section 6). Closes the phase.
    --------------------------------------------------------------------- */
 

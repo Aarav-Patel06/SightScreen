@@ -140,6 +140,46 @@ try {
     }
     await page.close();
   }
+
+  /*
+   * THE SIGNED-IN /ask, which the loop above cannot reach.
+   *
+   * Added 2026-09-25 after the example chips and the wide input shipped: they
+   * only render behind the password gate, so every route above measured a
+   * page that did not contain them. A guard that checks the logged-out state
+   * of a gated page is measuring the wrong page - it was only luck that a
+   * manual check caught it.
+   *
+   * Skipped loudly when ASK_PASSWORD is absent rather than passing silently.
+   */
+  const password = process.env.ASK_PASSWORD;
+  if (!password) {
+    console.log("");
+    console.log("  ----  signed-in /ask NOT CHECKED: ASK_PASSWORD is not set.");
+    console.log("        The chips and the wide input only exist behind the gate.");
+  } else {
+    for (const width of WIDTHS) {
+      const page = await browser.newPage({ viewport: { width, height: 1000 } });
+      try {
+        await page.goto(`${BASE_URL}/ask`, { waitUntil: "load", timeout: 90_000 });
+        await page.fill(".ask-input-password", password);
+        await page.click(".ask-button");
+        await page.waitForSelector(".ask-chip", { timeout: 30_000 });
+        const result = await page.evaluate(() => ({
+          scrollWidth: document.documentElement.scrollWidth,
+          clientWidth: document.documentElement.clientWidth,
+        }));
+        if (result.scrollWidth > result.clientWidth + 1) {
+          fail(`/ask signed in at ${width}px scrolls sideways: ${result.scrollWidth}px of ${result.clientWidth}px`);
+        } else {
+          console.log(`  ok    /ask (signed in) ${width}px`);
+        }
+      } catch (error) {
+        fail(`/ask signed in at ${width}px: ${String(error).slice(0, 120)}`);
+      }
+      await page.close();
+    }
+  }
 } finally {
   await browser.close();
 }
