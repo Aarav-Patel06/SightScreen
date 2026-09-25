@@ -28,22 +28,34 @@ body { margin: 0; }
      Repalette of 2026-09-24. The type scale, layout, component structure and
      the texture system are unchanged - only hues moved.
 
-     PROVISIONAL: --bat and --bowl are DERIVED, not sampled. The reference
-     image did not reach the session, so these two were computed from the
-     stated constraints (teal / brown-tan, matched to each other, clearing
-     every floor below) rather than read off the design. Swapping them for
-     sampled values is a two-line change; every other token here is the
-     reference's own hex. */
-  --paper: #F9F5EA;
-  --paper-raised: #FDFBF6;
+     SAMPLED 2026-09-25, and the note that used to sit here was wrong in a
+     way worth keeping. It read "PROVISIONAL: --bat and --bowl are DERIVED,
+     not sampled. The reference image did not reach the session." The
+     reference had been in the repository for five sessions, as
+     public/logo.png - filed as a logo, so nobody read it as a colour source.
+
+     Sampled from that artwork: teal #366C73, ball #98374B, tan #C6B592,
+     cream #F7F6E9. The four surfaces between them (--paper-raised,
+     --paper-deep, --rule, --chrome-deep) are BLENDS BETWEEN TWO SAMPLED
+     ANCHORS, chosen to reproduce the contrast relationships the derived
+     palette had - so their hues stay inside the artwork's range rather than
+     being invented. The first attempt scaled RGB instead of blending and
+     produced an orange --paper-deep; hue drift is what that buys.
+
+     --bowl (#935B2B) is still derived. There is no brown in the artwork; it
+     exists because the batting and bowling sides need to differ from each
+     other AND from the failure colour, and section 3.2 forbids reusing
+     crimson for the bowling side. */
+  --paper: #F7F6E9;
+  --paper-raised: #FCFBF6;
   /* The foot of the page wash (section 3.3). ~3% darker than --paper, which
      is 1.03:1 against it - about a third of the separation between --paper
      and --paper-raised, and an order of magnitude below anything the eye
      reads as an edge. */
-  --paper-deep: #F2EEE3;
-  --chrome: #D5C3A5;
-  --chrome-deep: #C6A67B;
-  --rule: #E0D5BF;
+  --paper-deep: #F1EEDF;
+  --chrome: #C6B592;
+  --chrome-deep: #AC9C7E;
+  --rule: #DFD6BD;
 
   --ink: #2A2419;
   --ink-soft: #6B6152;
@@ -66,11 +78,11 @@ body { margin: 0; }
      So the fill floor in lib/tokens.test.ts is 4.5, not 3.0. Nothing in this
      design can use a 3:1 fill; leaving the test at the WCAG minimum would
      leave a gap a future hue falls into silently. */
-  --bat: #1D727C;
+  --bat: #366C73;
   --bowl: #935B2B;
-  --bat-text: #1D727C;
+  --bat-text: #366C73;
   --bowl-text: #935B2B;
-  --flag: #A8324A;
+  --flag: #98374B;
 
   --t-xs: 12.8px;
   --t-s: 16px;

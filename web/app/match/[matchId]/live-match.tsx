@@ -74,11 +74,11 @@ const CONFIDENCE: Record<Phase, { label: string; low: boolean }> = {
  * the reference line is --rule.
  */
 const CHART = {
-  paper: "#F9F5EA",
+  paper: "#F7F6E9",
   ink: "#2A2419",
   soft: "#6B6152",
-  rule: "#E0D5BF",
-  bat: "#1D727C",
+  rule: "#DFD6BD",
+  bat: "#366C73",
 } as const;
 
 /**

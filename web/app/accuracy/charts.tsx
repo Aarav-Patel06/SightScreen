@@ -42,14 +42,17 @@ import { reliabilityPoints, type Decile } from "@/lib/accuracy";
  * hand-rolled.
  *
  * Keep in step with .theme-paper in globals.css. lib/tokens.test.ts holds
- * that block to its contrast floors and cannot see these copies.
+ * that block to its contrast floors and cannot see these copies -
+ * lib/chart-colours.test.ts now does, by parsing both this file and the
+ * stylesheet and comparing. The comment above used to end at "cannot see
+ * these copies", which described the gap accurately and left it open.
  */
 const CHART = {
-  paper: "#F9F5EA",
+  paper: "#F7F6E9",
   ink: "#2A2419",
   soft: "#6B6152",
-  rule: "#E0D5BF",
-  bat: "#1D727C",
+  rule: "#DFD6BD",
+  bat: "#366C73",
 } as const;
 
 export function ReliabilityDiagram({ deciles }: { deciles: Decile[] | undefined }) {
