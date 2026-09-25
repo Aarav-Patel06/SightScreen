@@ -36,7 +36,8 @@ body { margin: 0; }
 
      Sampled from that artwork: teal #366C73, ball #98374B, tan #C6B592,
      cream #F7F6E9. The four surfaces between them (--paper-raised,
-     --paper-deep, --rule, --chrome-deep) are BLENDS BETWEEN TWO SAMPLED
+     --paper-deep, --rule, and the since-removed --chrome-deep) are BLENDS
+     BETWEEN TWO SAMPLED
      ANCHORS, chosen to reproduce the contrast relationships the derived
      palette had - so their hues stay inside the artwork's range rather than
      being invented. The first attempt scaled RGB instead of blending and
@@ -53,8 +54,33 @@ body { margin: 0; }
      and --paper-raised, and an order of magnitude below anything the eye
      reads as an edge. */
   --paper-deep: #F1EEDF;
-  --chrome: #C6B592;
-  --chrome-deep: #AC9C7E;
+  /* ONE CHROME, LIGHT, AND THE SECOND TIER IS GONE (step 6).
+     --chrome was #C6B592, where --flag measured 3.49:1. That is why crimson
+     could not appear in a table header band for two steps, while section 3.2
+     assigns crimson to exactly the failure states a header row reports.
+
+     At #EEEAD8 every text token clears 4.5:1 on chrome - ink 12.75, flag
+     5.83, ink-soft 5.03, bat-text 4.90, bowl-text 4.61 - so CHROME_SAFE_TEXT
+     is deleted rather than relaxed. #EEEAD8 is the DARKEST chrome that does
+     this with a 4.6 margin, so the band keeps as much presence as the unlock
+     allows.
+
+     THE BINDING TOKEN IS --bowl-text, and it was missed when this value was
+     first chosen. Four tokens were measured, #E9E3CF was picked as the
+     darkest that cleared them, and the inverted test in lib/tokens.test.ts
+     immediately failed on the fifth at 4.34:1. The lesson is the cheap one:
+     a safe-list has a definite length and you can check it, while "every
+     token" has to be enumerated from the registry, not from memory.
+
+     --chrome-deep is removed because it cannot survive the unlock: at the
+     lightest chrome that carries every token, the darkest second tier that
+     also carries them separates by about 1.00, which is no tier at all.
+     Table header rows are now marked by weight and a rule, not by fill.
+
+     The cost is real and is paid elsewhere: chrome against paper falls from
+     1.853 to 1.110, so the header's edge is carried by --shadow-1 rather
+     than by its fill. */
+  --chrome: #EEEAD8;
   --rule: #DFD6BD;
 
   --ink: #2A2419;
@@ -84,13 +110,17 @@ body { margin: 0; }
   --bowl-text: #935B2B;
   --flag: #98374B;
 
-  --t-xs: 12.8px;
-  --t-s: 16px;
-  --t-m: 20px;
-  --t-l: 25px;
-  --t-xl: 31px;
-  --t-2xl: 39px;
-  --t-3xl: 49px;
+  /* 17px base, ratio 1.25 unchanged - the whole scale moves together.
+     Chosen by measuring the 340px overflow risk rather than by eye: at 17px
+     the hero teams line needs about 280px of the 308px available, leaving 28
+     for a longer pairing; at 18px it needs 296 and leaves 12. */
+  --t-xs: 13.6px;
+  --t-s: 17px;
+  --t-m: 21.3px;
+  --t-l: 26.6px;
+  --t-xl: 33.2px;
+  --t-2xl: 41.5px;
+  --t-3xl: 51.9px;
 
   /* THE SPACING SCALE, added 2026-09-25 (UI-PHASE-2 section 3).
      There was no spacing scale before this - a seven-step type scale and
@@ -124,6 +154,15 @@ body { margin: 0; }
   --radius-2: 12px;
   --shadow-1: 0 1px 2px rgba(42, 36, 25, 0.05);
   --shadow-2: 0 2px 8px rgba(42, 36, 25, 0.07);
+
+  /* ONE CONTROL GEOMETRY (step 6). The audit found five controls with three
+     radii, two font sizes, two raw-px paddings that step 2's migration
+     walked past because 8px and 16px are ON the scale, and no height set
+     anywhere - so the Ask form's button was shorter than the input beside
+     it purely because it used --t-xs and the input used --t-s. */
+  --control-h: 40px;
+  --control-radius: 4px;
+  --control-pad-x: var(--space-3);
 
   --measure: 68ch;
   --page: 1140px;
@@ -225,13 +264,14 @@ body { margin: 0; }
 .theme-paper .skip-link {
   position: absolute;
   left: -9999px;
-  top: 8px;
+  top: var(--space-2);
   background: var(--paper);
   border: 1px solid var(--ink);
-  padding: 8px 12px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--control-radius);
   z-index: 10;
 }
-.theme-paper .skip-link:focus { left: 8px; }
+.theme-paper .skip-link:focus { left: var(--space-2); }
 
 /* Screen-reader-only, but still focusable and still read. Not `display:none`,
    which removes it from the accessibility tree entirely. */
@@ -245,13 +285,30 @@ body { margin: 0; }
 }
 
 .theme-paper .site-header { border-bottom: 1px solid var(--rule); }
+/* THE HEADER WRAPS, and it should have from the beginning.
+   Measured 2026-09-25 with a real browser at 340px: the inner row was 415px
+   wide, so every page scrolled sideways on a phone. Step 6's larger type made
+   it worse - 373px at the old scale - but did NOT cause it: wordmark 127 plus
+   nav 214 already exceeded 340 before any of this. UI-PHASE section 1.6 says
+   mobile-first and names 340px, and the header had never fitted there.
+
+   Nothing caught it because nothing had ever laid the page out at that width;
+   the suite asserts contrast and content, and jsdom does no layout. */
 .theme-paper .site-header-inner {
   max-width: var(--page);
   margin: 0 auto;
   padding: var(--space-4) var(--space-4);
   display: flex;
   align-items: center;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-4);
+}
+
+/* Below the width where wordmark and nav fit on one line, the nav takes its
+   own row at full width rather than being squeezed or scrolled. */
+@media (max-width: 560px) {
+  .theme-paper .site-header nav { margin-left: 0; width: 100%; }
+  .theme-paper .site-header nav ul { justify-content: space-between; gap: var(--space-2); }
 }
 
 .theme-paper .wordmark {
@@ -275,13 +332,45 @@ body { margin: 0; }
   display: flex; gap: var(--space-4);
   font-size: var(--t-xs);
 }
-.theme-paper .site-header nav a { color: var(--ink); text-decoration: none; }
-.theme-paper .site-header nav a:hover { text-decoration: underline; }
+.theme-paper .site-header nav a {
+  color: var(--ink);
+  text-decoration: none;
+  padding-bottom: var(--space-1);
+  border-bottom: 2px solid transparent;
+}
+
+/* ACTIVE NAV (step 6 item 6). Ink text, crimson underline.
+   Measured as a GRAPHICAL OBJECT against WCAG 1.4.11's 3:1, not as text:
+   --flag on --chrome is 5.83:1 and on --paper 6.47:1. The text itself stays
+   --ink, so the state is never carried by hue alone - and the markup sets
+   aria-current="page", which is what a screen reader actually reads. */
+.theme-paper .site-header nav a[aria-current="page"] {
+  border-bottom-color: var(--flag);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------------------
+   HOVER (step 6 item 8). Subtle, consistent, and never the only affordance.
+
+   :focus-visible is NOT merged into these rules and does not change: it
+   stays `2px solid var(--bat)` at offset 2. Hover is a mouse affordance;
+   collapsing the two would leave a keyboard user with nothing. Every rule
+   here is a colour or background change - no transform, no shadow, nothing
+   that moves - so there is no motion for prefers-reduced-motion to suppress.
+   --------------------------------------------------------------------- */
+.theme-paper a:hover { text-decoration: underline; }
+.theme-paper .site-header nav a:hover { border-bottom-color: var(--rule); }
+.theme-paper .site-header nav a[aria-current="page"]:hover { border-bottom-color: var(--flag); }
+.theme-paper .ask-button:hover:not([disabled]) { background: var(--paper-deep); }
+.theme-paper .level-1:hover .preview-list a { text-decoration: none; }
+.theme-paper .preview h2 a:hover { text-decoration: underline; }
+.theme-paper .preview-list li:hover { background: var(--paper-deep); }
+.theme-paper .wordmark:hover { text-decoration: none; }
 
 .theme-paper .live-slot {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   text-decoration: none;
   color: var(--ink);
   font-size: var(--t-xs);
@@ -482,6 +571,57 @@ body { margin: 0; }
 .theme-paper main { max-width: var(--column); padding: 0 16px 64px; }
 
 /* ------------------------------------------------------------------------
+   CORNER GRAPHICS (step 6 item 5). Ball bottom-left, batsman bottom-right.
+
+   THE CONSTRAINT IS STRUCTURAL, NOT A COLOUR CHOICE, and that distinction is
+   the whole design. The brief's hard requirement is that they must not sit
+   behind body text; the page wash already costs 0.31 of contrast and
+   --bowl-text sits at 4.78 at the foot, so a tinted shape under a paragraph
+   could push a real pair under the floor.
+
+   Solving it with opacity would mean measuring a composite and hoping. This
+   solves it with POSITION: `main` is capped at --column and centred, so a
+   wide viewport has real margins and a narrow one has none. The graphics
+   render only above a width where the viewport exceeds the column plus twice
+   the graphic, and are `display: none` below it. No text pair changes at all,
+   which is a claim the contrast suite can then confirm rather than approximate.
+
+   280px graphic, 720px column: 720 + 560 = 1280px.
+   --------------------------------------------------------------------- */
+.theme-paper .corner-graphic { display: none; }
+
+@media (min-width: 1280px) {
+  .theme-paper .corner-graphic {
+    display: block;
+    position: fixed;
+    bottom: 0;
+    width: 280px;
+    height: auto;
+    /* --chrome at low opacity: the tan of the artwork, not a new colour. */
+    color: var(--chrome);
+    opacity: 0.55;
+    pointer-events: none;
+  }
+  .theme-paper .corner-ball { left: 0; }
+  .theme-paper .corner-batsman { right: 0; }
+}
+
+/* Content sits above them, always - achieved with a NEGATIVE z-index on the
+   graphics rather than a positive one on main.
+
+   The first version set `position: relative; z-index: 1` on main, and that
+   broke /accuracy at 340px. Positioning main made it the containing block for
+   every `position: absolute` descendant, including the 1px .visually-hidden
+   spans inside the decile table - which sit inside a horizontally scrolled
+   container. Their offsets then resolved against main and extended its scroll
+   area to 361px, so the whole document scrolled sideways by 21px while every
+   direct child of main measured a well-behaved 308.
+
+   A fixed element with z-index -1 sits behind normal-flow content without
+   anyone else needing a stacking context. */
+.theme-paper .corner-graphic { z-index: -1; }
+
+/* ------------------------------------------------------------------------
    THE LANDING PAGE (UI-PHASE-2 section 6). Closes the phase.
    --------------------------------------------------------------------- */
 
@@ -623,6 +763,25 @@ body { margin: 0; }
    The wrapper also gives a wide table somewhere to scroll on a narrow
    screen without the panel edge moving with it. */
 .theme-paper .table-panel { padding: var(--space-2); overflow-x: auto; }
+
+/* Any container that can hold a .grid scrolls rather than pushing the page
+   sideways. Measured at 340px: /accuracy's decile table wants 401px and
+   /design's swatch table 349px, and neither sits in a .table-panel - they
+   are in a level or a plain section. Without this the whole document scrolls
+   horizontally on a phone, which is the one thing UI-PHASE section 1.6's
+   "mobile-first, 340px" rules out. */
+/* `position: relative` as well as the overflow, and the pairing is the point.
+   A scroll container only clips an absolutely positioned descendant if it is
+   that descendant's containing block. .visually-hidden is
+   `position: absolute`, and several sit inside the decile table at x=361; with
+   an unpositioned scroller their containing block was the viewport, so they
+   escaped the clip and extended the DOCUMENT by 21px while the scroller and
+   every child of main measured perfectly. */
+.theme-paper .panel,
+.theme-paper .level-1,
+.theme-paper .level-2,
+.theme-paper .table-panel,
+.theme-paper.design section { overflow-x: auto; position: relative; }
 .theme-paper .table-panel .grid { margin: 0; }
 
 /* The two measurement sections on /accuracy. They already carried the
@@ -704,7 +863,16 @@ body { margin: 0; }
 .theme-paper .small { font-size: var(--t-xs); }
 .theme-paper .tiny { font-size: var(--t-xs); }
 
-.theme-paper h1 { font-size: var(--t-xl); margin: 0 0 4px; font-weight: 600; }
+/* H1 ONLY. UI-PHASE.md section 1.6 says left-aligned throughout; this is the
+   one documented exception, and the doc is updated to say so rather than left
+   contradicting the stylesheet. Section headings and body stay left - a
+   centred h2 would make the page a poster. */
+.theme-paper h1 {
+  font-size: var(--t-2xl);
+  margin: 0 0 var(--space-2);
+  font-weight: 600;
+  text-align: center;
+}
 .theme-paper h2 { font-size: var(--t-m); margin: 0 0 12px; font-weight: 600; }
 .theme-paper h3 { font-size: var(--t-s); margin: var(--space-4) 0 var(--space-2); font-weight: 600; }
 
@@ -762,16 +930,45 @@ body { margin: 0; }
   color: var(--ink-soft);
   margin-bottom: var(--space-1);
 }
+/* ------------------------------------------------------------------------
+   ONE CONTROL STYLE (step 6 item 7).
+
+   Before: .ask-button and .ask-input sat side by side at --t-xs and --t-s,
+   so the button was visibly shorter than the input; three radii were in use
+   (999px, 3px, none); and .skip-link and .ask-button carried raw `8px 12px`
+   and `8px 16px` padding, which step 2's migration walked past because those
+   values are ON the 4px scale - it only snapped the strays.
+
+   Height is now explicit rather than implied by padding plus line-height,
+   which is what let the mismatch exist without anyone choosing it.
+   --------------------------------------------------------------------- */
+.theme-paper .control,
+.theme-paper .ask-input,
+.theme-paper .ask-button,
+.theme-paper .player-search input {
+  height: var(--control-h);
+  padding: 0 var(--control-pad-x);
+  border-radius: var(--control-radius);
+  font: inherit;
+  font-size: var(--t-s);
+  line-height: calc(var(--control-h) - 2px);
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+}
+
+/* A button is the one control that asserts itself, so it keeps the heavier
+   border. Everything else about it now matches the input beside it. */
+.theme-paper .ask-button {
+  border-color: var(--ink);
+  font-weight: 500;
+  cursor: pointer;
+}
+.theme-paper .ask-button[disabled] { opacity: 0.5; cursor: not-allowed; }
+
 .theme-paper .player-search input {
   width: 100%;
   max-width: 380px;
-  font: inherit;
-  font-size: var(--t-s);
-  padding: var(--space-2) var(--space-2);
-  border: 1px solid var(--rule);
-  border-radius: 3px;
-  background: var(--paper);
-  color: var(--ink);
 }
 .theme-paper .player-search p { font-size: var(--t-xs); margin: var(--space-2) 0 0; }
 
@@ -869,14 +1066,7 @@ body { margin: 0; }
   color: var(--ink-soft);
 }
 .theme-paper .ask-input {
-  font: inherit;
-  font-size: var(--t-s);
-  padding: var(--space-2) var(--space-2);
   width: 100%;
-  border: 1px solid var(--rule);
-  border-radius: 3px;
-  background: var(--paper);
-  color: var(--ink);
 }
 .theme-paper .ask-input-password { width: 18rem; max-width: 100%; }
 .theme-paper .ask-button {
@@ -910,17 +1100,19 @@ body { margin: 0; }
 /* ------------------------------------------------------------------------
    Repalette 2026-09-24: chrome surfaces.
 
-   ONLY --ink GOES ON CHROME. Measured against --chrome #D5C3A5:
-   --ink 8.92:1, --ink-soft 3.52:1, --bat 3.25:1, --flag 3.78:1. So the
-   header, the footer and the table header bands carry --ink for everything,
-   including the text that is secondary on a paper background. The visual
-   hierarchy there comes from weight and size, not from a lighter colour,
-   because a lighter colour on tan is not legible.
+   ANY TOKEN MAY GO ON CHROME, as of step 6. This block used to read "ONLY
+   --ink GOES ON CHROME", true of #D5C3A5 and then of #C6B592. On #E9E3CF
+   every text token clears 4.5:1, so hierarchy here can use colour again
+   instead of compensating with weight.
    --------------------------------------------------------------------- */
 
 .theme-paper .site-header {
   background: var(--chrome);
-  border-bottom: 1px solid var(--chrome-deep);
+  border-bottom: 1px solid var(--rule);
+  /* The edge the fill no longer carries. chrome/paper fell from 1.853 to
+     1.110 when chrome lightened, so the separation moves into a shadow -
+     --shadow-1 from the existing elevation scale, not a new one. */
+  box-shadow: var(--shadow-1);
 }
 .theme-paper .site-header nav a,
 .theme-paper .wordmark { color: var(--ink); }
@@ -930,20 +1122,23 @@ body { margin: 0; }
 
 .theme-paper .site-footer {
   background: var(--chrome);
-  border-top: 1px solid var(--chrome-deep);
+  border-top: 1px solid var(--rule);
   margin-top: 64px;
 }
 .theme-paper .site-footer p,
 .theme-paper .site-footer a { color: var(--ink); }
 
-/* Table header bands. --chrome-deep is the darkest surface (--ink is 6.70:1
-   on it), so it carries the header row and nothing else. */
+/* Table header bands. The fill is now --chrome, the same as the header and
+   footer, because the darker tier is gone - so the row is marked by WEIGHT
+   and a rule rather than by being darker. Any token may sit here now, which
+   is the point of the change: a failure state in a header row is exactly
+   what --flag is for. */
 .theme-paper .grid thead th {
-  background: var(--chrome-deep);
+  background: var(--chrome);
   color: var(--ink);
+  border-bottom: 1px solid var(--rule);
   font-weight: 600;
   padding: var(--space-2) var(--space-2) var(--space-2) var(--space-2);
-  border-bottom: 0;
 }
 .theme-paper .grid thead th:first-child { border-radius: 3px 0 0 3px; }
 .theme-paper .grid thead th:last-child { border-radius: 0 3px 3px 0; }

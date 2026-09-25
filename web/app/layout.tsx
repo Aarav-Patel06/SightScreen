@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { IBM_Plex_Sans, IBM_Plex_Sans_Condensed } from "next/font/google";
 
+import { CornerGraphics } from "@/components/corner-graphics";
 import { SiteFooter, SiteHeader } from "@/components/site-header";
 
 import "./globals.css";
@@ -95,6 +96,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <a href="#main" className="skip-link">
           Skip to content
         </a>
+        <CornerGraphics />
         <SiteHeader />
         <div id="main">{children}</div>
         <SiteFooter />

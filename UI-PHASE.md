@@ -97,13 +97,15 @@ Both from `next/font/google`, self-hosted, subset to Latin.
 
 **Every number that can change while you watch it must be `font-variant-numeric: tabular-nums`.** A win probability that jitters horizontally as digits change width reads as broken. This applies to the live percentage, the score, the clock, and every table column.
 
-Type scale, 1.25 ratio from a 16px base: 12.8 / 16 / 20 / 25 / 31 / 39 / 49. Scoreboard figures use the top three at condensed weight 600, tracked tight (-0.02em). Prose stays at 16 with 1.6 line-height, measure capped at 68 characters.
+Type scale, 1.25 ratio from a **17px** base (16px until 2026-09-25): 13.6 / 17 / 21.3 / 26.6 / 33.2 / 41.5 / 51.9. The base moved after measuring the 340px overflow risk — at 18px the hero teams line leaves only 12px of the 308px available, and at 17px it leaves 28. Scoreboard figures use the top three at condensed weight 600, tracked tight (-0.02em). Prose stays at the base size with 1.6 line-height, measure capped at 68 characters.
 
 Avoid: all-caps labels, single-word colour accents in headings, eyebrow labels above every section, meta strings joined with middle dots, and `→` appended to link text.
 
 ### 1.6 Layout
 
-Left-aligned throughout. A single 1140px maximum with a 720px reading column for prose surfaces (`/model-card`, the methodology notes). Mobile-first — §12.2 says most cricket viewing is second-screen on a phone, and the ball strip is designed to work at 340px.
+Left-aligned throughout, **with one exception recorded 2026-09-25: `h1` is centred.** Page titles centre and take `--t-2xl`; section headings (`h2`, `h3`) and all body text stay left. The exception is written here rather than left as a stylesheet rule contradicting this paragraph — a centred `h2` would make the page a poster, which is why the exception stops at the page title.
+
+A single 1140px maximum with a 720px reading column for prose surfaces (`/model-card`, the methodology notes). Mobile-first — §12.2 says most cricket viewing is second-screen on a phone, and the ball strip is designed to work at 340px.
 
 Structural devices earn their place: a rule under a section heading only where it separates genuinely different content, no cards around things that are not discrete objects. The reliability table is a table, not eleven cards.
 

@@ -13,6 +13,8 @@
 
 import Link from "next/link";
 
+import { ActiveNav } from "@/components/active-nav";
+
 import { BallMark } from "@/components/ball-mark";
 import { LiveSlot } from "@/components/live-slot";
 
@@ -49,15 +51,10 @@ export function SiteHeader() {
 
         <LiveSlot />
 
-        <nav aria-label="Main">
-          <ul>
-            {NAV.map((item) => (
-              <li key={item.href}>
-                <Link href={item.href}>{item.label}</Link>
-              </li>
-            ))}
-          </ul>
-        </nav>
+        {/* The active item is marked with aria-current, not only with colour
+            (step 6 item 6). ActiveNav is a client component purely because
+            usePathname needs one; the links themselves are unchanged. */}
+        <ActiveNav items={NAV} />
       </div>
     </header>
   );

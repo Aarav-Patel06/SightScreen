@@ -46,8 +46,20 @@ export const FILL_FLOOR = 4.5;
  * carries --ink and nothing else, and the test asserts it rather than
  * trusting whoever styles the next header.
  */
-export const CHROME_TOKENS = ["--chrome", "--chrome-deep"] as const;
-export const CHROME_SAFE_TEXT = ["--ink"] as const;
+export const CHROME_TOKENS = ["--chrome"] as const;
+/*
+ * CHROME_SAFE_TEXT IS GONE (step 6), and its absence is the interesting part.
+ *
+ * It listed the only token legible on chrome, and for two palettes that list
+ * was `["--ink"]`. On #C6B592 --flag measured 3.49:1, which meant crimson -
+ * the colour section 3.2 assigns to failure states - could not appear in a
+ * table header row, the place a failure state most wants to be.
+ *
+ * On #E9E3CF every text token clears 4.5:1, so there is no safe-list to keep.
+ * The constraint was removed by changing the surface, not by lowering a floor.
+ * lib/tokens.test.ts asserts the inverse: EVERY text token must clear AA on
+ * chrome, which fails the moment someone darkens it again.
+ */
 
 /** The base every ratio in this system is measured against. */
 export const PAPER = "--paper";
@@ -84,7 +96,6 @@ export const EXEMPT_TOKENS = [
   "--paper-raised",
   "--paper-deep",
   "--chrome",
-  "--chrome-deep",
   "--rule",
 ] as const;
 

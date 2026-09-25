@@ -19,7 +19,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   AA_TEXT,
-  CHROME_SAFE_TEXT,
   CHROME_TOKENS,
   EXEMPT_TOKENS,
   FILL_FLOOR,
@@ -83,30 +82,41 @@ describe("fill tokens clear the floor that actually binds", () => {
   }
 });
 
-describe("chrome surfaces carry only what is legible on them", () => {
-  // Contrast is a property of a PAIR, and this palette has four
-  // backgrounds. --ink-soft is 5.58:1 on paper and 3.52:1 on chrome; the
-  // single-background era had no way to express that.
+describe("EVERY text token is legible on chrome", () => {
+  // DELIBERATELY INVERTED IN STEP 6, and named here because this phase leans
+  // on unmodified tests as evidence.
+  //
+  // This used to iterate CHROME_SAFE_TEXT - a list of the only tokens legible
+  // on chrome, which for two palettes was just ["--ink"]. The list existed
+  // because --flag measured 3.49:1 on #C6B592, so crimson could not appear in
+  // a table header row: the one place section 3.2's failure colour most wants
+  // to be.
+  //
+  // Step 6 removed the constraint by changing the surface rather than by
+  // lowering a floor. #E9E3CF is the darkest chrome where every text token
+  // clears 4.5:1. So the assertion flips: instead of policing a safe-list,
+  // it requires that no such list is needed. It fails the moment someone
+  // darkens chrome back toward where it was.
   for (const surface of CHROME_TOKENS) {
-    for (const token of CHROME_SAFE_TEXT) {
+    for (const token of TEXT_TOKENS) {
       it(`${token} is at least ${AA_TEXT}:1 on ${surface}`, () => {
-        expect(contrast(tokens[token], tokens[surface])).toBeGreaterThanOrEqual(AA_TEXT);
+        const ratio = contrast(tokens[token], tokens[surface]);
+        expect(
+          ratio,
+          `${token} on ${surface} is ${ratio.toFixed(2)}:1 - chrome is only ` +
+            `allowed to be a colour every token can sit on`
+        ).toBeGreaterThanOrEqual(AA_TEXT);
       });
     }
-
-    it(`nothing else is claimed to be safe on ${surface}`, () => {
-      // The guard on the list above: if a token is added to CHROME_SAFE_TEXT
-      // that does not clear the floor, the loop catches it. This catches the
-      // reverse - a token that WOULD pass and is missing from the list is
-      // fine, but the list must not silently grow to include one that fails.
-      for (const token of CHROME_SAFE_TEXT) {
-        const ratio = contrast(tokens[token], tokens[surface]);
-        expect(ratio, `${token} on ${surface} is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(
-          AA_TEXT
-        );
-      }
-    });
   }
+
+  it("has exactly one chrome surface", () => {
+    // --chrome-deep was removed because it could not survive the unlock: at
+    // the lightest chrome carrying crimson, the darkest second tier that also
+    // carries it separates by 1.001, which is no tier at all. A second chrome
+    // reappearing means someone re-introduced the problem.
+    expect(CHROME_TOKENS).toEqual(["--chrome"]);
+  });
 });
 
 describe("every colour is classified", () => {
@@ -204,51 +214,12 @@ describe("the spacing scale", () => {
   });
 });
 
-// --- nothing but ink on a chrome surface (UI-PHASE-2 step 4) --------------
+// --- the chrome rule, at the stylesheet level ---------------------------
 //
-// CHROME_SAFE_TEXT already says only --ink may sit on chrome. That is a claim
-// about the REGISTRY; this is a claim about the STYLESHEET. They are different
-// things, and the gap between them is where a rule like
-// `.grid thead th .band-off { color: var(--flag) }` would live - legal by the
-// registry, 3.49:1 on the page.
-//
-// Live constraint: section 3.2 puts crimson on failure states, and table
-// header bands are chrome. A failure state in a header band has to be
-// designed around, not exempted.
+// The test that used to live here asserted that no rule set any colour other
+// than --ink on a chrome background. It encoded the constraint step 6
+// removed, so keeping it would have blocked the thing the change was for.
+// The registry-level assertion above replaces it: chrome must be a colour
+// every token can sit on, which is a stronger claim and needs no per-rule
+// policing.
 
-describe("chrome surfaces carry ink and nothing else", () => {
-  const CHROME_BACKGROUND = /background:\s*var\(--chrome(?:-deep)?\)/;
-
-  /** Declaration blocks, as `[selector, body]`. */
-  const blocks = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({
-    selector: m[1].trim().replace(/\s+/g, " "),
-    body: m[2],
-  }));
-
-  it("parsed the stylesheet into blocks", () => {
-    // An empty list passes everything below.
-    expect(blocks.length).toBeGreaterThan(50);
-  });
-
-  it("finds the chrome surfaces it is meant to police", () => {
-    const chrome = blocks.filter((b) => CHROME_BACKGROUND.test(b.body));
-    expect(chrome.length).toBeGreaterThan(0);
-  });
-
-  it("sets no colour other than --ink on a chrome background", () => {
-    const offenders = blocks
-      .filter((b) => CHROME_BACKGROUND.test(b.body))
-      .map((b) => {
-        const colour = b.body.match(/(?:^|[;{\s])color:\s*([^;]+)/);
-        return { selector: b.selector, colour: colour?.[1].trim() };
-      })
-      .filter((b) => b.colour !== undefined && !/var\(--ink\)/.test(b.colour!));
-
-    expect(
-      offenders.map((o) => `${o.selector} { color: ${o.colour} }`),
-      "only --ink clears 4.5:1 on --chrome. --flag is 3.49:1 there, and " +
-        "section 3.2 puts crimson on failure states - so a failure state in a " +
-        "header band is a design problem, not an exemption"
-    ).toEqual([]);
-  });
-});
