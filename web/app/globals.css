@@ -275,7 +275,8 @@ body { margin: 0; }
   position: absolute;
   left: -9999px;
   top: var(--space-2);
-  background: var(--paper);
+  /* Lands on chrome when focused, so it takes the raised fill. */
+  background: var(--paper-raised);
   border: 1px solid var(--ink);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-control);
@@ -294,7 +295,6 @@ body { margin: 0; }
   white-space: nowrap;
 }
 
-.theme-paper .site-header { border-bottom: 1px solid var(--rule); }
 /* THE HEADER WRAPS, and it should have from the beginning.
    Measured 2026-09-25 with a real browser at 340px: the inner row was 415px
    wide, so every page scrolled sideways on a phone. Step 6's larger type made
@@ -330,7 +330,6 @@ body { margin: 0; }
   font-size: var(--t-l);
   font-weight: 600;
   letter-spacing: -0.02em;
-  color: var(--ink);
   text-decoration: none;
 }
 
@@ -343,7 +342,6 @@ body { margin: 0; }
   font-size: var(--t-xs);
 }
 .theme-paper .site-header nav a {
-  color: var(--ink);
   text-decoration: none;
   padding-bottom: var(--space-1);
   border-bottom: 2px solid transparent;
@@ -393,22 +391,15 @@ body { margin: 0; }
   background: var(--flag);
   flex: none;
 }
-.theme-paper .live-teams { color: var(--ink-soft); }
 .theme-paper .live-strip { width: 48px; flex: none; }
 .theme-paper .live-figure { font-size: var(--t-s); }
 
-.theme-paper .site-footer {
-  border-top: 1px solid var(--rule);
-  margin-top: 64px;
-}
 .theme-paper .site-footer p {
   max-width: var(--page);
   margin: 0 auto;
   padding: 16px;
   font-size: var(--t-xs);
-  color: var(--ink-soft);
 }
-.theme-paper .site-footer a { color: var(--ink-soft); }
 
 /* ------------------------------------------------------------------------
    The landing page (§4.1).
@@ -417,13 +408,10 @@ body { margin: 0; }
 .theme-paper .landing { max-width: var(--page); margin: 0 auto; padding: 0 16px; }
 
 .theme-paper .hero-identity { font-size: var(--t-xs); margin: 0 0 4px; }
-.theme-paper .hero-teams {
-  font-family: var(--font-plex-cond), var(--font-plex), sans-serif;
-  font-size: var(--t-2xl);
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  margin: 0 0 var(--space-2);
-}
+/* .hero-teams is defined once, in the landing-page block below. The copy that
+   stood here was session 2's and differed only in its margin, so whichever
+   came later in the file won - the same source-order accident as the hero's
+   radius. */
 .theme-paper .hero-state { font-size: var(--t-m); margin: 0 0 20px; }
 .theme-paper .hero-strip { margin-bottom: var(--space-4); }
 .theme-paper .hero-note { margin: 0; font-size: var(--t-s); }
@@ -672,6 +660,7 @@ body { margin: 0; }
   font-family: var(--font-plex-cond), var(--font-plex), sans-serif;
   font-size: var(--t-2xl);
   font-weight: 600;
+  letter-spacing: -0.02em;
   margin: 0 0 var(--space-1);
 }
 .theme-paper .hero-result { margin: 0 0 var(--space-4); font-size: var(--t-s); }
@@ -780,7 +769,7 @@ body { margin: 0; }
 /* A table is a discrete object; the filters and search above it are not.
    The wrapper also gives a wide table somewhere to scroll on a narrow
    screen without the panel edge moving with it. */
-.theme-paper .table-panel { padding: var(--space-2); overflow-x: auto; }
+.theme-paper .table-panel { padding: var(--space-2); overflow-x: auto; position: relative; }
 
 /* Any container that can hold a .grid scrolls rather than pushing the page
    sideways. Measured at 340px: /accuracy's decile table wants 401px and
@@ -798,7 +787,6 @@ body { margin: 0; }
 .theme-paper .panel,
 .theme-paper .level-1,
 .theme-paper .level-2,
-.theme-paper .table-panel,
 .theme-paper.design section { overflow-x: auto; position: relative; }
 .theme-paper .table-panel .grid { margin: 0; }
 
@@ -970,15 +958,23 @@ body { margin: 0; }
   font: inherit;
   font-size: var(--t-s);
   line-height: calc(var(--control-h) - 2px);
+  border: 1px solid var(--rule);
+}
+
+/* Colour is declared per control, not in the shared rule. The button is
+   filled and the inputs are not, and having the shared rule set a background
+   that one of its own members immediately overrode is how .ask-button ended
+   up declaring background, color and border-color twice. */
+.theme-paper .control,
+.theme-paper .ask-input,
+.theme-paper .player-search input {
   background: var(--paper);
   color: var(--ink);
-  border: 1px solid var(--rule);
 }
 
 /* A button is the one control that asserts itself, so it keeps the heavier
    border. Everything else about it now matches the input beside it. */
 .theme-paper .ask-button {
-  border-color: var(--ink);
   font-weight: 500;
   cursor: pointer;
 }
@@ -1136,14 +1132,15 @@ body { margin: 0; }
 }
 .theme-paper .site-header nav a,
 .theme-paper .wordmark { color: var(--ink); }
-/* Was --ink-soft. 3.52:1 on chrome; the weight change carries it instead. */
-.theme-paper .live-teams { color: var(--ink); font-weight: 500; }
+/* --ink-soft is legible on chrome again (5.03:1) now that chrome is #EEEAD8,
+   so this no longer compensates with weight. */
+.theme-paper .live-teams { color: var(--ink-soft); }
 .theme-paper .live-slot { border-color: var(--ink); }
 
 .theme-paper .site-footer {
   background: var(--chrome);
   border-top: 1px solid var(--rule);
-  margin-top: 64px;
+  margin-top: var(--space-8);
 }
 .theme-paper .site-footer p,
 .theme-paper .site-footer a { color: var(--ink); }
@@ -1173,5 +1170,4 @@ body { margin: 0; }
 
    .entry went with it - the step 5 rewrite removed its last use. */
 
-/* The skip link lands on chrome. */
-.theme-paper .skip-link { background: var(--paper-raised); border-color: var(--ink); }
+

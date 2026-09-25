@@ -42,6 +42,72 @@ function stripComments(text: string): string {
  * the accent bars on the landing bands. Adding a value here should mean
  * someone decided a new kind of line exists.
  */
+
+/**
+ * Top-level rules from the theme block, with at-rule bodies excluded.
+ *
+ * `@media` and `@supports` exist precisely to redeclare a property under
+ * different conditions, so a rule inside one is not drift. Everything else
+ * shares the same conditions, which means two declarations of one property
+ * are resolved by file position - and file position is not a decision anyone
+ * makes deliberately.
+ */
+export interface Rule {
+  selectors: string[];
+  properties: string[];
+}
+
+function topLevelRules(text: string): Rule[] {
+  const css = stripComments(text);
+  const rules: Rule[] = [];
+  let depth = 0;
+  let buffer = "";
+  for (let i = 0; i < css.length; i += 1) {
+    const ch = css[i];
+    if (ch === "{") {
+      depth += 1;
+      if (depth === 1) {
+        // Selector for a rule that is not nested inside an at-rule.
+        const prelude = buffer.trim();
+        buffer = "";
+        if (prelude.startsWith("@")) {
+          // An at-rule: skip its whole body, brace-balanced.
+          let inner = 1;
+          i += 1;
+          while (i < css.length && inner > 0) {
+            if (css[i] === "{") inner += 1;
+            else if (css[i] === "}") inner -= 1;
+            i += 1;
+          }
+          depth = 0;
+          i -= 1;
+          continue;
+        }
+        const close = css.indexOf("}", i);
+        const body = css.slice(i + 1, close);
+        rules.push({
+          selectors: prelude.split(",").map((s) => s.split(/\s+/).filter(Boolean).join(" ")),
+          properties: body
+            .split(";")
+            .filter((d) => d.includes(":"))
+            .map((d) => d.split(":", 1)[0].trim().toLowerCase())
+            .filter((prop) => prop.length > 0 && !prop.startsWith("--")),
+        });
+        i = close;
+        depth = 0;
+      }
+      continue;
+    }
+    if (ch === "}") {
+      depth = Math.max(0, depth - 1);
+      buffer = "";
+      continue;
+    }
+    buffer += ch;
+  }
+  return rules;
+}
+
 const ALLOWED = new Set(["0", "1px", "2px", "3px"]);
 
 /** `border`, `border-top`, `border-left`, `outline`, … but not `border-radius`. */
@@ -189,6 +255,70 @@ describe("no selector sets a radius twice", () => {
       twice,
       "these set border-radius in more than one block, so file position decides " +
         "which wins - fold them into one rule"
+    ).toEqual([]);
+  });
+});
+
+// --- the same property declared twice, anywhere ---------------------------
+//
+// GENERALISED FROM THE RADIUS CASE, because three defects in one session all
+// had this shape and three is a property of the stylesheet rather than a
+// coincidence:
+//
+//   .theme-paper .hero        - .level-2 gave it 12px; a session-2 block
+//                               later in the file gave it 4px and won
+//   .theme-paper .ask-button  - the shared control rule set its geometry; a
+//                               block below redeclared it and won
+//   the radius duplicates     - the same thing a third time
+//
+// Every one was invisible in review and obvious in the render. Equal
+// specificity means file position decides, and nobody chooses file position.
+//
+// @media and @supports bodies are excluded: redeclaring under different
+// conditions is what they are for. Everything counted here shares one set of
+// conditions.
+
+describe("no property is declared twice for the same selector", () => {
+  const rules = topLevelRules(css.slice(css.indexOf(".theme-paper {")));
+
+  it("parses a realistic number of rules", () => {
+    // NON-VACUITY, and this file has earned the paranoia: the first version
+    // of the radius guard saw 4 of 14 declarations because it skipped every
+    // rule introduced by a comment, and passed on the file containing the
+    // duplicate it existed to catch.
+    expect(rules.length).toBeGreaterThan(80);
+    expect(rules.some((r) => r.properties.includes("border-radius"))).toBe(true);
+    expect(rules.some((r) => r.selectors.includes(".theme-paper .level-2"))).toBe(true);
+  });
+
+  it("excludes at-rule bodies, which are allowed to redeclare", () => {
+    // .corner-graphic is `display: none` at the top level and `display: block`
+    // inside a media query. That is the intended pattern, not drift.
+    const topLevelDisplays = rules.filter(
+      (r) => r.selectors.includes(".theme-paper .corner-graphic") && r.properties.includes("display")
+    );
+    expect(topLevelDisplays).toHaveLength(1);
+  });
+
+  it("declares each property once per selector", () => {
+    const seen = new Map<string, number>();
+    for (const rule of rules) {
+      for (const selector of rule.selectors) {
+        if (!selector.startsWith(".theme-paper")) continue;
+        for (const property of rule.properties) {
+          const key = `${selector} { ${property} }`;
+          seen.set(key, (seen.get(key) ?? 0) + 1);
+        }
+      }
+    }
+    const twice = [...seen.entries()]
+      .filter(([, n]) => n > 1)
+      .map(([key, n]) => `${key} ${n}x`)
+      .sort();
+    expect(
+      twice,
+      "declared in more than one block under the same conditions, so file " +
+        "position decides the winner - fold them into one rule"
     ).toEqual([]);
   });
 });
