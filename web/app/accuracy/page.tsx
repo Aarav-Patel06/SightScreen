@@ -23,12 +23,16 @@
 import Link from "next/link";
 
 import {
+  LOGISTIC_PRIOR,
   baselineVerdict,
+  compareSegments,
   parseReport,
   populatedDeciles,
   score,
   withInterval,
+  type BaselineComparison,
   type PopulationReport,
+  type SegmentComparison,
 } from "@/lib/accuracy";
 import { HATCH_PITCH_PX } from "@/lib/ball-strip";
 import { supabaseServer } from "@/lib/supabase-server";
@@ -166,8 +170,45 @@ function Deciles({ population }: { population: PopulationReport }) {
   );
 }
 
+/** Narrow away the `{ unavailable }` arm so the JSX can read the fields. */
+function isLogistic(
+  value: BaselineComparison | { unavailable: string } | undefined
+): value is BaselineComparison {
+  return value !== undefined && !("unavailable" in value);
+}
+
+const SEGMENT_LABELS: Record<string, string> = {
+  full_member: "Full Member internationals",
+  other: "Franchise and associate",
+};
+
 function Scored({ population }: { population: PopulationReport }) {
   if (population.n === 0 || population.brier === undefined) return null;
+
+  // The segment split is reported because it is a NULL result. See
+  // eval/calibration_monitor.vs_baselines_by_segment for the evidence: the
+  // obvious reading of the pooled fall - that the model's edge is a franchise
+  // effect - was tested and does not hold, and the premise behind it (narrower
+  // Elo spreads between Full Members) is contradicted by the corpus.
+  const raw = population.vs_baselines_by_segment;
+  const segments =
+    raw && !("unavailable" in raw)
+      ? (Object.entries(raw).filter(
+          (entry): entry is [string, SegmentComparison] => !("unavailable" in entry[1])
+        ).map(([key, value]) => [SEGMENT_LABELS[key] ?? key, value] as const))
+      : null;
+
+  const pair = segments?.length === 2 ? compareSegments(segments[0][1].logistic, segments[1][1].logistic) : null;
+  const segmentNote = !pair
+    ? "Segments are scored on the same model and the same baselines."
+    : pair.overlap && !pair.eitherSignificant
+      ? "No detectable difference between the segments: the two intervals overlap and neither excludes zero. " +
+        "This is reported to answer the obvious question rather than to claim a split — the model's edge over " +
+        "the logistic baseline is not established in either kind of cricket, not weak in one and strong in the other."
+      : pair.overlap
+        ? "The intervals overlap, so any difference between the segments is smaller than this much data can resolve."
+        : "The intervals do not overlap, which does indicate a real difference between the segments.";
+
   return (
     <>
       <p className="small">
@@ -229,6 +270,46 @@ function Scored({ population }: { population: PopulationReport }) {
             this is a like-for-like comparison rather than two numbers from
             different samples placed side by side.
           </p>
+          {isLogistic(population.vs_baselines.logistic) &&
+            !population.vs_baselines.logistic.model_is_better && (
+              <p className="tiny muted">
+                This was {withInterval(
+                  LOGISTIC_PRIOR.improvement,
+                  LOGISTIC_PRIOR.ciLow,
+                  LOGISTIC_PRIOR.ciHigh
+                )}{" "}
+                over {LOGISTIC_PRIOR.nMatches} matches on {LOGISTIC_PRIOR.computedAt}.
+                It cleared zero by {score(LOGISTIC_PRIOR.ciLow)} and did not survive a
+                larger sample. That is what a marginal result looks like when more
+                data arrives — not the model getting worse, which is unchanged.
+              </p>
+            )}
+          {segments && (
+            <>
+              <h4>By segment</h4>
+              <table className="small">
+                <thead>
+                  <tr>
+                    <th scope="col">Segment</th>
+                    <th scope="col" className="tnum">Matches</th>
+                    <th scope="col">vs the logistic baseline</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {segments.map(([label, segment]) => (
+                    <tr key={label}>
+                      <th scope="row">{label}</th>
+                      <td className="tnum">{segment.n_matches}</td>
+                      <td>{baselineVerdict(segment.logistic ?? { unavailable: "not computed" })}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="tiny muted">
+                {segmentNote}
+              </p>
+            </>
+          )}
         </>
       )}
 

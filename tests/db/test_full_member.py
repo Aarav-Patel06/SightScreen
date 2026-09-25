@@ -51,9 +51,29 @@ FULL_MEMBERS = frozenset(
     }
 )
 
-# Recorded, not inferred. Checked 2026-09-24: `name ILIKE '%afghan%'` returns
-# no rows, and all 347 teams in the corpus appear in at least one match, so
-# there is no orphan row either.
+# WHY AFGHANISTAN IS ABSENT. Not a spelling variant, not an entity-resolution
+# split, not an ingestion bug - all three were checked on 2026-09-24 and all
+# three are ruled out. `teams` has no row matching `%afg%`; `team_aliases` has
+# none across its 354 rows; and the only `%ghan%` match in the whole table is
+# Ghana.
+#
+# It is an upstream publishing policy, stated in the first paragraph of the
+# Cricsheet archive's own README.txt:
+#
+#     "A further 374 matches have been withheld due to either featuring the
+#      Afghanistan men's team or being played in the Afghanistan Premier
+#      League, due to the Cricsheet policy to no longer feature matches
+#      involving Afghanistan men or played in Afghanistan Premier League"
+#      - https://cricsheet.org/withheld-matches
+#
+# Confirmed against the raw archive rather than taken on trust: of 22,734
+# match files, `"Afghanistan"` appears as a team in zero of them, while the
+# same search finds Zimbabwe in 646 and Ireland in 520.
+#
+# So this cannot be fixed by a name change or a re-ingest, and there are no
+# Afghanistan matches to replay. If Cricsheet ever reverses the policy, 374
+# matches arrive at once and this tripwire fires - which is the point of
+# asserting it rather than leaving the absence as a silent assumption.
 ABSENT_FROM_CORPUS = frozenset({"Afghanistan"})
 
 
@@ -113,7 +133,9 @@ def test_the_recorded_absence_is_still_true(db, flagged):
     _flagged_names, present = flagged[db]
     assert FULL_MEMBERS - present == ABSENT_FROM_CORPUS, (
         f"{db}: the set of Full Members missing from this corpus has changed to "
-        f"{sorted(FULL_MEMBERS - present)}. Update ABSENT_FROM_CORPUS and the "
+        f"{sorted(FULL_MEMBERS - present)}. If Afghanistan has appeared, Cricsheet "
+        f"has reversed its withholding policy and ~374 matches are now available - "
+        f"re-run the Full Member replay for them. Update ABSENT_FROM_CORPUS and the "
         f"comment in 20260924000003_teams_full_member.sql together."
     )
 

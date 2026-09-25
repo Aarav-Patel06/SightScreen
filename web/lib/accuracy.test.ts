@@ -10,15 +10,18 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  LOGISTIC_PRIOR,
   baselineVerdict,
+  compareSegments,
   isThin,
   parseReport,
   percent,
   populatedDeciles,
   reliabilityPoints,
   score,
-  withInterval,
+  type BaselineComparison,
   type Decile,
+  withInterval,
 } from "./accuracy";
 
 function decile(overrides: Partial<Decile> = {}): Decile {
@@ -144,5 +147,61 @@ describe("formatting", () => {
 
   it("never renders a point estimate without its interval", () => {
     expect(withInterval(0.102, 0.0745, 0.1311)).toBe("0.1020  [0.0745, 0.1311]");
+  });
+});
+
+// --- the segment comparison (UI Phase 2 step 1 follow-up) -----------------
+//
+// These exist because the segment block on /accuracy is a NULL result, and a
+// null result is the easy thing to accidentally render as a finding.
+
+describe("compareSegments", () => {
+  const at = (low: number, high: number, significant: boolean): BaselineComparison => ({
+    baseline_brier: 0.12,
+    model_brier: 0.11,
+    improvement: (low + high) / 2,
+    ci_low: low,
+    ci_high: high,
+    n_matches: 100,
+    model_is_better: significant,
+  });
+
+  it("reports overlap for the real figures, and that neither is significant", () => {
+    // The measured values, 2026-09-24: Full Member vs franchise.
+    const fullMember = at(-0.005682, 0.020812, false);
+    const franchise = at(-0.0038, 0.026108, false);
+
+    expect(compareSegments(fullMember, franchise)).toEqual({
+      overlap: true,
+      eitherSignificant: false,
+    });
+  });
+
+  it("detects genuinely separated intervals", () => {
+    expect(compareSegments(at(0.001, 0.01, true), at(0.05, 0.09, true))).toEqual({
+      overlap: false,
+      eitherSignificant: true,
+    });
+  });
+
+  it("treats intervals that merely touch as overlapping", () => {
+    // Conservative on purpose: this is not a significance test and must not
+    // be read as one.
+    expect(compareSegments(at(0.0, 0.02, false), at(0.02, 0.04, false))?.overlap).toBe(true);
+  });
+
+  it("returns null when either segment is unavailable", () => {
+    expect(compareSegments({ unavailable: "no matches" }, at(0, 0.02, false))).toBeNull();
+    expect(compareSegments(undefined, at(0, 0.02, false))).toBeNull();
+  });
+});
+
+describe("the committed prior for the logistic comparison", () => {
+  it("is the run 9 result, and it excluded zero", () => {
+    // If this stops being true the page's "did not survive a larger sample"
+    // sentence is telling a story that did not happen.
+    expect(LOGISTIC_PRIOR.ciLow).toBeGreaterThan(0);
+    expect(LOGISTIC_PRIOR.improvement).toBeGreaterThan(LOGISTIC_PRIOR.ciLow);
+    expect(LOGISTIC_PRIOR.nMatches).toBe(100);
   });
 });

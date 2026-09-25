@@ -15,7 +15,7 @@ Two rules carry from the previous phase and are the ones most likely to be dropp
 
 ### 0.1 Three corrections to the brief
 
-**"Live Brier Score: 0.1020" is wrong.** 0.1020 is the backfilled figure over 100 replayed matches. The live population is `n=0`, unscored. Labelling it live is the exact conflation `/accuracy`'s two-section split exists to prevent. The landing scorecard must say *backfilled*, show its clustered CI, and state that the live population has no score yet. That sentence is more interesting than a number anyway — it's the only site on the internet that will tell you its headline figure isn't the honest one.
+**"Live Brier Score: 0.1020" is wrong — and it is now also out of date.** 0.1020 was the backfilled figure over 100 replayed matches; after step 1's replay it is **0.1140 over 340**. The live population is `n=0`, unscored. Labelling it live is the exact conflation `/accuracy`'s two-section split exists to prevent. The landing scorecard must say *backfilled*, show its clustered CI, and state that the live population has no score yet. That sentence is more interesting than a number anyway — it's the only site on the internet that will tell you its headline figure isn't the honest one.
 
 **Teal on tan fails.** Measured: `#42707a` on `#d0c3a9` is 3.15:1, below the 4.5:1 `tokens.test.ts` enforces. Header navigation uses ink, not teal. Verified-good pairs: teal on cream 5.02:1, crimson on cream 6.44:1, ink on tan 8.6:1.
 
@@ -182,14 +182,43 @@ The strip keeps its draw-once animation and its one-sentence explanation.
 
 **2. What this is.** Two paragraphs, unboxed, 68-character measure. Teal on the subject nouns only.
 
-**3. Scorecard.** Level-2 panel, and the most carefully worded thing on the page:
+**3. Scorecard.** Level-2 panel, and the most carefully worded thing on the page.
 
-- Backfilled Brier with its match-clustered CI, labelled *backfilled*
-- The count of miscalibrated deciles, in crimson
-- One line stating the live population is not yet scored, with `n`
+**REWRITTEN 2026-09-24 after step 1.** The figures this was specced against no
+longer exist, and more importantly the headline claim changed. Step 1's replay
+took the backfilled population from 100 matches to 340, and the model's margin
+over the logistic baseline fell from +0.0149 [+0.0014, +0.0284] to
++0.0083 [−0.0027, +0.0188] — an interval that now **includes zero**.
+
+- Backfilled Brier with its match-clustered CI, labelled *backfilled*:
+  **0.1140 [0.0962, 0.1335] over 340 matches**
+- The count of miscalibrated deciles, in crimson: **4 of 10**
+- **The honest headline: the model is clearly better than a historical
+  base-rate baseline (+0.0376 [+0.0218, +0.0539]) and is NOT established
+  against a logistic one (+0.0083 [−0.0027, +0.0188]).** Both, or neither. One
+  without the other is a choice about which fact to show, and the page has no
+  business making it.
+- One line stating the live population is not yet scored, with `n` (still 0)
 - Link to `/accuracy`
 
-No number on this panel may be labelled "live" until the live population has one.
+No number on this panel may be labelled "live" until the live population has
+one.
+
+**Do not write "clear in franchise cricket, not established in
+internationals."** That framing was proposed and tested on 2026-09-24 and the
+data does not support it. Neither segment is significant on its own — Full
+Member +0.0077 [−0.0057, +0.0208] over 248 matches, franchise
++0.0107 [−0.0038, +0.0261] over 92 — and their intervals overlap almost
+entirely. The proposed mechanism fails at its premise too: Elo spreads between
+Full Members are **wider**, not narrower (mean gap 96.1 vs 70.3), because
+India v Zimbabwe is a bigger mismatch than two IPL sides drafted to be
+balanced.
+
+What actually happened is duller and is what the page should say: the original
+result cleared zero by 0.0014 and did not survive tripling the sample. The
+model did not change. `/accuracy` carries the segment table as an explicit null
+result; the landing scorecard should not repeat it, because a scorecard has
+room for one honest sentence and that sentence is the pooled one.
 
 **4. Preview modules.** Three or four level-1 panels, each linking to a section:
 

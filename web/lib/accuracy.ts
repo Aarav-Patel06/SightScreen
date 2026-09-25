@@ -35,6 +35,14 @@ export interface PhaseBucket {
   ci_high: number;
 }
 
+/** One segment's baseline comparison, plus how much data stands behind it. */
+export interface SegmentComparison {
+  n: number;
+  n_matches: number;
+  logistic?: BaselineComparison | { unavailable: string };
+  historical_base_rate?: BaselineComparison | { unavailable: string };
+}
+
 export interface BaselineComparison {
   baseline_brier: number;
   model_brier: number;
@@ -70,6 +78,9 @@ export interface PopulationReport {
   reliability?: Decile[];
   by_phase?: Record<string, PhaseBucket>;
   vs_baselines?: Record<string, BaselineComparison | { unavailable: string }>;
+  vs_baselines_by_segment?:
+    | Record<string, SegmentComparison | { unavailable: string }>
+    | { unavailable: string };
   biggest_misses?: Miss[];
   refit?: { ran: boolean; winner: string; reason: string };
   reason_unscored?: string;
@@ -177,4 +188,54 @@ export function reliabilityPoints(deciles: Decile[] | undefined) {
     thin: isThin(d),
     label: `${percent(d.bin_low)}-${percent(d.bin_high)}`,
   }));
+}
+
+
+/**
+ * The historical comparison point for the logistic baseline result.
+ *
+ * A fact about one past run, so it cannot go stale the way a "current" figure
+ * would - calibration_runs row 9 is immutable. Committed rather than queried
+ * because the page reads the LATEST run, and by tomorrow the previous run is
+ * another 340-match one; the interesting comparison is with the 100-match
+ * population that no longer exists.
+ *
+ * Why it is on the page at all: +0.0149 with a CI lower bound of +0.0014
+ * cleared zero by about a tenth of a percent. Reporting only today's figure
+ * would make the change look like the model getting worse, when what actually
+ * happened is that a marginal result did not survive tripling the sample.
+ * That distinction is the whole point of publishing intervals.
+ */
+export const LOGISTIC_PRIOR = {
+  runId: 9,
+  computedAt: "2026-09-24",
+  nMatches: 100,
+  improvement: 0.014897,
+  ciLow: 0.001413,
+  ciHigh: 0.028421,
+} as const;
+
+/**
+ * Do two segments differ in a way this data can detect?
+ *
+ * Deliberately NOT a significance test. The correct test is a paired
+ * difference-of-differences with its own clustered interval, which the monitor
+ * does not compute, and pretending otherwise would be exactly the overclaim
+ * this function exists to prevent.
+ *
+ * So it reports two directly observable facts and lets the copy state only
+ * those: whether the intervals overlap, and whether either excludes zero.
+ * Non-overlapping intervals would imply a difference; overlapping ones do not
+ * prove its absence, and the wording says "no detectable difference" rather
+ * than "no difference" for that reason.
+ */
+export function compareSegments(
+  a: BaselineComparison | { unavailable: string } | undefined,
+  b: BaselineComparison | { unavailable: string } | undefined
+): { overlap: boolean; eitherSignificant: boolean } | null {
+  if (!a || !b || "unavailable" in a || "unavailable" in b) return null;
+  return {
+    overlap: a.ci_low <= b.ci_high && b.ci_low <= a.ci_high,
+    eitherSignificant: a.model_is_better || b.model_is_better,
+  };
 }

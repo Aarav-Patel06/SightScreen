@@ -48,7 +48,7 @@ def _records(n_matches: int, balls_per_match: int = 20, seed: int = 0) -> list[t
 def test_a_thin_window_does_not_refit_and_says_why():
     """The case that is live today: 100 matches, floor 500."""
     messages: list[str] = []
-    decision = refit_decision(Rows(_records(100)), log=messages.append)
+    decision = refit_decision(Rows(_records(100)), log=messages.append, allow_refit=True)
 
     assert decision["ran"] is False
     assert decision["winner"] == "identity"
@@ -69,14 +69,14 @@ def test_the_floor_is_on_matches_not_rows():
     rows = Rows(_records(100, balls_per_match=200))
     assert len(rows) == 20_000
     assert rows.n_matches == 100
-    assert refit_decision(rows, log=lambda _m: None)["ran"] is False
+    assert refit_decision(rows, log=lambda _m: None, allow_refit=True)["ran"] is False
 
 
 def test_a_wide_enough_window_runs_and_still_prefers_identity():
     """Above the floor the branch executes - and on a well-calibrated model
     no candidate should beat identity by a margin excluding zero."""
     messages: list[str] = []
-    decision = refit_decision(Rows(_records(MIN_WINDOW_MATCHES + 40)), log=messages.append)
+    decision = refit_decision(Rows(_records(MIN_WINDOW_MATCHES + 40)), log=messages.append, allow_refit=True)
 
     assert decision["ran"] is True
     assert decision["n_select_matches"] >= MIN_SELECT_MATCHES
@@ -94,7 +94,7 @@ def test_a_candidate_is_only_promoted_on_a_significant_margin():
     candidate must beat identity by a paired match-clustered margin whose CI
     excludes zero, so ties and noise leave identity in place.
     """
-    decision = refit_decision(Rows(_records(MIN_WINDOW_MATCHES + 40, seed=7)), log=lambda _m: None)
+    decision = refit_decision(Rows(_records(MIN_WINDOW_MATCHES + 40, seed=7)), log=lambda _m: None, allow_refit=True)
     for name, entry in decision["comparison"].items():
         if name == "identity" or "failed" in entry:
             continue
@@ -122,7 +122,7 @@ def test_tiny_windows_do_not_crash(n_matches):
     """A brand new deployment has almost no data, and the monitor still has
     to produce a report rather than an exception."""
     rows = Rows(_records(n_matches)) if n_matches else Rows([])
-    decision = refit_decision(rows, log=lambda _m: None)
+    decision = refit_decision(rows, log=lambda _m: None, allow_refit=True)
     assert decision["ran"] is False
     assert decision["winner"] == "identity"
 
@@ -205,3 +205,65 @@ def test_the_summary_is_a_no_op_off_actions(tmp_path):
     from eval.calibration_monitor import write_step_summary
 
     write_step_summary(_report({"ran": False, "winner": "identity", "reason": "thin"}))
+
+
+# --- the gate, added 2026-09-24 ------------------------------------------
+#
+# WHY THE FIVE TESTS ABOVE GAINED `allow_refit=True`. They were written to
+# exercise the FLOOR, and the floor now sits behind an explicit flag, so
+# without it they would all stop at the gate and stop testing what they were
+# written to test. The assertions themselves are unchanged.
+#
+# The gate exists because the floor turned out to be the wrong KIND of
+# protection. `n_matches >= 500` is a threshold on a number that grows
+# whenever anyone loads data: UI Phase 2 step 1 added 240 matches to populate
+# a landing page and took the window from 100 to 340, cutting the margin from
+# 400 matches to 160. The next backfill of that size would have promoted a
+# calibrator from a nightly cron with nobody deciding anything.
+
+
+def test_the_gate_holds_even_when_the_floor_is_satisfied():
+    """The scenario that would have fired incidentally.
+
+    This is the whole point: plenty of data, floor cleared, and it still does
+    not run - because running is a decision and nobody made one.
+    """
+    messages: list[str] = []
+    rows = Rows(_records(MIN_WINDOW_MATCHES + 40))
+    assert rows.n_matches > MIN_WINDOW_MATCHES  # the floor would NOT stop this
+
+    decision = refit_decision(rows, log=messages.append)
+
+    assert decision["ran"] is False
+    assert decision["winner"] == "identity"
+    assert decision["gated"] is True
+    assert any("GATED" in m for m in messages)
+
+
+def test_the_gate_reports_that_a_refit_would_now_be_eligible():
+    """Silence here would recreate the problem one level up.
+
+    A gate that declines identically whether there are 10 matches or 10,000
+    hides the fact that the evidence threshold has been reached. The report
+    has to say so, or the decision never gets made at all.
+    """
+    thin = refit_decision(Rows(_records(100)), log=lambda _m: None)
+    fat = refit_decision(Rows(_records(MIN_WINDOW_MATCHES + 40)), log=lambda _m: None)
+
+    assert thin["would_be_eligible"] is False
+    assert fat["would_be_eligible"] is True
+    assert "not be eligible" in thin["reason"]
+    assert "BE ELIGIBLE" in fat["reason"]
+
+
+def test_the_gate_names_the_flag_that_opens_it():
+    """A refusal that does not say how to proceed is a dead end."""
+    decision = refit_decision(Rows(_records(100)), log=lambda _m: None)
+    assert "--allow-refit" in decision["reason"]
+
+
+def test_passing_the_flag_reaches_the_floor_logic_again():
+    """The gate must not become a second, permanent floor."""
+    decision = refit_decision(Rows(_records(100)), log=lambda _m: None, allow_refit=True)
+    assert decision.get("gated") is None
+    assert f"floor is {MIN_WINDOW_MATCHES}" in decision["reason"]

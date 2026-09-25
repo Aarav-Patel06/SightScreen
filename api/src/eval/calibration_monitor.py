@@ -310,8 +310,23 @@ def biggest_misses(conn, model_version: str, source: str, limit: int = 5) -> lis
     ]
 
 
-def refit_decision(rows: Rows, log=print) -> dict:
+def refit_decision(rows: Rows, log=print, *, allow_refit: bool = False) -> dict:
     """SPEC.md section 8.1 steps 5-8. Usually declines, and says why.
+
+    GATED BEHIND allow_refit, AND NOT ONLY BY THE FLOOR. Until 2026-09-24 the
+    only thing standing between this function and a live model change was
+    `n_matches < MIN_WINDOW_MATCHES`. That is a threshold on a number that
+    grows whenever anyone adds matches - and UI Phase 2 step 1 added 240 of
+    them to populate a landing page, taking the window from 100 to 340 and
+    cutting the margin to the floor from 400 matches to 160. The next routine
+    backfill of that size would have promoted a calibrator, in a nightly cron,
+    as a side effect of a visual change, with nobody deciding anything.
+
+    Section 8.4's shadow-deployment discipline exists precisely to stop a
+    model changing without a decision, and a floor is not a decision - it is
+    a number that a data-loading task can walk past. So the refit now requires
+    someone to pass --allow-refit, and the report says when it WOULD have been
+    eligible, so that eligibility is visible rather than silent.
 
     The floor is on MATCHES, not rows. 12,081 balls across 100 matches is
     100 effective observations, and the whole reason this project computes
@@ -325,6 +340,26 @@ def refit_decision(rows: Rows, log=print) -> dict:
     project's own Phase 1 evidence is the likely case.
     """
     n_matches = rows.n_matches
+    if not allow_refit:
+        eligible = n_matches >= MIN_WINDOW_MATCHES
+        reason = (
+            f"refit is gated behind --allow-refit and the flag was not passed. "
+            f"{n_matches} matches in the window (floor {MIN_WINDOW_MATCHES}), so a "
+            f"refit would "
+            + ("BE ELIGIBLE" if eligible else "not be eligible")
+            + " on this much data. Identity retained. Promoting a calibrator "
+            "changes what the service predicts, and section 8.4 says that is a "
+            "decision someone makes, not something a scheduled job does because a "
+            "counter crossed a line."
+        )
+        log(f"  refit: GATED - {reason}")
+        return {
+            "ran": False,
+            "winner": "identity",
+            "gated": True,
+            "would_be_eligible": eligible,
+            "reason": reason,
+        }
     if n_matches < MIN_WINDOW_MATCHES:
         reason = (
             f"{n_matches} matches in the window, floor is {MIN_WINDOW_MATCHES}. "
@@ -402,7 +437,81 @@ def refit_decision(rows: Rows, log=print) -> dict:
     }
 
 
-def build_report(conn, model_version: str, log=print) -> dict:
+_SEGMENT_QUERY = """
+    SELECT m.match_id, (a.full_member AND b.full_member) AS full_member
+    FROM matches m
+    JOIN teams a ON a.team_id = m.team_a
+    JOIN teams b ON b.team_id = m.team_b
+"""
+
+
+def vs_baselines_by_segment(conn, rows: Rows, log=print) -> dict:
+    """The §9.2 comparison split by Full Member status - reported BECAUSE it is
+    a null result, not because it is a difference.
+
+    WHY THIS EXISTS. The pooled margin over the logistic baseline fell from
+    +0.0149 [+0.0014, +0.0284] on 100 matches to +0.0083 [-0.0027, +0.0188] on
+    340 when UI Phase 2 step 1 added 240 Full Member fixtures. The obvious
+    reading - the model's edge comes from elo_diff and the venue features, and
+    those carry less signal in international cricket where Elo spreads are
+    narrower - was tested on 2026-09-24 and does not hold:
+
+      * Full Member  248 matches  +0.007664  CI [-0.005682, +0.020812]
+      * franchise     92 matches  +0.010695  CI [-0.003800, +0.026108]
+
+    The segments differ by 0.003 against CI widths near 0.027, and NEITHER is
+    significant - so "clear in franchise cricket, weak in internationals" is
+    not a statement this data supports. The premise fails too: Elo gaps between
+    Full Members are WIDER, not narrower (mean 96.1 vs 70.3, median 81.0 vs
+    58.4), because India v Zimbabwe is a bigger mismatch than two IPL sides
+    drafted to be balanced.
+
+    What actually happened is duller and worth saying plainly: the original
+    result cleared zero by 0.0014 and did not survive tripling the sample.
+
+    So this block is here to FORECLOSE the segment question on the page rather
+    than to answer it, which is why /accuracy labels it as showing no
+    detectable difference. Computed rather than hardcoded because the day it
+    stops being a null result is the day someone needs to know.
+    """
+    with conn.cursor() as cur:
+        cur.execute(_SEGMENT_QUERY)
+        full_member = {r[0] for r in cur.fetchall() if r[1]}
+
+    out: dict = {}
+    for label, keep in (
+        ("full_member", True),
+        ("other", False),
+    ):
+        mask = np.array([(mid in full_member) == keep for mid in rows.match_id])
+        if not mask.any():
+            out[label] = {"unavailable": "no matches in this segment"}
+            continue
+        subset = Rows.__new__(Rows)
+        for attr in (
+            "match_id", "p", "y", "phase", "balls_remaining",
+            "runs_required", "wickets", "match_date",
+        ):
+            setattr(subset, attr, getattr(rows, attr)[mask])
+        subset.created_at = [c for c, m in zip(rows.created_at, mask) if m]
+        out[label] = {
+            "n": len(subset),
+            "n_matches": subset.n_matches,
+            **vs_baselines(subset),
+        }
+        log(
+            f"  segment={label} n={len(subset):,} matches={subset.n_matches} "
+            + " ".join(
+                f"{k}={v.get('improvement', float('nan')):+.4f}"
+                f"{'*' if v.get('model_is_better') else ''}"
+                for k, v in out[label].items()
+                if isinstance(v, dict) and "improvement" in v
+            )
+        )
+    return out
+
+
+def build_report(conn, model_version: str, log=print, *, allow_refit: bool = False) -> dict:
     started = time.monotonic()
     populations: dict = {}
     for source in POPULATIONS:
@@ -442,8 +551,15 @@ def build_report(conn, model_version: str, log=print) -> dict:
             "reliability": report["reliability"],
             "by_phase": by_phase(rows),
             "vs_baselines": vs_baselines(rows),
+            # Backfill only: the live population has nothing scored, so a
+            # segment split of it would be two empty cells.
+            "vs_baselines_by_segment": (
+                vs_baselines_by_segment(conn, rows, log=log)
+                if source == "backfill"
+                else {"unavailable": "the live population has no scored predictions"}
+            ),
             "biggest_misses": biggest_misses(conn, model_version, source),
-            "refit": refit_decision(rows, log=log),
+            "refit": refit_decision(rows, log=log, allow_refit=allow_refit),
         }
 
     return {
@@ -534,6 +650,16 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="calibration_monitor", description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="compute and print, write nothing")
     parser.add_argument("--out", type=Path, default=None, help="also write the report here")
+    parser.add_argument(
+        "--allow-refit",
+        action="store_true",
+        help=(
+            "permit section 8.1's calibration refit to run and possibly replace the "
+            "identity map. OFF by default and deliberately not set in the nightly "
+            "workflow: a refit changes what the service predicts, so it is a decision, "
+            "not a threshold crossing."
+        ),
+    )
     args = parser.parse_args(argv)
 
     url = env_value("SUPABASE_SESSION_POOLER_URL")
@@ -571,7 +697,7 @@ def main(argv: list[str] | None = None) -> None:
         model_version = active_model(conn)
         print(f"calibration monitor - model {model_version}")
         print()
-        report = build_report(conn, model_version)
+        report = build_report(conn, model_version, allow_refit=args.allow_refit)
         print()
         if args.dry_run:
             print("--dry-run: nothing written")

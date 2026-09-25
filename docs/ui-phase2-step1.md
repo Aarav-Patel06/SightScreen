@@ -360,3 +360,155 @@ which ran the count version. Migrations are tracked by version and will not
 re-run there, and the two are logically equivalent on a populated database —
 both assert the `UPDATE` succeeded. Verified after the amendment: 11 flagged on
 both, identical name sets.
+
+---
+
+# Follow-up, same day: four questions put to the results
+
+## Afghanistan is an upstream gap, and cannot be fixed here
+
+Eleven Full Members with Afghanistan absent is suspicious on its face — they
+play plenty of T20Is and ODIs. Three explanations were checked and all three
+are ruled out:
+
+- **Spelling variant?** No. `teams` has no row matching `%afg%`, and the only
+  `%ghan%` match across all 347 rows is **Ghana**.
+- **Alias?** No. `team_aliases` has no `%afg%` row across its 354.
+- **Entity resolution split them?** No — there is nothing to split.
+
+It is a publishing policy, stated in the first paragraph of the Cricsheet
+archive's own `README.txt`:
+
+> "A further 374 matches have been withheld due to either featuring the
+> Afghanistan men's team or being played in the Afghanistan Premier League, due
+> to the Cricsheet policy to no longer feature matches involving Afghanistan
+> men or played in Afghanistan Premier League"
+> — https://cricsheet.org/withheld-matches
+
+Confirmed against the raw archive rather than taken on trust: across the 22,734
+match files, `"Afghanistan"` appears as a team in **zero**, while the same
+search finds Zimbabwe in 646 and Ireland in 520.
+
+So there are no Afghanistan matches to replay and eleven is correct. Recorded
+in `tests/db/test_full_member.py`, whose `ABSENT_FROM_CORPUS` tripwire now
+fails with an actionable message if the policy is ever reversed and 374
+matches arrive at once.
+
+## The baseline finding: the segment story does not survive testing
+
+The proposed reading was that the model's edge over the logistic comes from
+`elo_diff` and the two venue features, all three carrying less signal in
+international cricket — narrower Elo spreads between Full Members, better-known
+grounds — and that Phase 1's ablation finding was arriving where it mattered.
+
+It was tested rather than accepted, and it fails twice.
+
+**The prediction fails.** Paired, match-clustered, same model and baselines:
+
+| segment | matches | n | margin vs logistic | CI | |
+|---|---|---|---|---|---|
+| Full Member v FM | 248 | 40,822 | +0.007664 | [−0.005682, +0.020812] | not significant |
+| franchise/associate | 92 | 10,351 | +0.010695 | [−0.003800, +0.026108] | **not significant** |
+
+The segments differ by 0.003 against CI widths near 0.027, and **neither is
+significant on its own**. "Clear in franchise cricket, not established in
+internationals" requires the first half to be true, and it is not.
+
+**The premise fails, on its load-bearing half.** Elo spreads between Full
+Members are *wider*, not narrower:
+
+| | matches | mean gap | median | p90 |
+|---|---|---|---|---|
+| Full Member v FM | 250 | **96.1** | 81.0 | 202.5 |
+| non-Full-Member | 1,953 | **70.3** | 58.4 | 146.6 |
+
+Which is the right way round on reflection: India v Zimbabwe is a far bigger
+mismatch than two IPL franchises, which are drafted to be balanced. The venue
+half of the read does hold — international grounds carry ~120 prior chases on
+average against ~79 — but more history should make that feature better
+estimated, not weaker, so it does not rescue the mechanism.
+
+**What the data does support**, like-for-like against run 9:
+
+| cohort | matches | margin | CI | |
+|---|---|---|---|---|
+| the original 100 manifest matches | 100 | +0.014897 | [+0.001413, +0.028421] | significant |
+| the 240 added in step 1 | 240 | +0.006231 | [−0.006369, +0.018983] | not significant |
+
+The original cohort reproduces run 9 to six decimal places, so the segmentation
+is sound. Its CI lower bound was **+0.0014** — it cleared zero by about a tenth
+of a percent. That result was marginal and did not survive tripling the sample.
+It is a fragility story, not a segment story, and the distinction matters
+because only one of them is about cricket.
+
+### What `/accuracy` does now
+
+Reports the pooled verdict — `baselineVerdict` already refuses to say "better"
+when the interval includes zero — plus the sample-size history, plus the
+segment table **labelled as a null result**. The segment block exists to
+foreclose the obvious question rather than to answer it, and its note says so
+in as many words.
+
+`compareSegments` is deliberately **not** a significance test. The correct test
+is a paired difference-of-differences with its own clustered interval, which
+the monitor does not compute; claiming one would be the same overclaim in a new
+place. It reports two directly observable facts — whether the intervals overlap
+and whether either excludes zero — and the copy says "no detectable difference"
+rather than "no difference" for exactly that reason.
+
+## The refit is now gated, not merely floored
+
+The floor was the wrong *kind* of protection. `n_matches >= 500` is a threshold
+on a number that grows whenever anyone loads data, and step 1 moved it from 100
+to 340 while populating a landing page. The next backfill of that size would
+have promoted a calibrator from a nightly cron with nobody deciding anything —
+§8.4's shadow-deployment discipline defeated by a counter crossing a line.
+
+`refit_decision` now requires `--allow-refit`, checked **before** the floor.
+`.github/workflows/calibration.yml` does not pass it. The report records
+`would_be_eligible`, because a gate that declines identically at 10 matches and
+at 10,000 hides the fact that the evidence threshold has been reached, and then
+the decision never gets made at all.
+
+Five existing tests gained `allow_refit=True` — they were written to exercise
+the floor, which now sits behind the gate. Named here because this phase's
+rhetoric leans on unmodified tests, and these were modified on purpose. Four
+new tests cover the gate, including one that proves it holds **when the floor
+is satisfied** — the scenario that would have fired incidentally.
+
+---
+
+# Two errors I caught myself, and why they are the same error
+
+**A migration asserting a corpus property.** Schema migrations must hold for an
+empty database. `count(*) = 11` was a fact about 347 loaded teams, written into
+a file whose job is to run anywhere, and it broke every fresh-schema build
+until the suite caught it.
+
+**A build read from the database instead of the page.** The database said zero
+rows would say "Not replayed"; the built page said seven, because a warm
+`.next/cache` served stale sweep results beside a fresh matches query.
+
+These are the same mistake twice: **verifying against a convenient proxy rather
+than against the artifact**. The applied databases were a proxy for "all
+databases". The Postgres query was a proxy for "what the page renders". Both
+proxies were true; neither was the claim being made. That is standing rule 12,
+and this is its third or fourth instance in this repository — which is itself
+the argument for treating it as a rule rather than as a run of bad luck.
+
+# On the brief's four errors
+
+Twelve versus eleven, the phantom name-matching trap, two versus three "Not
+replayed", and a stuck-`live` fix that would have been a no-op.
+
+**The last one is the worst shape and deserves naming.** §2.3 prescribed "a
+match with a `winner` is complete". Run as written, it would have executed
+without error, reported success, and changed nothing — because all four stuck
+rows have `winner IS NULL`, while the three rows that *do* carry winners were
+already `complete`. A fix that fails is loud. A fix that runs, reports success
+and changes nothing is silent, and it closes the ticket.
+
+Only checking `winner IS NULL` **before** writing the fix caught it. The
+general form is the one the rest of this document keeps arriving at: the
+precondition is the part worth verifying, because the action will happily
+succeed against a world where it was never needed.
