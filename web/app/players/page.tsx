@@ -25,7 +25,7 @@ export default async function PlayersPage() {
 
   return (
     <main className="landing">
-      <section className="band">
+      <section className="page-intro">
         <h1 className="page-title">Players</h1>
         <p className="prose soft">
           The <span className="tnum">{players.length.toLocaleString()}</span> players who have

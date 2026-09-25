@@ -28,7 +28,7 @@ export default async function MatchesPage() {
 
   return (
     <main className="landing">
-      <section className="band">
+      <section className="page-intro">
         <h1 className="page-title">Matches</h1>
         <p className="prose soft">
           Every match the model has been run on — {matches.length} of the{" "}

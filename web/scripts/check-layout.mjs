@@ -129,6 +129,45 @@ try {
         return { scrollWidth: root.scrollWidth, clientWidth: root.clientWidth, culprits: culprits.slice(0, 4) };
       });
 
+      /*
+       * TWO LAYOUT PROPERTIES BEYOND OVERFLOW, both added after they broke.
+       *
+       * Nested boxes: /matches and /players wrapped their title, prose AND
+       * the table's own panel in a second panel, so the page rendered a box
+       * inside a box. Invisible in the source - the outer element is a
+       * <section> and the inner one is three components away.
+       *
+       * Header clearance: the header is sticky, and five pages had their
+       * first panel's top edge meeting its bottom edge exactly, because
+       * `main` had no top padding and those pages do not open with a heading
+       * that brings its own margin.
+       */
+      const structure = await page.evaluate(() => {
+        const SEL = ".band, .panel, .level-1, .level-2, .page-links, .ask-intro";
+        const nested = [];
+        for (const el of document.querySelectorAll(SEL)) {
+          const inner = el.querySelector(SEL);
+          if (inner) {
+            const name = (e) => `${e.tagName.toLowerCase()}.${String(e.className || "").split(" ")[0]}`;
+            nested.push(`${name(el)} > ${name(inner)}`);
+          }
+        }
+        const header = document.querySelector(".site-header");
+        const first = document.querySelector("main")?.firstElementChild;
+        const clearance =
+          header && first
+            ? Math.round(first.getBoundingClientRect().top - header.getBoundingClientRect().bottom)
+            : null;
+        return { nested, clearance };
+      });
+
+      if (structure.nested.length > 0) {
+        fail(`${route} at ${width}px has a box inside a box: ${structure.nested.join(", ")}`);
+      }
+      if (structure.clearance !== null && structure.clearance < 8) {
+        fail(`${route} at ${width}px: only ${structure.clearance}px between the sticky header and the first panel`);
+      }
+
       if (result.scrollWidth > result.clientWidth + 1) {
         fail(
           `${route} at ${width}px scrolls sideways: ${result.scrollWidth}px of ${result.clientWidth}px` +

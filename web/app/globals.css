@@ -438,7 +438,15 @@ body { margin: 0; }
    The landing page (§4.1).
    --------------------------------------------------------------------- */
 
-.theme-paper .landing { max-width: var(--page); margin: 0 auto; padding: 0 16px; }
+/* .landing overrides main's padding, so it has to repeat the top clearance -
+   otherwise the first panel meets the sticky header, which is what /matches
+   and /players did while / got away with it only because its wordmark brings
+   its own margin. */
+.theme-paper .landing {
+  max-width: var(--page);
+  margin: 0 auto;
+  padding: var(--gap-section) 16px;
+}
 
 .theme-paper .hero-identity { font-size: var(--t-xs); margin: 0 0 4px; }
 /* .hero-teams is defined once, in the landing-page block below. The copy that
@@ -448,6 +456,18 @@ body { margin: 0; }
 .theme-paper .hero-state { font-size: var(--t-m); margin: 0 0 20px; }
 .theme-paper .hero-strip { margin-bottom: var(--space-4); }
 .theme-paper .hero-note { margin: 0; font-size: var(--t-s); }
+
+/* ONE BOX LAYER. .page-intro is the title-and-lead-in area of a page whose
+   CONTENT is already a box - /matches and /players, where the table sits in
+   its own panel. Those used a boxed .band, which put a box inside a box.
+
+   Titles and their lead-in prose sit on the page background; the content
+   below gets the single box. This is the stated exception to "everything is
+   boxed", and it is scoped to the two pages that need it rather than being a
+   general opt-out. */
+.theme-paper .page-intro {
+  margin-bottom: var(--gap-section);
+}
 
 /* ONE GAP, DECLARED ONCE. Every top-level box takes --gap-section and none
    of them declare their own margin-bottom - lib/borders.test.ts's
@@ -641,7 +661,11 @@ body { margin: 0; }
   padding: var(--space-5);
 }
 
-.theme-paper main { max-width: var(--column); padding: 0 16px 64px; }
+/* The top padding is --gap-section, so the first box sits the same distance
+   below the sticky header as boxes sit from each other. It was 0, so on
+   /matches, /players, /accuracy, /match and /player the first panel's top
+   edge met the header's bottom edge exactly. */
+.theme-paper main { max-width: var(--column); padding: var(--gap-section) 16px 64px; }
 
 /* ------------------------------------------------------------------------
    CORNER GRAPHICS (step 6 item 5). Ball bottom-left, batsman bottom-right.
@@ -795,7 +819,7 @@ body { margin: 0; }
   font-size: var(--t-3xl);
   font-weight: 600;
   letter-spacing: -0.02em;
-  margin: var(--space-6) 0 var(--space-5);
+  margin: var(--space-3) 0 var(--space-5);
   line-height: 1.05;
 }
 .theme-paper .wm-sight { color: var(--bat); }
