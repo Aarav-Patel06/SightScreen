@@ -93,6 +93,12 @@ Base values from the brief, with roles assigned. Sample the reference and correc
 
 **Header navigation is `--ink`, not `--teal`.** Teal on chrome is 3.15:1 and fails. If you want teal in the header, it has to be on a paper-coloured band, not on chrome.
 
+**MEASURED 2026-09-25, and the rule is broader than this.** Teal is not the exception on chrome — it is the norm. Only `--ink` clears 4.5:1 there at all: `--ink-soft` 3.52, `--bat-text` 3.25, `--bowl-text` 3.23, `--flag` 3.78. `--chrome-deep` is worse throughout (2.42–2.84). `--flag` is the one that bites, because §3.2 puts crimson on wickets and failure states and table header bands are chrome.
+
+Two figures in the table above are also wrong: ink on chrome is **8.84**, not 8.6, and ink on paper is **14.08**, not ~15. Teal on paper (5.02), crimson on paper (6.43) and teal on chrome (3.15) are confirmed exactly.
+
+**The palette stays at three data colours, not two.** `--bat` teal, `--bowl` brown, `--flag` crimson. Both palettes clear every contrast and texture floor, so this is a design call: bat and bowl must be distinguishable from each other *and* from the failure colour, and collapsing bowl into crimson would make a wicket and the bowling side the same hue — which §3.2's own rule forbids. See docs/ui-phase2-step2.md.
+
 `tokens.test.ts` already parses `globals.css` at runtime and fails on unclassified tokens. Extend it rather than replacing it, and keep its both-directions property.
 
 ### 3.2 Colour for emphasis

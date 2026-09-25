@@ -52,6 +52,21 @@ export const CHROME_SAFE_TEXT = ["--ink"] as const;
 /** The base every ratio in this system is measured against. */
 export const PAPER = "--paper";
 
+/**
+ * Every paper-family surface text can land on, not just `--paper`.
+ *
+ * `--paper-deep` is the foot of the page wash added in step 2, and it is a
+ * real reading surface: the bottom of a long page IS that colour. Checking
+ * only `--paper` would have measured the top of the page and called it the
+ * page - and the wash is not free, it costs about 0.31 of contrast ratio.
+ * `--bat-text` reads 5.14:1 at the top and 4.83:1 at the foot, so the margin
+ * over the 4.5 floor falls from 0.64 to 0.33.
+ *
+ * That is still clear, and it is now measured on every run rather than on the
+ * day someone deepens the wash.
+ */
+export const PAPER_SURFACES = ["--paper", "--paper-raised", "--paper-deep"] as const;
+
 /** Tokens that may carry words. Held to AA_TEXT. */
 export const TEXT_TOKENS = ["--ink", "--ink-soft", "--bat-text", "--bowl-text", "--flag"] as const;
 
@@ -67,6 +82,7 @@ export const FILL_TOKENS = ["--bat", "--bowl"] as const;
 export const EXEMPT_TOKENS = [
   "--paper",
   "--paper-raised",
+  "--paper-deep",
   "--chrome",
   "--chrome-deep",
   "--rule",

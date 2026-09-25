@@ -26,6 +26,7 @@ import {
   FILL_TOKENS,
   NON_COLOUR_PREFIXES,
   PAPER,
+  PAPER_SURFACES,
   SPACE_STEP_PX,
   SPACE_TOKENS,
   TEXT_TOKENS,
@@ -51,13 +52,19 @@ describe("the stylesheet is readable at all", () => {
   });
 });
 
-describe("text tokens clear WCAG AA", () => {
-  for (const token of TEXT_TOKENS) {
-    it(`${token} is at least ${AA_TEXT}:1 against ${PAPER}`, () => {
-      const hex = tokens[token];
-      expect(hex, `${token} is not defined in .theme-paper`).toBeDefined();
-      expect(contrast(hex, paper)).toBeGreaterThanOrEqual(AA_TEXT);
-    });
+describe("text tokens clear WCAG AA on every paper surface", () => {
+  // Every surface, not just --paper. The page wash means the foot of a long
+  // page is --paper-deep, and text sits on it.
+  for (const surface of PAPER_SURFACES) {
+    for (const token of TEXT_TOKENS) {
+      it(`${token} is at least ${AA_TEXT}:1 against ${surface}`, () => {
+        const hex = tokens[token];
+        const under = tokens[surface];
+        expect(hex, `${token} is not defined in .theme-paper`).toBeDefined();
+        expect(under, `${surface} is not defined in .theme-paper`).toBeDefined();
+        expect(contrast(hex, under)).toBeGreaterThanOrEqual(AA_TEXT);
+      });
+    }
   }
 });
 
@@ -65,11 +72,14 @@ describe("fill tokens clear the floor that actually binds", () => {
   // FILL_FLOOR, not AA_LARGE. 3.0 passes WCAG 1.4.11 and collapses the
   // texture ladder - see the constant's own comment for the measurements.
   for (const token of FILL_TOKENS) {
-    it(`${token} is at least ${FILL_FLOOR}:1 against ${PAPER}`, () => {
-      const hex = tokens[token];
-      expect(hex, `${token} is not defined in .theme-paper`).toBeDefined();
-      expect(contrast(hex, paper)).toBeGreaterThanOrEqual(FILL_FLOOR);
-    });
+    for (const surface of PAPER_SURFACES) {
+      it(`${token} is at least ${FILL_FLOOR}:1 against ${surface}`, () => {
+        const hex = tokens[token];
+        const under = tokens[surface];
+        expect(hex, `${token} is not defined in .theme-paper`).toBeDefined();
+        expect(contrast(hex, under)).toBeGreaterThanOrEqual(FILL_FLOOR);
+      });
+    }
   }
 });
 
