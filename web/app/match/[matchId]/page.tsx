@@ -134,7 +134,7 @@ export default async function MatchPage({
         header={match}
         initialPredictions={initial}
       />
-      <p className="tiny muted">
+      <p className="page-links">
         <Link href="/about/model">How good is this model?</Link> · predictions are
         analytics, not betting advice.
       </p>

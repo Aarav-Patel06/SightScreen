@@ -450,7 +450,7 @@ export default async function AccuracyPage() {
         </dl>
       </section>
 
-      <p className="tiny muted">
+      <p className="page-links">
         <Link href="/model-card">Model card — the plain-language version</Link> ·{" "}
         <Link href="/about/model">What the model can&apos;t do</Link> ·{" "}
         <Link href="/">Back</Link> · analytics, not betting advice.

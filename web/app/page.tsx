@@ -143,26 +143,6 @@ export default async function Home() {
       </section>
 
       {/* ---------------------------------------------------------------- */}
-      {/* WHAT THIS IS — level 0, prose                                     */}
-      {/* ---------------------------------------------------------------- */}
-      <section className="band">
-        <div className="prose">
-          <p>
-            SightScreen predicts who wins a Twenty20 or one-day chase, updated
-            after every ball, from the match situation and nothing else. It
-            covers the second innings only — see below for why.
-          </p>
-          <p>
-            What makes it different is that it publishes its own{" "}
-            <Link href="/accuracy">track record</Link>, including the
-            probability bands where it is miscalibrated and the matches it got
-            most wrong. The <Link href="/model-card">model card</Link> says what
-            it was trained on and where it should not be trusted.
-          </p>
-        </div>
-      </section>
-
-      {/* ---------------------------------------------------------------- */}
       {/* SCORECARD — level 2, and the most carefully worded thing here     */}
       {/* ---------------------------------------------------------------- */}
       <section className="level-2 scorecard" aria-labelledby="scorecard-heading">
@@ -334,6 +314,26 @@ export default async function Home() {
           </p>
         </section>
       </div>
+
+      {/* ---------------------------------------------------------------- */}
+      {/* WHAT THIS IS — level 0, prose                                     */}
+      {/* ---------------------------------------------------------------- */}
+      <section className="band">
+        <div className="prose">
+          <p>
+            SightScreen predicts who wins a Twenty20 or one-day chase, updated
+            after every ball, from the match situation and nothing else. It
+            covers the second innings only — see below for why.
+          </p>
+          <p>
+            What makes it different is that it publishes its own{" "}
+            <Link href="/accuracy">track record</Link>, including the
+            probability bands where it is miscalibrated and the matches it got
+            most wrong. The <Link href="/model-card">model card</Link> says what
+            it was trained on and where it should not be trusted.
+          </p>
+        </div>
+      </section>
 
       {/* ---------------------------------------------------------------- */}
       {/* GAPS — level 0                                                    */}

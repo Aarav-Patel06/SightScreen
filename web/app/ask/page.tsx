@@ -132,7 +132,7 @@ export default function AskPage() {
   return (
     <main className="ask">
       <h1 className="page-title">Ask</h1>
-      <p>
+      <p className="ask-intro">
         Questions answered from 3.78 million deliveries of ball-by-ball data and the
         model&rsquo;s own outputs. Every number comes with the sample size behind it; where
         the data cannot answer something, the agent says so rather than estimating.

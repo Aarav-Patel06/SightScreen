@@ -126,6 +126,12 @@ body { margin: 0; }
   --t-xl: 33.2px;
   --t-2xl: 41.5px;
   --t-3xl: 51.9px;
+  /* Between --t-xs and --t-s, and its own token because an unexplained raw
+     value in this stylesheet is what the last two audits kept finding. The
+     nav wants to be heavier than a caption and smaller than body copy; 17px
+     costs 3px more header height on a phone, where the header is sticky and
+     already 17% of the viewport. */
+  --t-nav: 15px;
 
   /* THE SPACING SCALE, added 2026-09-25 (UI-PHASE-2 section 3).
      There was no spacing scale before this - a seven-step type scale and
@@ -168,8 +174,13 @@ body { margin: 0; }
   --radius-control: 4px;
   --radius-sm: 2px;
   --radius-pill: 999px;
-  --shadow-1: 0 1px 2px rgba(42, 36, 25, 0.05);
-  --shadow-2: 0 2px 8px rgba(42, 36, 25, 0.07);
+  /* 14%, up from 5% and 7% (step 6 part three). Measured against --paper,
+     the darkest point of a shadow goes 1.098:1 and 1.141:1 to 1.310:1 -
+     roughly three times the separation. The blur grows with the opacity
+     rather than the opacity alone, because a 2px shadow under a 1px border
+     reads as part of the border; depth needs spread. */
+  --shadow-1: 0 2px 8px rgba(42, 36, 25, 0.14);
+  --shadow-2: 0 4px 16px rgba(42, 36, 25, 0.14);
 
   /* ONE CONTROL GEOMETRY (step 6). The audit found five controls with three
      radii, two font sizes, two raw-px paddings that step 2's migration
@@ -344,10 +355,11 @@ body { margin: 0; }
 .theme-paper .site-header nav ul {
   list-style: none; margin: 0; padding: 0;
   display: flex; gap: var(--space-4);
-  font-size: var(--t-xs);
+  font-size: var(--t-nav);
 }
 .theme-paper .site-header nav a {
   text-decoration: none;
+  font-weight: 600;
   padding-bottom: var(--space-1);
   border-bottom: 2px solid transparent;
 }
@@ -421,16 +433,34 @@ body { margin: 0; }
 .theme-paper .hero-strip { margin-bottom: var(--space-4); }
 .theme-paper .hero-note { margin: 0; font-size: var(--t-s); }
 
-.theme-paper .band { padding: 40px 0; border-top: 1px solid var(--rule); }
+/* The cross-link line at the foot of a page. Boxed like everything else, but
+   at level 0 weight - it is navigation, not content, and a full panel around
+   three links would out-weigh the page it sits under. */
+.theme-paper .page-links {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-1);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+}
 
-/* A band directly under a panel draws no rule of its own. Its border-top
-   landed at exactly the panel's bottom edge - measured, both at y=583.5 and
-   both spanning 16 to 1124 - so two lines sat on the same pixel row. The
-   panel's corners curve inward and the band's do not, so the band's line
-   continued straight past the curve and read as the panel's own edge
-   escaping. It was a second element all along. */
-.theme-paper .level-1 + .band,
-.theme-paper .level-2 + .band { border-top: 0; }
+/* .band IS A BOX NOW (step 6 part three).
+   It was the loose-prose class - 40px of vertical padding and a hairline
+   above - and it is used only on user-reachable pages. Boxing it is most of
+   this change. The border-top separator goes with it: a box does not need a
+   rule above it, and the rule landing on the preceding panel's bottom edge
+   was its own bug. */
+.theme-paper .band {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-1);
+  padding: var(--space-5);
+  margin-bottom: var(--space-4);
+}
 .theme-paper .band:first-of-type { border-top: 0; }
 .theme-paper .band h2 {
   font-size: var(--t-l);
@@ -542,23 +572,26 @@ body { margin: 0; }
    is what the Realtime tests assert on.
    --------------------------------------------------------------------- */
 
-/* LEVEL 0, and it is a real level (section 3.4).
-   .panel is a section separator, not a card: transparent, no radius, a single
-   hairline between siblings. It stays that way. /model-card, /about/model and
-   the prose on /accuracy all use it, and those are documents - boxing them
-   into identical rounded cards with one shadow is the templated default the
-   design guidance names, and it is the thing this class exists to not do.
-   Level 1 and 2 below are for discrete OBJECTS. If it is prose, it is a
-   panel; if it is a thing, it is a level. */
+/* .panel IS A BOX NOW, AND THIS REVERSES A RULE RECORDED THREE TIMES.
+   It used to read: "if it is prose, it is a panel; if it is a thing, it is a
+   level", with .panel deliberately transparent so that documents were not
+   boxed into identical rounded cards - the templated default the design
+   guidance names.
+
+   That is overridden on purpose, for user-reachable pages: loose text sitting
+   directly on the page background made those pages read as unfinished. The
+   exception survives and is now scoped rather than global - see
+   `.document .panel` below, which is what keeps /model-card a document.
+
+   Recorded as a decision, not drift. docs/ui-phase2-step6c.md says so. */
 .theme-paper .panel {
-  background: transparent;
-  border: 0;
-  border-top: 1px solid var(--rule);
-  border-radius: 0;
-  padding: var(--space-5) 0;
-  margin-bottom: 0;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-1);
+  padding: var(--space-5);
+  margin-bottom: var(--space-4);
 }
-.theme-paper .panel:first-of-type { border-top: 0; }
 
 /* LEVEL 1 - content sections and table containers. */
 .theme-paper .level-1 {
@@ -645,6 +678,16 @@ body { margin: 0; }
 
 /* /ask - the input is the page. Full width within the margins, at level 1, so
    it is the first thing the eye lands on after the heading. */
+.theme-paper .ask-intro {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-1);
+  padding: var(--space-5);
+  margin-bottom: var(--space-4);
+  max-width: var(--measure);
+}
+
 .theme-paper .ask-form-wide {
   display: flex;
   gap: var(--space-2);
@@ -1143,8 +1186,16 @@ body { margin: 0; }
   max-width: var(--column);
   padding: 32px 16px 96px;
 }
+/* THE ONE EXCEPTION, and the only page that takes it.
+   /model-card renders <main className="document">. It is fourteen paragraphs
+   across eight sections of continuous prose; boxed, that is a stack of
+   fourteen identical cards with nothing distinguishing them, which is the one
+   case where boxing actively costs reading. Every other page is boxed. */
 .theme-paper .document .panel {
+  background: transparent;
   border: 0;
+  border-radius: 0;
+  box-shadow: none;
   padding: 0;
   margin: 0 0 28px;
 }
