@@ -21,6 +21,11 @@
 
 * { box-sizing: border-box; }
 
+/* Anchor targets clear the sticky header instead of landing behind it.
+   The value is the header's own height at its tallest - it wraps to two rows
+   below 560px - so a linked heading is visible rather than covered. */
+html { scroll-padding-top: 120px; }
+
 body { margin: 0; }
 
 .theme-paper {
@@ -1201,6 +1206,20 @@ body { margin: 0; }
    --------------------------------------------------------------------- */
 
 .theme-paper .site-header {
+  /* STICKY, and the shadow is what makes it legible while it is.
+
+     z-index 5 sits above the panels - .panel, .level-1 and .level-2 all
+     carry `position: relative` so that they clip their own absolutely
+     positioned descendants, and a positioned element paints above
+     non-positioned siblings even without a z-index of its own. Without this
+     the header would scroll UNDER them.
+
+     Below the skip link's 10, deliberately: the skip link exists to be the
+     first thing a keyboard user reaches, and a header that covered it would
+     defeat the one control whose whole job is to be reachable. */
+  position: sticky;
+  top: 0;
+  z-index: 5;
   background: var(--chrome);
   border-bottom: 1px solid var(--rule);
   /* The edge the fill no longer carries. chrome/paper fell from 1.853 to
