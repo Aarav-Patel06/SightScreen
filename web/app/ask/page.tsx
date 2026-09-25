@@ -151,6 +151,15 @@ export default function AskPage() {
         </p>
       ) : null}
 
+      {/* Level 1 around the LIST, not around each message (UI-PHASE-2 section
+          5). One exchange is a turn in a conversation, not a discrete object;
+          boxing each would produce the stack of identical cards the design
+          guidance names. Rendered only when there is history, so an empty
+          page has no empty box on it.
+
+          Gate, cookie, HMAC and cap logic untouched - this is a wrapper. */}
+      {history.length > 0 ? (
+      <div className="level-1 ask-history">
       {history.map((item, index) => (
         <section key={index} className="ask-exchange">
           <p className="ask-question">{item.question}</p>
@@ -163,6 +172,8 @@ export default function AskPage() {
           )}
         </section>
       ))}
+      </div>
+      ) : null}
     </main>
   );
 }

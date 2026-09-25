@@ -482,6 +482,48 @@ body { margin: 0; }
 .theme-paper main { max-width: var(--column); padding: 0 16px 64px; }
 
 /* ------------------------------------------------------------------------
+   THE ELEVATION PASS (UI-PHASE-2 section 5).
+
+   Levels are assigned by hierarchy, not applied uniformly. What did NOT get
+   a level is the part worth reading: /model-card keeps none at all, page
+   titles stay level 0, the /accuracy "what it doesn't do" section stays
+   level 0 because it is prose about absence, and /ask boxes the message LIST
+   rather than each message - a turn in a conversation is not an object.
+   --------------------------------------------------------------------- */
+
+/* A table is a discrete object; the filters and search above it are not.
+   The wrapper also gives a wide table somewhere to scroll on a narrow
+   screen without the panel edge moving with it. */
+.theme-paper .table-panel { padding: var(--space-2); overflow-x: auto; }
+.theme-paper .table-panel .grid { margin: 0; }
+
+/* The two measurement sections on /accuracy. They already carried the
+   live-vs-replayed distinction as a 3px accent, and that accent now sits on
+   the panel edge instead of floating beside it - the elevation and the
+   accent say the same thing rather than competing.
+
+   These rules come after .level-1 deliberately: same specificity, so source
+   order decides, and the accent must win over the panel's own 1px left
+   border. */
+.theme-paper .accuracy-live,
+.theme-paper .accuracy-replayed { padding-left: var(--space-4); }
+
+/* The match page. The hero is the one level-2 on the page; the curve and the
+   strip share a single level-1 because they share an x-axis and are indexed
+   by the same delivery position, so two panels would draw a line through the
+   middle of one figure. */
+.theme-paper .match-hero { margin-bottom: var(--space-4); }
+.theme-paper .match-figure { margin-bottom: var(--space-4); }
+.theme-paper .match-figure > div + div { margin-top: var(--space-5); }
+.theme-paper .match-figure h2 { margin-top: 0; }
+
+/* /ask. The exchanges keep their own hairline separators inside the panel;
+   the first one does not need a rule above it now that the panel edge is
+   there. */
+.theme-paper .ask-history { margin-top: var(--space-4); }
+.theme-paper .ask-history .ask-exchange:first-child { border-top: 0; padding-top: 0; }
+
+/* ------------------------------------------------------------------------
    STRUCTURE CARRIED OVER FROM THE DELETED DARK BLOCK.
 
    Every declaration here was live before step 3 and had no .theme-paper
@@ -652,11 +694,9 @@ body { margin: 0; }
 }
 .theme-paper .accuracy-live {
   border-left: 3px solid var(--bat);
-  padding-left: 16px;
 }
 .theme-paper .accuracy-replayed {
   border-left: 3px solid var(--rule);
-  padding-left: 16px;
 }
 .theme-paper .accuracy-replayed h2,
 .theme-paper .accuracy-replayed .section-kicker { color: var(--ink-soft); }

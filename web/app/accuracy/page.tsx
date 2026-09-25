@@ -376,7 +376,7 @@ export default async function AccuracyPage() {
           of equal weight - one is the measurement and the other is a
           demonstration that the pipeline runs, and the layout now says so
           before the words do. */}
-      <section className="panel accuracy-live">
+      <section className="level-1 accuracy-live">
         <p className="section-kicker">The measurement</p>
         <h2>Live — predicted before anyone knew the result</h2>
         {live && live.n > 0 ? (
@@ -407,7 +407,7 @@ export default async function AccuracyPage() {
         )}
       </section>
 
-      <section className="panel accuracy-replayed">
+      <section className="level-1 accuracy-replayed">
         <p className="section-kicker">Not a measurement</p>
         <h2>Replayed — matches the model was tuned on</h2>
         <p className="small muted">

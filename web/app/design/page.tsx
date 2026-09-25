@@ -343,6 +343,32 @@ export default function DesignPage() {
         </div>
       </Section>
 
+      <Section
+        title="Elevation"
+        note="Three levels, assigned by hierarchy. Level 0 is a real level - prose, /model-card and page titles take no panel at all."
+      >
+        <div style={{ display: "grid", gap: "var(--space-4)" }}>
+          <div className="panel" style={{ marginTop: 0 }}>
+            <strong>Level 0</strong> — no panel. A hairline between siblings and
+            nothing else. Prose, page titles, <code>/model-card</code>, and the
+            &ldquo;what it doesn&rsquo;t do&rdquo; section on <code>/accuracy</code>.
+            If it is prose, it is a panel; if it is a thing, it is a level.
+          </div>
+          <div className="level-1">
+            <strong>Level 1</strong> — <code>--paper-raised</code>, 1px{" "}
+            <code>--rule</code>, radius 10px, <code>--shadow-1</code>. Content
+            sections and table containers: the tables on <code>/matches</code> and{" "}
+            <code>/players</code>, each measurement section on{" "}
+            <code>/accuracy</code>, the message list on <code>/ask</code>.
+          </div>
+          <div className="level-2">
+            <strong>Level 2</strong> — radius 12px, <code>--shadow-2</code>. The
+            hero and the landing scorecard, and nothing else. Two levels, not a
+            ramp: a third would have to mean something.
+          </div>
+        </div>
+      </Section>
+
       <Section title="What the strip does not know">
         <p className="prose">
           The final mark of every innings is a dashed hairline rather than a

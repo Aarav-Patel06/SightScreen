@@ -203,3 +203,52 @@ describe("the spacing scale", () => {
     expect(new Set(values).size).toBe(values.length);
   });
 });
+
+// --- nothing but ink on a chrome surface (UI-PHASE-2 step 4) --------------
+//
+// CHROME_SAFE_TEXT already says only --ink may sit on chrome. That is a claim
+// about the REGISTRY; this is a claim about the STYLESHEET. They are different
+// things, and the gap between them is where a rule like
+// `.grid thead th .band-off { color: var(--flag) }` would live - legal by the
+// registry, 3.49:1 on the page.
+//
+// Live constraint: section 3.2 puts crimson on failure states, and table
+// header bands are chrome. A failure state in a header band has to be
+// designed around, not exempted.
+
+describe("chrome surfaces carry ink and nothing else", () => {
+  const CHROME_BACKGROUND = /background:\s*var\(--chrome(?:-deep)?\)/;
+
+  /** Declaration blocks, as `[selector, body]`. */
+  const blocks = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({
+    selector: m[1].trim().replace(/\s+/g, " "),
+    body: m[2],
+  }));
+
+  it("parsed the stylesheet into blocks", () => {
+    // An empty list passes everything below.
+    expect(blocks.length).toBeGreaterThan(50);
+  });
+
+  it("finds the chrome surfaces it is meant to police", () => {
+    const chrome = blocks.filter((b) => CHROME_BACKGROUND.test(b.body));
+    expect(chrome.length).toBeGreaterThan(0);
+  });
+
+  it("sets no colour other than --ink on a chrome background", () => {
+    const offenders = blocks
+      .filter((b) => CHROME_BACKGROUND.test(b.body))
+      .map((b) => {
+        const colour = b.body.match(/(?:^|[;{\s])color:\s*([^;]+)/);
+        return { selector: b.selector, colour: colour?.[1].trim() };
+      })
+      .filter((b) => b.colour !== undefined && !/var\(--ink\)/.test(b.colour!));
+
+    expect(
+      offenders.map((o) => `${o.selector} { color: ${o.colour} }`),
+      "only --ink clears 4.5:1 on --chrome. --flag is 3.49:1 there, and " +
+        "section 3.2 puts crimson on failure states - so a failure state in a " +
+        "header band is a design problem, not an exemption"
+    ).toEqual([]);
+  });
+});

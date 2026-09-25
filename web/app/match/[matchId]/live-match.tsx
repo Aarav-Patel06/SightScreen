@@ -315,7 +315,11 @@ export function LiveMatch({
       </div>
 
       {/* 12.1 item 2 - WP bar, history strip, last-over delta */}
-      <div className="panel">
+      {/* Level 2 (UI-PHASE-2 section 5): the hero. Of everything on this page
+          this is the thing it exists to show, and levels are assigned by
+          hierarchy rather than applied uniformly. The heading above stays
+          level 0 - a page title is not an object. */}
+      <div className="level-2 match-hero">
         <div className="row">
           <div>
             <div className="wp-number">
@@ -376,8 +380,13 @@ export function LiveMatch({
         </div>
       </div>
 
+      {/* ONE level-1 around the curve AND the strip, per section 5. They
+          share an x-axis and are indexed by the same delivery position, so
+          two panels would draw a line between two halves of one figure. */}
+      <div className="level-1 match-figure">
+
       {/* 12.1 item 6 - the curve */}
-      <div className="panel">
+      <div>
         <h2>Win probability, {battingName}</h2>
         {chartData.length === 0 ? (
           <p className="small muted">
@@ -436,7 +445,7 @@ export function LiveMatch({
           point n. The curve says where the probability was; the strip says
           what each ball did to it. */}
       {marks.length > 0 && (
-        <div className="panel">
+        <div>
           <h2>Every delivery</h2>
           <BallStrip marks={marks} height={72} defaultWidth={640} />
           <div className="tiny muted" style={{ marginTop: 8 }}>
@@ -447,6 +456,8 @@ export function LiveMatch({
           </div>
         </div>
       )}
+
+      </div>
 
       {/* §12.1 items 3, 4 and 5. They are not built, and the honest-gap
           principle (§0.2) says to say so where they would have been rather

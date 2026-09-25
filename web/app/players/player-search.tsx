@@ -55,6 +55,9 @@ export function PlayerSearch({ players }: { players: PlayerRow[] }) {
         </p>
       </div>
 
+      {/* Level 1. The search field above stays unboxed - it is a control,
+          not an object. */}
+      <div className="level-1 table-panel">
       <table className="grid players-table">
         <thead>
           <tr>
@@ -79,6 +82,7 @@ export function PlayerSearch({ players }: { players: PlayerRow[] }) {
           ))}
         </tbody>
       </table>
+      </div>
 
       {searching && rows.length === 0 ? (
         <p className="soft notice">

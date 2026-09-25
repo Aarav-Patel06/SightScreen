@@ -92,6 +92,11 @@ export function MatchTable({
         </p>
       ) : null}
 
+      {/* Level 1 (UI-PHASE-2 section 5): the table is a discrete object, the
+          filters above it are not. The wrapper also gives the table
+          somewhere to scroll on a narrow screen without the panel edge
+          moving. */}
+      <div className="level-1 table-panel">
       <table className="grid matches-table">
         <thead>
           <tr>
@@ -137,6 +142,7 @@ export function MatchTable({
           ))}
         </tbody>
       </table>
+      </div>
 
       {visible.length === 0 ? (
         <p className="soft notice">No matches match those filters.</p>
