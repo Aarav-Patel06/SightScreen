@@ -37,6 +37,24 @@ export interface Mark {
   score: number;
   wickets: number;
   runsRequired: number;
+  /** Legal balls left in the innings, for "35 required off 20". */
+  ballsRemaining: number;
+  /**
+   * Runs conceded on this ball, including extras.
+   *
+   * Derived and KEPT, where it used to be computed and thrown away: `event`
+   * collapsed every scoring ball to the string "score", which is why the
+   * readout rendered a bare "score ·" where a number belonged.
+   */
+  runs: number;
+  /**
+   * Did this delivery advance the legal-ball count?
+   *
+   * False means a wide or a no-ball - `balls_bowled` does not advance on
+   * those, as note 2 above records. It is the one thing about a delivery the
+   * payload lets us say beyond runs and wickets, so it is worth keeping.
+   */
+  legal: boolean;
   /** Carried so a tooltip can address the underlying row. */
   predictionId: number;
 }
@@ -86,6 +104,9 @@ export function toMarks(predictions: readonly WinProbPrediction[]): Mark[] {
       score: prediction.score,
       wickets: prediction.wickets,
       runsRequired: prediction.runs_required,
+      ballsRemaining: prediction.balls_remaining,
+      runs: next ? Math.max(0, next.score - prediction.score) : 0,
+      legal: next ? next.balls_bowled > prediction.balls_bowled : true,
       swing: next ? next.p - prediction.p : 0,
       event: next ? eventBetween(prediction, next) : "unknown",
     };
@@ -106,6 +127,28 @@ export function toMarks(predictions: readonly WinProbPrediction[]): Mark[] {
 function eventBetween(before: WinProbPrediction, after: WinProbPrediction): BallEvent {
   if (after.wickets > before.wickets) return "wicket";
   return after.score > before.score ? "score" : "dot";
+}
+
+/**
+ * What happened on this ball, in words.
+ *
+ * ONE DEFINITION, because the visible readout and the screen-reader
+ * description have to agree - the strip is a picture for one reader and a
+ * sentence for the other, and two vocabularies would make them different
+ * pictures.
+ *
+ * "4 runs", NOT "four". A boundary off the bat and four byes both raise the
+ * team score by four, and the payload carries no extras breakdown, so calling
+ * it "four" would claim a stroke the data cannot see. What the data CAN see
+ * is whether the ball was legal, because `balls_bowled` does not advance on a
+ * wide or a no-ball - so those are named as extras rather than as runs.
+ */
+export function describeEvent(mark: Mark): string {
+  if (mark.event === "unknown") return "outcome not recorded";
+  if (mark.event === "wicket") return "wicket";
+  if (!mark.legal) return mark.runs === 1 ? "1 extra" : `${mark.runs} extras`;
+  if (mark.runs === 0) return "dot";
+  return mark.runs === 1 ? "1 run" : `${mark.runs} runs`;
 }
 
 /**

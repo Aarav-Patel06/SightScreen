@@ -12,6 +12,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  describeEvent,
   describeStrip,
   peakSwing,
   pitchFor,
@@ -19,6 +20,7 @@ import {
   tierHasFill,
   tierHasPerMarkHit,
   toMarks,
+  type Mark,
   type Tier,
 } from "./ball-strip";
 import type { WinProbPrediction } from "./prediction";
@@ -222,5 +224,68 @@ describe("describeStrip", () => {
 
   it("says so plainly when there is nothing to describe", () => {
     expect(describeStrip([])).toBe("No deliveries recorded.");
+  });
+});
+
+describe("describeEvent", () => {
+  const mark = (over: Partial<Mark>): Mark => ({
+    index: 0, predictionId: 1, p: 0.5, swing: 0, phase: "middle",
+    ballsBowled: 10, score: 40, wickets: 1, runsRequired: 60,
+    ballsRemaining: 50, runs: 0, legal: true, event: "dot", ...over,
+  });
+
+  it("names a dot", () => {
+    expect(describeEvent(mark({ event: "dot", runs: 0 }))).toBe("dot");
+  });
+
+  it("names runs with the number, which is the bug it was written for", () => {
+    // The readout used to print the bare string "score" here, because the
+    // run delta was computed in toMarks and thrown away.
+    expect(describeEvent(mark({ event: "score", runs: 1 }))).toBe("1 run");
+    expect(describeEvent(mark({ event: "score", runs: 2 }))).toBe("2 runs");
+    expect(describeEvent(mark({ event: "score", runs: 4 }))).toBe("4 runs");
+    expect(describeEvent(mark({ event: "score", runs: 6 }))).toBe("6 runs");
+  });
+
+  it("does not call a four a boundary", () => {
+    // A stroke for four and four byes both raise the score by four, and the
+    // payload carries no extras breakdown. "four" would claim a shot the
+    // data cannot see.
+    expect(describeEvent(mark({ event: "score", runs: 4 }))).not.toMatch(/four|boundary/i);
+  });
+
+  it("names an extra, which is the one thing the ball key does reveal", () => {
+    // balls_bowled does not advance on a wide or a no-ball.
+    expect(describeEvent(mark({ event: "score", runs: 1, legal: false }))).toBe("1 extra");
+    expect(describeEvent(mark({ event: "score", runs: 2, legal: false }))).toBe("2 extras");
+  });
+
+  it("puts a wicket above runs, as toMarks does", () => {
+    expect(describeEvent(mark({ event: "wicket", runs: 1 }))).toBe("wicket");
+  });
+
+  it("says the last ball is not recorded rather than guessing", () => {
+    expect(describeEvent(mark({ event: "unknown" }))).toBe("outcome not recorded");
+  });
+});
+
+describe("toMarks keeps what the readout needs", () => {
+  it("carries the run delta, balls remaining, and whether the ball was legal", () => {
+    const rows = [
+      { p: 0.5, score: 40, wickets: 1, balls_bowled: 10, balls_remaining: 50, runs_required: 60 },
+      { p: 0.6, score: 44, wickets: 1, balls_bowled: 11, balls_remaining: 49, runs_required: 56 },
+      { p: 0.6, score: 45, wickets: 1, balls_bowled: 11, balls_remaining: 49, runs_required: 55 },
+    ].map((r, i) => ({
+      prediction_id: i, created_at: "", model_version: "m", innings: 2,
+      target: 101, phase: "middle" as const, ...r,
+    }));
+
+    const marks = toMarks(rows);
+    expect(marks[0].runs).toBe(4);
+    expect(marks[0].legal).toBe(true);
+    expect(marks[0].ballsRemaining).toBe(50);
+    // balls_bowled did not advance, so this one was a wide or a no-ball.
+    expect(marks[1].runs).toBe(1);
+    expect(marks[1].legal).toBe(false);
   });
 });

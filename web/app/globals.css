@@ -455,6 +455,10 @@ body { margin: 0; }
    radius. */
 .theme-paper .hero-state { font-size: var(--t-m); margin: 0 0 20px; }
 .theme-paper .hero-strip { margin-bottom: var(--space-4); }
+
+/* The ball readout is two lines - match state, then what the model thought.
+   Stacked rather than wrapped, so the split is the same on every width. */
+.theme-paper .strip-readout { display: flex; flex-direction: column; gap: 2px; }
 .theme-paper .hero-note { margin: 0; font-size: var(--t-s); }
 
 /* ONE BOX LAYER. .page-intro is the title-and-lead-in area of a page whose

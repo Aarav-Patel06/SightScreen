@@ -447,7 +447,7 @@ export function LiveMatch({
       {marks.length > 0 && (
         <div>
           <h2>Every delivery</h2>
-          <BallStrip marks={marks} height={72} defaultWidth={640} />
+          <BallStrip marks={marks} height={72} defaultWidth={640} battingTeam={battingName} />
           <div className="tiny muted" style={{ marginTop: 8 }}>
             Height is the swing that ball caused, above the line for the
             batting side. The baseline under it is dotted through the

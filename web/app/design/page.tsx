@@ -90,6 +90,9 @@ function syntheticOdi(): Mark[] {
       score: Math.round(index * 1.1),
       wickets: Math.floor(index / 50),
       runsRequired: Math.max(0, 280 - Math.round(index * 1.1)),
+      ballsRemaining: Math.max(0, 300 - index),
+      runs: random() > 0.6 ? 1 : 0,
+      legal: true,
     } satisfies Mark;
   });
 }

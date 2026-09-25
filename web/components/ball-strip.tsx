@@ -41,6 +41,7 @@ import {
   tierHasFill,
   type Mark,
   type Tier,
+  describeEvent,
 } from "@/lib/ball-strip";
 import type { Phase } from "@/lib/prediction";
 
@@ -85,6 +86,17 @@ export interface BallStripProps {
    */
   decorative?: boolean;
   /**
+   * Whose win probability the strip shows, for the readout's second line.
+   *
+   * Optional: the hero and the match page know the batting side, the /design
+   * page and the small strips do not. Without it the line reads "Win
+   * probability", which is true but less useful - never a guessed name.
+   *
+   * teams.short_name is NULL for all 347 rows, so this is a full name rather
+   * than an abbreviation.
+   */
+  battingTeam?: string;
+  /**
    * Draw the strip left to right once on load (§1.7). The landing hero only -
    * it is the page's single piece of non-user-triggered motion, and a second
    * one anywhere would make it ordinary.
@@ -100,6 +112,7 @@ export function BallStrip({
   interactive = true,
   draw = false,
   decorative = false,
+  battingTeam,
   className,
 }: BallStripProps) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -277,7 +290,7 @@ export function BallStrip({
         </svg>
       </div>
 
-      {canInteract ? <Readout mark={activeMark} peak={peak} /> : null}
+      {canInteract ? <Readout mark={activeMark} peak={peak} battingTeam={battingTeam} /> : null}
     </div>
   );
 }
@@ -475,27 +488,61 @@ function PhaseBaseline({
  * Reserves its line whether or not a mark is active, so scrubbing does not
  * reflow the page under the pointer.
  */
-function Readout({ mark, peak }: { mark: Mark | null; peak: number }) {
+function Readout({
+  mark,
+  peak,
+  battingTeam,
+}: {
+  mark: Mark | null;
+  peak: number;
+  battingTeam?: string;
+}) {
+  /*
+   * TWO LINES, and the split is by question rather than by length.
+   *
+   * Line one is the match state: where the score is, what is still needed,
+   * and what this ball did. Line two is the model: what it thought, and how
+   * far this ball moved it. A reader scrubbing the strip is asking one or the
+   * other, and interleaving them on one line made both harder to find.
+   *
+   * The block reserves both lines whether or not a mark is active, so
+   * scrubbing never reflows the page under the pointer.
+   */
+  const subject = battingTeam ? `${battingTeam} win probability` : "Win probability";
+
   return (
-    <p
-      className="soft tnum"
-      style={{ fontSize: "var(--t-xs)", margin: "6px 0 0", minHeight: "1.4em" }}
+    <div
+      className="soft tnum strip-readout"
+      style={{ fontSize: "var(--t-xs)", margin: "6px 0 0", minHeight: "2.8em" }}
       aria-live="polite"
     >
       {mark === null ? (
-        <span>Peak swing {Math.round(peak * 100)} points. Hover or use arrow keys.</span>
+        <>
+          <span>Largest swing {Math.round(peak * 100)} percentage points</span>
+          <span>Hover to see ball-by-ball</span>
+        </>
       ) : mark.event === "unknown" ? (
-        <span>
-          Ball {mark.ballsBowled + 1} — outcome not recorded, because no prediction follows it
-        </span>
+        <>
+          <span>
+            {mark.score}/{mark.wickets} · outcome not recorded
+          </span>
+          <span>No prediction follows this ball, so what it did is not in the data</span>
+        </>
       ) : (
-        <span>
-          Ball {mark.ballsBowled + 1} · {mark.score}/{mark.wickets} · {mark.runsRequired} needed ·{" "}
-          {mark.event} · win probability {Math.round(mark.p * 100)}%, moved{" "}
-          {mark.swing >= 0 ? "+" : "−"}
-          {Math.abs(Math.round(mark.swing * 1000) / 10)} points
-        </span>
+        <>
+          <span>
+            {mark.score}/{mark.wickets}
+            {mark.runsRequired > 0 ? (
+              <> · {mark.runsRequired} required off {mark.ballsRemaining}</>
+            ) : null}{" "}
+            · {describeEvent(mark)}
+          </span>
+          <span>
+            {subject} {Math.round(mark.p * 100)}% · moved {mark.swing >= 0 ? "+" : "−"}
+            {Math.abs(Math.round(mark.swing * 1000) / 10)} percentage points
+          </span>
+        </>
       )}
-    </p>
+    </div>
   );
 }
