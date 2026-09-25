@@ -74,16 +74,47 @@ if (dirtyLines.length === 0) {
 // --- 2. Did HEAD move? ----------------------------------------------------
 
 const head = git("rev-parse", "HEAD");
-const base = gitOrNull("rev-parse", baseline);
+let base = gitOrNull("rev-parse", baseline);
+
+// THE POST-PUSH FALSE ALARM, fixed 2026-09-24.
+//
+// The baseline defaults to origin/main, and origin/main MOVES when you push.
+// So running this straight after a push - the natural moment, when the work is
+// finally safe - found HEAD === origin/main and reported "no commit was made"
+// in the same breath as "origin/main matches HEAD - pushed, and CI can see
+// it". Two contradictory lines, and the verdict took the wrong one.
+//
+// That matters more than a cosmetic bug. This script exists because five
+// sessions reported work that never landed; a version of it that cries wolf on
+// the SUCCESS path is how the next real warning gets read past - the argument
+// ci.yml already makes about stale markers. A safeguard is only worth the
+// attention it does not waste.
+//
+// So when no explicit baseline was given and HEAD is level with origin/main,
+// fall back to what origin/main pointed at BEFORE the last push. The
+// remote-tracking reflog records exactly that, and when it does not the check
+// is skipped out loud rather than guessed at.
+const explicitBaseline = process.argv[2] !== undefined;
+let effectiveBaseline = baseline;
+let pushedAlready = false;
+
+if (!explicitBaseline && base !== null && head === base) {
+  const previous = gitOrNull("rev-parse", "origin/main@{1}");
+  if (previous !== null && previous !== head) {
+    effectiveBaseline = "origin/main@{1}";
+    base = previous;
+    pushedAlready = true;
+  }
+}
 
 if (base === null) {
   console.log(`\n  ----  baseline ${baseline} not found; skipping the "HEAD moved" check`);
 } else if (head === base) {
   problems.push(`HEAD is still ${head.slice(0, 8)} - no commit was made`);
-  console.log(`\n  FAIL  HEAD has not moved from ${baseline} (${base.slice(0, 8)})`);
+  console.log(`\n  FAIL  HEAD has not moved from ${effectiveBaseline} (${base.slice(0, 8)})`);
 } else {
   const commits = git("log", "--format=%H %s", `${base}..${head}`).split("\n").filter(Boolean);
-  console.log(`\n  ok    ${commits.length} commit(s) since ${baseline}, read back from git:`);
+  console.log(`\n  ok    ${commits.length} commit(s) since ${effectiveBaseline}${pushedAlready ? " (where origin/main was before the last push)" : ""}, read back from git:`);
   for (const line of commits) {
     const [sha, ...subject] = line.split(" ");
     console.log(`          ${sha.slice(0, 8)}  ${subject.join(" ")}`);
