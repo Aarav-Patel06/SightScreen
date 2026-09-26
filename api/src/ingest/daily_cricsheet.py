@@ -524,24 +524,50 @@ def main(argv: list[str] | None = None) -> int:
     sub.choices["run"].add_argument("--report", type=Path)
     args = parser.parse_args(argv)
 
+    started = datetime.now(timezone.utc)
+    status, summary, error_class = "success", {}, None
     try:
-        return _main(args)
+        summary = _main(args)
     except Exception as exc:  # noqa: BLE001 - the one place a failure becomes an exit code
         # No traceback: its frames and messages can carry row values. The
         # class and a redacted message are enough to know where to look, and
         # the run is red either way.
         log(f"FAILED: {type(exc).__name__}: {redact(str(exc))}")
-        return 1
+        status, error_class = "failure", type(exc).__name__
+    if args.command == "run":
+        record_run(started, status, summary, error_class)
+    return 0 if status == "success" else 1
 
 
-def _main(args) -> int:
+PIPELINE = "cricsheet_daily"
+
+
+def record_run(started: datetime, status: str, summary: dict, error_class: str | None) -> None:
+    """One pipeline_runs row per run, success or failure - /accuracy shows the
+    last success and flags it when stale. Best effort: a run that cannot reach
+    Supabase cannot record that it failed (that absence is what the staleness
+    flag catches), and failing to record must never turn a failed run green
+    or a good one red."""
+    try:
+        with psycopg.connect(require_env("SUPABASE_SESSION_POOLER_URL"), connect_timeout=30) as conn:
+            conn.execute(
+                "INSERT INTO pipeline_runs (pipeline, started_at, finished_at, status, counts, error_class) "
+                "VALUES (%s, %s, now(), %s, %s, %s)",
+                (PIPELINE, started, status, json.dumps(summary, default=str), error_class),
+            )
+        log(f"recorded {status} in pipeline_runs")
+    except Exception as exc:  # noqa: BLE001 - see docstring
+        log(f"could not record the run in pipeline_runs: {type(exc).__name__}")
+
+
+def _main(args) -> dict:
     supabase_url = require_env("SUPABASE_SESSION_POOLER_URL")
     with tempfile.TemporaryDirectory() as tmp:
         paths = fetch_bundle(args.bundle_url or BUNDLES[args.bundle], Path(tmp))
         with psycopg.connect(supabase_url, connect_timeout=30) as supabase_conn:
             if args.command == "catchup-local":
                 catchup_local(require_env("LOCAL_DATABASE_URL"), supabase_conn, paths, args.since)
-                return 0
+                return {}
             version, _path, _notes = active_model_row(supabase_conn)
             artifact = resolve_pinned_artifact(supabase_conn, version, Path(env_value("MODEL_CACHE_DIR", str(CACHE_DIR))))
             log(f"model {version}")
@@ -551,7 +577,7 @@ def _main(args) -> int:
     log(json.dumps(summary, indent=2, default=str))
     if args.report:
         args.report.write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
-    return 0
+    return summary
 
 
 if __name__ == "__main__":

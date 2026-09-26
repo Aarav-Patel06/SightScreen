@@ -584,6 +584,36 @@ export type Database = {
         }
         Relationships: []
       }
+      pipeline_runs: {
+        Row: {
+          counts: Json
+          error_class: string | null
+          finished_at: string
+          pipeline: string
+          run_id: number
+          started_at: string
+          status: string
+        }
+        Insert: {
+          counts?: Json
+          error_class?: string | null
+          finished_at: string
+          pipeline: string
+          run_id?: number
+          started_at: string
+          status: string
+        }
+        Update: {
+          counts?: Json
+          error_class?: string | null
+          finished_at?: string
+          pipeline?: string
+          run_id?: number
+          started_at?: string
+          status?: string
+        }
+        Relationships: []
+      }
       player_aliases: {
         Row: {
           alias_id: number

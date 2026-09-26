@@ -34,6 +34,7 @@ import {
   type PopulationReport,
   type SegmentComparison,
 } from "@/lib/accuracy";
+import { IngestStatus } from "@/components/ingest-status";
 import { HATCH_PITCH_PX } from "@/lib/ball-strip";
 import { supabaseServer } from "@/lib/supabase-server";
 
@@ -52,6 +53,21 @@ async function loadReport() {
   if (error || !data) return null;
   const report = parseReport(data.report);
   return report === null ? null : { report, computedAt: data.computed_at };
+}
+
+/** The daily Cricsheet ingest's last success - see components/ingest-status. */
+async function loadIngestLastSuccess(): Promise<string | null> {
+  const supabase = supabaseServer();
+  const { data, error } = await supabase
+    .from("pipeline_runs")
+    .select("finished_at")
+    .eq("pipeline", "cricsheet_daily")
+    .eq("status", "success")
+    .order("finished_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data.finished_at;
 }
 
 /**
@@ -336,7 +352,7 @@ function Scored({ population }: { population: PopulationReport }) {
 }
 
 export default async function AccuracyPage() {
-  const loaded = await loadReport();
+  const [loaded, ingestLastSuccess] = await Promise.all([loadReport(), loadIngestLastSuccess()]);
 
   if (loaded === null) {
     return (
@@ -348,6 +364,7 @@ export default async function AccuracyPage() {
             at 03:00 UTC; until then there is nothing to show, which is better than
             showing something computed on the spot.
           </p>
+          <IngestStatus lastSucceededAt={ingestLastSuccess} now={Date.now()} />
         </div>
       </main>
     );
@@ -367,6 +384,7 @@ export default async function AccuracyPage() {
           Model <code>{report.model_version}</code>, measured{" "}
           {new Date(computedAt).toISOString().slice(0, 16).replace("T", " ")} UTC.
         </p>
+        <IngestStatus lastSucceededAt={ingestLastSuccess} now={Date.now()} />
       </div>
 
       {/* LIVE FIRST, deliberately. It is the smaller number and the honest

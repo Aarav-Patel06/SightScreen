@@ -133,3 +133,12 @@ new team or venue are loaded too, which creates the entity; after the
 publish and sync, the next daily run predicts them (while they are still in
 Cricsheet's 30-day bundle). A match the live worker already had stays
 skipped until cross-source merging exists.
+
+### `pipeline_runs` (`20260926000002_pipeline_runs.sql`)
+
+One row per daily-ingest run, success or failure, written by the job at the
+end (`status`, `counts` = the public summary, `error_class` = class name only).
+`/accuracy` shows "Cricsheet ingest last succeeded …" from the latest success
+and flags it when older than two days. That flag is the only visible signal
+if GitHub disables the schedule after 60 days of repository inactivity — a
+disabled workflow does not fail, it just stops.

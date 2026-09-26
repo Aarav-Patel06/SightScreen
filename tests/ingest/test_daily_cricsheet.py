@@ -347,3 +347,26 @@ def test_everything_written_is_backfill_and_invisible_to_the_live_population(
     assert live == []
     # Resolved (an outcome row exists) and therefore in the backfill cohort.
     assert len(backfill) == report["predictions_written"]
+
+
+# --- 6. Every run is recorded ----------------------------------------------------
+
+
+def test_a_failed_run_exits_non_zero_and_is_still_recorded(fake_supabase_url, stage_url, monkeypatch):
+    """/accuracy flags the ingest when its last SUCCESS is old, so a failure
+    must be recorded as a failure - never as nothing, and never as success -
+    and must still turn the run red. Class name only: the table is public
+    via the page, and a message can carry row values."""
+    from ingest import daily_cricsheet
+
+    _truncate_all(fake_supabase_url)
+    monkeypatch.setenv("SUPABASE_SESSION_POOLER_URL", fake_supabase_url)
+    code = daily_cricsheet.main(
+        ["run", "--stage-url", stage_url, "--bundle-url", "https://cricsheet.invalid/x.zip"]
+    )
+    assert code == 1
+    with psycopg.connect(fake_supabase_url) as conn:
+        rows = conn.execute(
+            "SELECT pipeline, status, error_class, counts FROM pipeline_runs"
+        ).fetchall()
+    assert rows == [("cricsheet_daily", "failure", "URLError", {})]
