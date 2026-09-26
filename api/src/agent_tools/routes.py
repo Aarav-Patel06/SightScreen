@@ -209,13 +209,19 @@ MATCHUP_SQL = (
 
 RESOLVE_SQL = "SELECT {id_column} AS entity_id, name FROM {view}"
 
+# win_probability is the BATTING side's, and the row says whose: the model
+# could otherwise attach it to either team in the answer. From the row's
+# batting_team_id (migration 20260925000001) - never team order, which puts
+# the side that batted FIRST in team_a - and 'batting side' when unknown.
 LIVE_PREDICTION_SQL = (
-    "SELECT prediction_id, match_id, model_version, "
-    "       (payload->>'p')::float AS win_probability, "
-    "       innings, over_num, ball_in_over, created_at "
-    "FROM predictions WHERE match_id = %s "
-    "  AND prediction_type = 'win_prob' AND innings IS NOT NULL "
-    "ORDER BY prediction_id DESC LIMIT 1"
+    "SELECT p.prediction_id, p.match_id, p.model_version, "
+    "       (p.payload->>'p')::float AS win_probability, "
+    "       COALESCE(t.name, 'batting side') AS win_probability_for, "
+    "       p.innings, p.over_num, p.ball_in_over, p.created_at "
+    "FROM predictions p LEFT JOIN teams t ON t.team_id = p.batting_team_id "
+    "WHERE p.match_id = %s "
+    "  AND p.prediction_type = 'win_prob' AND p.innings IS NOT NULL "
+    "ORDER BY p.prediction_id DESC LIMIT 1"
 )
 
 # The three concrete forms RESOLVE_SQL takes, so the compile test covers each

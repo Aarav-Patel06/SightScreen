@@ -33,7 +33,8 @@
 
 import HERO_FIXTURE from "./fixtures/hero-match.json";
 import { toMarks, type Mark } from "./ball-strip";
-import { parsePrediction } from "./prediction";
+import { battingTeamName } from "./batting-team";
+import { parsePrediction, type WinProbPrediction } from "./prediction";
 import { supabaseServer } from "./supabase-server";
 
 /**
@@ -56,6 +57,11 @@ export interface HeroMatch {
   teamB: string;
   /** The winning side's name, or null for a match with no mirrored result. */
   winner: string | null;
+  /**
+   * The side whose win probability the strip shows - from the prediction
+   * row, never from team order. Null when unknown, and on the fixture path.
+   */
+  battingTeam: string | null;
   /**
    * Is this match in progress right now?
    *
@@ -103,7 +109,8 @@ function describe(error: unknown): string {
 function fallback(reason: string): HeroResult {
   console.warn(`[hero] using the committed fixture: ${reason}`);
   return {
-    match: HERO_FIXTURE.match,
+    // The fixture has no strip, so there is no probability to attribute.
+    match: { ...HERO_FIXTURE.match, battingTeam: null },
     marks: null,
     stale: true,
     capturedAt: HERO_FIXTURE.capturedAt,
@@ -111,18 +118,18 @@ function fallback(reason: string): HeroResult {
 }
 
 /**
- * The chosen match's strip.
+ * The chosen match's predictions.
  *
- * Its own failure path: returns null rather than throwing, and the caller
+ * Its own failure path: returns [] rather than throwing, and the caller
  * renders the hero without a chart. PostgREST caps a response at 1000 rows
  * and the longest ODI chase logged is 305 predictions, so one request is
  * always enough - but the limit is stated rather than assumed.
  */
-async function loadMarks(matchId: number): Promise<Mark[] | null> {
+async function loadPredictions(matchId: number): Promise<WinProbPrediction[]> {
   const supabase = supabaseServer();
   const { data, error } = await supabase
     .from("predictions")
-    .select("prediction_id, created_at, model_version, payload")
+    .select("prediction_id, created_at, model_version, payload, batting_team_id")
     .eq("match_id", matchId)
     .eq("prediction_type", "win_prob")
     .not("innings", "is", null)
@@ -131,10 +138,9 @@ async function loadMarks(matchId: number): Promise<Mark[] | null> {
 
   if (error || !data?.length) {
     console.warn(`[hero] no strip for match ${matchId}: ${describe(error)}`);
-    return null;
+    return [];
   }
-  const parsed = data.map((row) => parsePrediction(row as never)).filter((p) => p !== null);
-  return parsed.length > 1 ? toMarks(parsed) : null;
+  return data.map((row) => parsePrediction(row as never)).filter((p) => p !== null);
 }
 
 export async function loadHeroMatch(): Promise<HeroResult> {
@@ -192,8 +198,11 @@ export async function loadHeroMatch(): Promise<HeroResult> {
     return fallback(`match ${hit.match_id} has a side that cannot be named`);
   }
 
+  const predictions = await loadPredictions(hit.match_id);
+  const latest = predictions.at(-1) ?? null;
+
   return {
-    marks: await loadMarks(hit.match_id),
+    marks: predictions.length > 1 ? toMarks(predictions) : null,
     match: {
       matchId: hit.match_id,
       competition: hit.competition,
@@ -202,6 +211,10 @@ export async function loadHeroMatch(): Promise<HeroResult> {
       teamA,
       teamB,
       winner: hit.winner === null ? null : (names.get(hit.winner) ?? null),
+      battingTeam: battingTeamName(latest, [
+        { id: hit.team_a, name: teamA },
+        { id: hit.team_b, name: teamB },
+      ]),
       isLive: hit.status === "live",
     },
     stale: false,

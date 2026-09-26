@@ -31,6 +31,7 @@ import {
   withSignedInterval,
   type PopulationReport,
 } from "@/lib/accuracy";
+import { winSubject } from "@/lib/batting-team";
 import { CORPUS_FACTS } from "@/lib/corpus-facts";
 import { loadHeroMatch } from "@/lib/hero-match";
 import { loadLandingFigures } from "@/lib/landing-figures";
@@ -128,10 +129,14 @@ export default async function Home() {
               defaultWidth={1108}
               draw
               className="hero-strip"
+              battingTeam={winSubject(hero.match.battingTeam)}
             />
             <p className="prose hero-note">
               Every mark is one delivery. Its height is how much that ball
-              changed who was going to win, above the line for the batting side
+              changed who was going to win, above the line for{" "}
+              {hero.match.battingTeam
+                ? `${hero.match.battingTeam}, batting,`
+                : "the batting side"}{" "}
               and below it for the bowling side.
             </p>
           </>

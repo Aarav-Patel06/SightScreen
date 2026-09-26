@@ -771,6 +771,7 @@ export type Database = {
       predictions: {
         Row: {
           ball_in_over: number | null
+          batting_team_id: number | null
           created_at: string
           delivery_id: number | null
           innings: number | null
@@ -786,6 +787,7 @@ export type Database = {
         }
         Insert: {
           ball_in_over?: number | null
+          batting_team_id?: number | null
           created_at?: string
           delivery_id?: number | null
           innings?: number | null
@@ -801,6 +803,7 @@ export type Database = {
         }
         Update: {
           ball_in_over?: number | null
+          batting_team_id?: number | null
           created_at?: string
           delivery_id?: number | null
           innings?: number | null
@@ -815,6 +818,13 @@ export type Database = {
           subject_id?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "predictions_batting_team_id_fkey"
+            columns: ["batting_team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["team_id"]
+          },
           {
             foreignKeyName: "predictions_delivery_id_fkey"
             columns: ["delivery_id"]

@@ -86,11 +86,15 @@ export interface BallStripProps {
    */
   decorative?: boolean;
   /**
-   * Whose win probability the strip shows, for the readout's second line.
+   * Whose win probability the strip shows, for the readout's second line
+   * and the aria description.
    *
-   * Optional: the hero and the match page know the batting side, the /design
-   * page and the small strips do not. Without it the line reads "Win
-   * probability", which is true but less useful - never a guessed name.
+   * Optional. The hero and the match page pass lib/batting-team.ts's
+   * winSubject - the batting side's name from the prediction row, or
+   * "batting side" when that is unknown. The /design page and the small
+   * strips pass nothing and read "Win probability", which is true but less
+   * useful - never a guessed name, and never matches.team_a, which is the
+   * side that batted FIRST.
    *
    * teams.short_name is NULL for all 347 rows, so this is a full name rather
    * than an abbreviation.
@@ -141,7 +145,7 @@ export function BallStrip({
   const axis = height / 2;
   const half = axis - 1;
 
-  const description = useMemo(() => describeStrip(marks), [marks]);
+  const description = useMemo(() => describeStrip(marks, battingTeam), [marks, battingTeam]);
 
   /**
    * Nearest mark to a pointer x. Used at every tier that interacts, rather

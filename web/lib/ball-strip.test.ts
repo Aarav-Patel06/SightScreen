@@ -31,6 +31,7 @@ function pred(overrides: Partial<WinProbPrediction> = {}): WinProbPrediction {
     prediction_id: 1,
     created_at: "2026-01-01T00:00:00Z",
     model_version: "winprob2-20260910",
+    batting_team_id: null,
     p: 0.5,
     innings: 2,
     balls_bowled: 0,
@@ -276,7 +277,7 @@ describe("toMarks keeps what the readout needs", () => {
       { p: 0.6, score: 44, wickets: 1, balls_bowled: 11, balls_remaining: 49, runs_required: 56 },
       { p: 0.6, score: 45, wickets: 1, balls_bowled: 11, balls_remaining: 49, runs_required: 55 },
     ].map((r, i) => ({
-      prediction_id: i, created_at: "", model_version: "m", innings: 2,
+      prediction_id: i, created_at: "", model_version: "m", batting_team_id: null, innings: 2,
       target: 101, phase: "middle" as const, ...r,
     }));
 

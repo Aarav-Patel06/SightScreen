@@ -34,6 +34,11 @@ export interface WinProbPrediction extends WinProbPayload {
   prediction_id: number;
   created_at: string;
   model_version: string;
+  /**
+   * The side batting when this was predicted - `p` is ITS probability.
+   * NULL when unknown; see lib/batting-team.ts for how that is rendered.
+   */
+  batting_team_id: number | null;
 }
 
 function isPhase(value: unknown): value is Phase {
@@ -71,6 +76,8 @@ export function parsePrediction(row: PredictionRow): WinProbPrediction | null {
     prediction_id: row.prediction_id,
     created_at: row.created_at,
     model_version: row.model_version,
+    // Absent from rows selected without the column; unknown, not a guess.
+    batting_team_id: row.batting_team_id ?? null,
     p: payload.p as number,
     innings: payload.innings as number,
     balls_bowled: payload.balls_bowled as number,

@@ -266,7 +266,7 @@ export function peakSwing(marks: readonly Mark[]): number {
  * meaningless to a screen reader without it, and a component that ships
  * inaccessible gets retrofitted rather than fixed.
  */
-export function describeStrip(marks: readonly Mark[]): string {
+export function describeStrip(marks: readonly Mark[], subject?: string): string {
   if (marks.length === 0) return "No deliveries recorded.";
 
   const wickets = marks.filter((mark) => mark.event === "wicket").length;
@@ -276,7 +276,7 @@ export function describeStrip(marks: readonly Mark[]): string {
   const peak = Math.round(peakSwing(marks) * 100);
 
   return (
-    `Win probability across ${marks.length} deliveries, ` +
+    `${subject ? `${subject} win probability` : "Win probability"} across ${marks.length} deliveries, ` +
     `starting at ${asPercent(first.p)} and ending at ${asPercent(last.p)}. ` +
     `${wickets} wicket${wickets === 1 ? "" : "s"}, ${dots} dot balls. ` +
     `The largest single-ball swing was ${peak} percentage points. ` +

@@ -71,15 +71,17 @@ export function LiveSlot() {
     <Link href={`/match/${live.matchId}`} className="live-slot">
       <span className="live-dot" aria-hidden="true" />
       <span className="live-teams tnum">
-        {live.battingShort} v {live.bowlingShort}
+        {live.battingShort}
+        {live.bowlingShort ? ` v ${live.bowlingShort}` : null}
       </span>
       <span className="live-strip" aria-hidden="true">
         <BallStrip marks={marks} height={18} defaultWidth={48} interactive={false} />
       </span>
       <span className="fig live-figure">{percent}%</span>
       <span className="visually-hidden">
-        Live: {live.battingShort} versus {live.bowlingShort}, batting side win probability{" "}
-        {percent} percent. Open the match page.
+        Live: {live.bowlingShort ? `${live.battingShort} batting against ${live.bowlingShort}, ` : ""}
+        {live.bowlingShort ? live.battingShort : "batting side"} win probability {percent} percent.
+        Open the match page.
       </span>
     </Link>
   );

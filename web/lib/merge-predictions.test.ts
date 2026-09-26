@@ -15,6 +15,7 @@ function p(prediction_id: number, balls_bowled: number, prob = 0.5): WinProbPred
     prediction_id,
     created_at: new Date(1_700_000_000_000 + prediction_id * 1000).toISOString(),
     model_version: "winprob2-20260910",
+    batting_team_id: null,
     p: prob,
     innings: 2,
     balls_bowled,

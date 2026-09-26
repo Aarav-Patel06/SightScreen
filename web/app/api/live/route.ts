@@ -22,6 +22,7 @@
 import { unstable_cache } from "next/cache";
 import { NextResponse } from "next/server";
 
+import { battingTeamName } from "@/lib/batting-team";
 import { LIVE_WINDOW_MS, isRecent, shortName } from "@/lib/live-match";
 import { parsePrediction, type WinProbPrediction } from "@/lib/prediction";
 import { supabaseServer } from "@/lib/supabase-server";
@@ -47,7 +48,7 @@ async function readLive(): Promise<LivePayload | null> {
   // makes this self-clearing: when the worker stops, rows stop arriving.
   const { data, error } = await supabase
     .from("predictions")
-    .select("prediction_id, created_at, model_version, payload, match_id")
+    .select("prediction_id, created_at, model_version, payload, match_id, batting_team_id")
     .eq("source", "live")
     .eq("prediction_type", "win_prob")
     .not("innings", "is", null)
@@ -74,17 +75,24 @@ async function readLive(): Promise<LivePayload | null> {
   const nameOf = (id: number | null | undefined) =>
     teams?.find((team) => team.team_id === id)?.name ?? null;
 
-  // The second-innings batting side is chasing, and which of team_a/team_b
-  // that is cannot be read here - `deliveries` is empty on Supabase. So the
-  // labels are the two sides in table order, not batting order, and the slot
-  // does not claim otherwise.
-  const a = nameOf(match?.team_a);
-  const b = nameOf(match?.team_b);
+  // Batting order comes from the prediction row (batting_team_id), never
+  // from team_a/team_b - team_a is the side that batted FIRST. Unknown means
+  // "Batting side" and no opponent, rather than a pair in an order that
+  // reads as a claim.
+  const sides = [
+    { id: match?.team_a ?? null, name: nameOf(match?.team_a) },
+    { id: match?.team_b ?? null, name: nameOf(match?.team_b) },
+  ];
+  const batting = battingTeamName(prediction, sides);
+  const bowling =
+    batting === null
+      ? null
+      : (sides.find((side) => side.id !== prediction.batting_team_id)?.name ?? null);
 
   return {
     matchId: data.match_id,
-    battingShort: a ? shortName(a) : "",
-    bowlingShort: b ? shortName(b) : "",
+    battingShort: batting ? shortName(batting) : "Batting side",
+    bowlingShort: bowling ? shortName(bowling) : "",
     prediction,
   };
 }

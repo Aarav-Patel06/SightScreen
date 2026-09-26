@@ -192,6 +192,28 @@ def test_rows_carry_the_ball_key_and_the_real_phase(corpus):
     assert len({p["phase"] for p in payloads}) > 1
 
 
+def test_rows_carry_the_batting_team_they_belong_to(corpus):
+    """payload.p is the batting side's probability, and the row says which
+    side that is. Without it every reader guessed - the match page guessed
+    team_a, which Cricsheet lists as the side batting FIRST."""
+    model = _artifact(corpus)
+    client = ReplayClient(corpus, REPLAY_MATCH, speed="instant")
+    state = client.get_match_state(REPLAY_MATCH)
+    deliveries = client.get_deliveries_since(REPLAY_MATCH, 0)
+
+    sink = _RecordingConn(corpus)
+    LivePredictor(sink, model, _StubGuard(), log=lambda _m: None).observe(client, state, deliveries)
+
+    with corpus.cursor() as cur:
+        cur.execute(
+            "SELECT DISTINCT batting_team_id FROM deliveries WHERE match_id = %s AND innings = 2",
+            (REPLAY_MATCH,),
+        )
+        (chasing,) = cur.fetchone()
+    assert sink.rows
+    assert {r[6] for r in sink.rows} == {chasing}
+
+
 def test_it_declines_rather_than_guessing_when_the_batting_side_is_unknown(corpus):
     """The case CricketData actually produces.
 

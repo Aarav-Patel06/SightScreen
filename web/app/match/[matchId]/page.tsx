@@ -25,7 +25,9 @@ interface MatchHeader {
   competition: string;
   format: string;
   teamA: string | null;
+  teamAId: number | null;
   teamB: string | null;
+  teamBId: number | null;
   venue: string | null;
   startDate: string;
 }
@@ -59,7 +61,9 @@ async function loadMatch(matchId: number): Promise<MatchHeader | null> {
     competition: data.competition,
     format: data.format,
     teamA: nameOf(data.team_a),
+    teamAId: data.team_a,
     teamB: nameOf(data.team_b),
+    teamBId: data.team_b,
     venue: (venue.data as { name: string } | null)?.name ?? null,
     startDate: data.start_time.slice(0, 10),
   };
@@ -69,7 +73,7 @@ async function loadPredictions(matchId: number): Promise<WinProbPrediction[]> {
   const supabase = supabaseServer();
   const { data, error } = await supabase
     .from("predictions")
-    .select("prediction_id, created_at, model_version, payload, match_id")
+    .select("prediction_id, created_at, model_version, payload, match_id, batting_team_id")
     .eq("match_id", matchId)
     .eq("prediction_type", "win_prob")
     // Migration 20260918000003's stated contract: "every Phase 3 reader

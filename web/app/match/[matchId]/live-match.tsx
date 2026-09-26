@@ -25,6 +25,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { battingTeamName, winSubject } from "@/lib/batting-team";
 import { highWaterMark, mergePredictions } from "@/lib/merge-predictions";
 import { parsePrediction, type Phase, type WinProbPrediction } from "@/lib/prediction";
 import { HATCH_PITCH_PX, toMarks } from "@/lib/ball-strip";
@@ -36,7 +37,9 @@ interface Header {
   competition: string;
   format: string;
   teamA: string | null;
+  teamAId: number | null;
   teamB: string | null;
+  teamBId: number | null;
   venue: string | null;
   startDate: string;
 }
@@ -163,7 +166,7 @@ export function LiveMatch({
     async function reconcile(): Promise<WinProbPrediction[]> {
       const { data, error } = await supabase
         .from("predictions")
-        .select("prediction_id, created_at, model_version, payload, match_id")
+        .select("prediction_id, created_at, model_version, payload, match_id, batting_team_id")
         .eq("match_id", matchId)
         .eq("prediction_type", "win_prob")
         // Same filter as the server loader, for the same reason - see
@@ -278,7 +281,15 @@ export function LiveMatch({
 
   const marks = useMemo(() => toMarks(predictions), [predictions]);
 
-  const battingName = header.teamA ?? "Batting side";
+  // Whose probability p is: the batting side recorded on the row, never
+  // team_a (the side that batted first) and never any other guess.
+  const subject = winSubject(
+    battingTeamName(current, [
+      { id: header.teamAId, name: header.teamA },
+      { id: header.teamBId, name: header.teamB },
+    ])
+  );
+  const percent = current ? `${Math.round(current.p * 100)}%` : "--";
   const confidence = current ? CONFIDENCE[current.phase] : null;
 
   return (
@@ -322,10 +333,8 @@ export function LiveMatch({
       <div className="level-2 match-hero">
         <div className="row">
           <div>
-            <div className="wp-number">
-              {current ? `${Math.round(current.p * 100)}%` : "--"}
-            </div>
-            <div className="small muted">{battingName} to win</div>
+            <div className="wp-number">{percent}</div>
+            <div className="small muted">{subject} to win</div>
           </div>
           <div style={{ textAlign: "right" }}>
             {current && (
@@ -343,7 +352,7 @@ export function LiveMatch({
           </div>
         </div>
 
-        <div className="wp-bar">
+        <div className="wp-bar" role="img" aria-label={`${subject} win probability ${percent}`}>
           <span style={{ width: `${current ? current.p * 100 : 0}%` }} />
         </div>
 
@@ -375,7 +384,7 @@ export function LiveMatch({
             </span>
           ))}
           <span className="cell">
-            now: {current ? `${Math.round(current.p * 100)}%` : "--"}
+            now: {percent}
           </span>
         </div>
       </div>
@@ -387,7 +396,7 @@ export function LiveMatch({
 
       {/* 12.1 item 6 - the curve */}
       <div>
-        <h2>Win probability, {battingName}</h2>
+        <h2>Win probability, {subject}</h2>
         {chartData.length === 0 ? (
           <p className="small muted">
             Nothing to plot yet. Drive a replay with{" "}
@@ -419,7 +428,7 @@ export function LiveMatch({
                     fontSize: 12,
                   }}
                   labelFormatter={(i: number) => `after ${chartData[i]?.ball ?? 0} balls`}
-                  formatter={(value: number) => [`${value}%`, "win probability"]}
+                  formatter={(value: number) => [`${value}%`, `${subject} win probability`]}
                 />
                 <Line
                   type="monotone"
@@ -447,7 +456,7 @@ export function LiveMatch({
       {marks.length > 0 && (
         <div>
           <h2>Every delivery</h2>
-          <BallStrip marks={marks} height={72} defaultWidth={640} battingTeam={battingName} />
+          <BallStrip marks={marks} height={72} defaultWidth={640} battingTeam={subject} />
           <div className="tiny muted" style={{ marginTop: 8 }}>
             Height is the swing that ball caused, above the line for the
             batting side. The baseline under it is dotted through the

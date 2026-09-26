@@ -139,6 +139,7 @@ class LivePredictor:
         self._log = log
         self._builders: dict[int, object] = {}
         self._as_of: dict[int, dict] = {}
+        self._batting: dict[int, int] = {}
         self._declined: set[int] = set()
         self._finished: set[int] = set()
         self.logged = 0
@@ -196,6 +197,7 @@ class LivePredictor:
                     state.match_date,
                 )
                 self._as_of[match_id] = as_of
+                self._batting[match_id] = batting
 
             # Re-confirm the pin before writing, exactly as the HTTP path
             # does. A promotion mid-match would otherwise tag these rows
@@ -205,12 +207,12 @@ class LivePredictor:
             probability = predict_win_prob(self._model["artifact"], row, as_of)
             if probability is None:
                 continue
-            written += self._insert(match_id, row, delivery, probability)
+            written += self._insert(match_id, row, delivery, probability, self._batting[match_id])
 
         self.logged += written
         return written
 
-    def _insert(self, match_id: int, row, delivery, probability: float) -> int:
+    def _insert(self, match_id: int, row, delivery, probability: float, batting_team_id: int) -> int:
         payload = {
             "p": probability,
             "innings": row.innings,
@@ -230,8 +232,9 @@ class LivePredictor:
                 """
                 INSERT INTO predictions
                     (match_id, delivery_id, model_version, prediction_type, payload,
-                     match_phase, created_at, innings, over_num, ball_in_over, source)
-                VALUES (%s, NULL, %s, 'win_prob', %s, 'innings2', now(), %s, %s, %s, 'live')
+                     match_phase, created_at, innings, over_num, ball_in_over, source,
+                     batting_team_id)
+                VALUES (%s, NULL, %s, 'win_prob', %s, 'innings2', now(), %s, %s, %s, 'live', %s)
                 ON CONFLICT (match_id, model_version, prediction_type, innings, over_num, ball_in_over)
                     WHERE innings IS NOT NULL
                     DO NOTHING
@@ -244,6 +247,7 @@ class LivePredictor:
                     delivery.innings,
                     delivery.over_num,
                     delivery.ball_in_over,
+                    batting_team_id,
                 ),
             )
             return 1 if cur.fetchone() else 0
@@ -305,6 +309,7 @@ class LivePredictor:
         )
         self._builders.pop(match_id, None)
         self._as_of.pop(match_id, None)
+        self._batting.pop(match_id, None)
         self._declined.discard(match_id)
 
 

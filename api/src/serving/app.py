@@ -283,8 +283,8 @@ def predict(request: WinProbRequest) -> WinProbResponse:
             """
             INSERT INTO predictions
                 (match_id, delivery_id, model_version, prediction_type, payload,
-                 match_phase, created_at, innings, over_num, ball_in_over)
-            VALUES (%s, NULL, %s, 'win_prob', %s, 'innings2', %s, %s, %s, %s)
+                 match_phase, created_at, innings, over_num, ball_in_over, batting_team_id)
+            VALUES (%s, NULL, %s, 'win_prob', %s, 'innings2', %s, %s, %s, %s, %s)
             ON CONFLICT (match_id, model_version, prediction_type, innings, over_num, ball_in_over)
                 WHERE innings IS NOT NULL
                 DO NOTHING
@@ -296,6 +296,7 @@ def predict(request: WinProbRequest) -> WinProbResponse:
                 json.dumps(payload),
                 datetime.now(timezone.utc),
                 *key,
+                request.batting_team_id,
             ),
         )
         row = cur.fetchone()

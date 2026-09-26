@@ -553,6 +553,7 @@ def insert_predictions(supabase_conn, match_id: int, model_version: str, scored:
             ball["innings"],
             ball["over_num"],
             ball["ball_in_over"],
+            ball["batting_team_id"],
         )
         for ball in scored
     ]
@@ -564,8 +565,8 @@ def insert_predictions(supabase_conn, match_id: int, model_version: str, scored:
                 """
                 INSERT INTO predictions
                     (match_id, delivery_id, model_version, prediction_type, payload,
-                     match_phase, created_at, innings, over_num, ball_in_over)
-                VALUES (%s, NULL, %s, 'win_prob', %s, 'innings2', now(), %s, %s, %s)
+                     match_phase, created_at, innings, over_num, ball_in_over, batting_team_id)
+                VALUES (%s, NULL, %s, 'win_prob', %s, 'innings2', now(), %s, %s, %s, %s)
                 ON CONFLICT (match_id, model_version, prediction_type, innings, over_num, ball_in_over)
                     WHERE innings IS NOT NULL
                     DO NOTHING

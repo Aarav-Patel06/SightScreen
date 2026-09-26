@@ -75,7 +75,9 @@ const header = {
   competition: "Indian Premier League",
   format: "T20",
   teamA: "Chasers",
+  teamAId: 1,
   teamB: "Defenders",
+  teamBId: 2,
   venue: "Somewhere",
   startDate: "2026-04-01",
 };
@@ -90,6 +92,7 @@ function ball(
     prediction_id,
     created_at: "2026-04-01T10:00:00Z",
     model_version: "winprob2-20260910",
+    batting_team_id: 1,
     p,
     innings: 2,
     balls_bowled,
@@ -116,6 +119,7 @@ function row(prediction_id: number, balls_bowled: number, p: number) {
     created_at: "2026-04-01T10:00:00Z",
     model_version: "winprob2-20260910",
     match_id: 9339,
+    batting_team_id: 1,
     // The ball key, as a COLUMN. Distinct from payload.innings: the column is
     // what migration 20260918000003 added and what every reader filters on,
     // and a row without it is one the partial unique index cannot dedupe.
@@ -311,5 +315,58 @@ describe("unkeyed rows", () => {
     });
 
     expect(screen.getByText("83%")).toBeTruthy();
+  });
+});
+
+describe("whose probability it is", () => {
+  // The stored probability is the BATTING side's. Cricsheet lists the side
+  // that batted first as team_a, so on 340 of 342 matches the first-listed
+  // team is the one bowling at the chase - and the page used to name it.
+  // Match 8429: England (team_a) batted first, India needed 32 off 1, and the
+  // page read "England to win 1%".
+  const englandVIndia = {
+    ...header,
+    matchId: 8429,
+    competition: "India tour of England",
+    format: "ODI",
+    teamA: "England",
+    teamAId: 29,
+    teamB: "India",
+    teamBId: 20,
+  };
+  const lastBall = (batting_team_id: number | null): WinProbPrediction => ({
+    ...ball(1, 299, "death", 0.0112),
+    created_at: "2026-09-24T23:00:44Z",
+    balls_remaining: 1,
+    runs_required: 32,
+    score: 356,
+    wickets: 7,
+    target: 388,
+    batting_team_id,
+  });
+
+  it("names the batting team when the first-listed team is bowling", () => {
+    const { container } = render(
+      <LiveMatch matchId={8429} header={englandVIndia} initialPredictions={[lastBall(20)]} />
+    );
+    expect(screen.getByText("India to win")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Win probability, India" })).toBeTruthy();
+    expect(container.querySelector(".wp-bar")?.getAttribute("aria-label")).toBe(
+      "India win probability 1%"
+    );
+    expect(screen.queryByText(/England to win/)).toBeNull();
+    expect(screen.queryByText(/Win probability, England/)).toBeNull();
+  });
+
+  it("says 'batting side' when the batting team is unknown, and never guesses", () => {
+    const { container } = render(
+      <LiveMatch matchId={8429} header={englandVIndia} initialPredictions={[lastBall(null)]} />
+    );
+    expect(screen.getByText("batting side to win")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Win probability, batting side" })).toBeTruthy();
+    expect(container.querySelector(".wp-bar")?.getAttribute("aria-label")).toBe(
+      "batting side win probability 1%"
+    );
+    expect(screen.queryByText(/(England|India) to win/)).toBeNull();
   });
 });

@@ -86,6 +86,8 @@ const STRIP_ROWS = [0.5, 0.62, 0.41, 0.77].map((p, i) => ({
   prediction_id: i + 1,
   created_at: "2026-07-26T14:00:00+00:00",
   model_version: "winprob2-20260910",
+  // Australia (team_b) chasing: the first-listed side is the one bowling.
+  batting_team_id: 7,
   payload: {
     p,
     innings: 2,
@@ -133,6 +135,7 @@ describe("when the database answers", () => {
       teamA: "India",
       teamB: "Australia",
       winner: "India",
+      battingTeam: "Australia",
       isLive: false,
     });
   });
@@ -167,7 +170,7 @@ describe("when the database is unreachable", () => {
     const result = await loadHeroMatch();
     expect(result.stale).toBe(true);
     expect(result.capturedAt).toBe(HERO_FIXTURE.capturedAt);
-    expect(result.match).toEqual(HERO_FIXTURE.match);
+    expect(result.match).toEqual({ ...HERO_FIXTURE.match, battingTeam: null });
   });
 
   it("says why, so a paused database is distinguishable from an empty one", async () => {
@@ -192,7 +195,7 @@ describe("when the database answers but has nothing to show", () => {
 
     const result = await loadHeroMatch();
     expect(result.stale).toBe(true);
-    expect(result.match).toEqual(HERO_FIXTURE.match);
+    expect(result.match).toEqual({ ...HERO_FIXTURE.match, battingTeam: null });
   });
 
   it("falls back when no candidate has keyed predictions", async () => {
@@ -215,7 +218,7 @@ describe("when the database answers but has nothing to show", () => {
 
     const result = await loadHeroMatch();
     expect(result.stale).toBe(true);
-    expect(result.match).toEqual(HERO_FIXTURE.match);
+    expect(result.match).toEqual({ ...HERO_FIXTURE.match, battingTeam: null });
   });
 });
 
