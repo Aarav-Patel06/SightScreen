@@ -432,6 +432,7 @@ def _insert_match_row(
     has_reconciliation_anomaly: bool,
     innings_list: list[dict],
     innings_1_total: int | None,
+    match_id: int | None = None,
 ) -> int:
     team_names = info["teams"]
     toss = info.get("toss", {})
@@ -445,13 +446,18 @@ def _insert_match_row(
         cur.execute(
             """
             INSERT INTO matches
-              (external_ids, competition, format, venue_id, start_time,
+              (match_id, external_ids, competition, format, venue_id, start_time,
                team_a, team_b, toss_winner, toss_decision, winner, result_method,
                status, has_reconciliation_anomaly, target_runs, target_overs)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'complete', %s, %s, %s)
+            VALUES (COALESCE(%s, nextval(pg_get_serial_sequence('matches', 'match_id'))),
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'complete', %s, %s, %s)
             RETURNING match_id
             """,
             (
+                # An explicit id only when the match already has one on
+                # Supabase (the daily Cricsheet job assigned it first); the
+                # catch-up adopts it so both sides agree. None is the serial.
+                match_id,
                 json.dumps({"cricsheet": cricsheet_id}),
                 _competition_name(info),
                 info["match_type"],
@@ -608,7 +614,14 @@ def _has_reconciliation_anomaly(
     return first_innings_total + 1 != target.get("runs")
 
 
-def load_match(bulk_conn, catalog_conn, report: LoadReport, path: Path, dry_run: bool = False) -> None:
+def load_match(
+    bulk_conn,
+    catalog_conn,
+    report: LoadReport,
+    path: Path,
+    dry_run: bool = False,
+    match_id: int | None = None,
+) -> None:
     """bulk_conn holds the per-match transaction for matches+deliveries -
     all-or-nothing, per Decision 2. catalog_conn is a separate,
     always-autocommitted connection used for every entity_resolution call.
@@ -695,7 +708,15 @@ def load_match(bulk_conn, catalog_conn, report: LoadReport, path: Path, dry_run:
         if not dry_run:
             with bulk_conn.transaction():
                 match_id = _insert_match_row(
-                    bulk_conn, cricsheet_id, info, venue_id, team_ids, has_anomaly, innings_list, innings_1_total
+                    bulk_conn,
+                    cricsheet_id,
+                    info,
+                    venue_id,
+                    team_ids,
+                    has_anomaly,
+                    innings_list,
+                    innings_1_total,
+                    match_id,
                 )
                 for rows in all_rows:
                     patched_rows = [(match_id, *row[1:]) for row in rows]

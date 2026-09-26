@@ -103,3 +103,33 @@ after `asof_summary`. Skipping the sync leaves Supabase serving the previous
 summary, which the worker's startup check catches as a stale breakpoint but
 cannot catch immediately — see `features/as_of.py`'s note on what that check
 can and cannot prove.
+
+### `feature_ledger` and the daily Cricsheet job (`20260926000001_feature_ledger.sql`)
+
+`.github/workflows/cricsheet-daily.yml` ingests newly released Cricsheet
+matches every day at 02:00 UTC, **on Supabase only**: match rows (keyed
+unique on `external_ids->>'cricsheet'`, ids from Supabase's sequence),
+`source='backfill'` predictions, outcomes, and the as-of summaries rebuilt
+from `feature_ledger`. Deliveries never leave the runner.
+
+So Supabase can be **ahead of the corpus**. `sync_reference_tables` and
+`feature_ledger publish` refuse to push while it is. To catch the corpus up
+(for retraining; it does not retrain), from `api/src`:
+
+```powershell
+python -m ingest.daily_cricsheet catchup-local --bundle all --since 2026-08-24
+python -m features.match_state rebuild
+python -m features.elo rebuild
+python -m features.asof_summary rebuild
+python -m features.player_summary rebuild
+python -m features.feature_ledger publish      # corpus ledger -> Supabase (upsert)
+python -m ingest.sync_reference_tables
+```
+
+`catchup-local` loads each missing in-scope match with **the id Supabase
+already gave it**, so Elo's same-day tie-break (`ORDER BY start_time,
+match_id`) is identical on both sides. Matches the daily job skipped for a
+new team or venue are loaded too, which creates the entity; after the
+publish and sync, the next daily run predicts them (while they are still in
+Cricsheet's 30-day bundle). A match the live worker already had stays
+skipped until cross-source merging exists.

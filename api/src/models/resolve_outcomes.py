@@ -187,55 +187,62 @@ def resolve(match_ids: list[int]) -> int:
         psycopg.connect(env["LOCAL_DATABASE_URL"], connect_timeout=30) as local_conn,
         psycopg.connect(env["SUPABASE_SESSION_POOLER_URL"], connect_timeout=30) as supabase_conn,
     ):
-        # Before anything reads a label: prove the ids mean the same matches.
-        assert_same_matches(local_conn, supabase_conn, match_ids)
-        labels = second_innings_labels(local_conn, match_ids)
-        reasons = _match_reasons(local_conn, match_ids)
+        return resolve_with(local_conn, supabase_conn, match_ids)
 
-        with supabase_conn.cursor() as cur:
-            cur.execute(_PREDICTIONS_QUERY, (match_ids,))
-            pending = cur.fetchall()
 
-        print(f"{len(pending)} prediction(s) without an outcome, over {len(match_ids)} match(es)")
-        if not pending:
-            print("nothing to resolve")
-            return 0
+def resolve_with(local_conn, supabase_conn, match_ids: list[int]) -> int:
+    """`resolve` on connections the caller holds. The daily Cricsheet job
+    passes its throwaway load database as `local_conn`: it holds the new
+    matches' match_states, which is where the label is read from."""
+    # Before anything reads a label: prove the ids mean the same matches.
+    assert_same_matches(local_conn, supabase_conn, match_ids)
+    labels = second_innings_labels(local_conn, match_ids)
+    reasons = _match_reasons(local_conn, match_ids)
 
-        rows = []
-        unresolved: dict[str, int] = {}
-        for prediction_id, match_id, innings, over_num, ball_in_over, probability in pending:
-            label = labels.get((match_id, innings, over_num, ball_in_over))
-            if label is None:
-                reason = reasons.get(match_id) or "ball excluded by section 9.1 (no required_run_rate)"
-                unresolved[reason] = unresolved.get(reason, 0) + 1
-                continue
-            brier, logloss = _metrics(probability, label)
-            rows.append(
-                (
-                    prediction_id,
-                    json.dumps(
-                        {
-                            "batting_team_won": bool(label),
-                            "source": "match_states.batting_team_won",
-                        }
-                    ),
-                    brier,
-                    logloss,
-                )
+    with supabase_conn.cursor() as cur:
+        cur.execute(_PREDICTIONS_QUERY, (match_ids,))
+        pending = cur.fetchall()
+
+    print(f"{len(pending)} prediction(s) without an outcome, over {len(match_ids)} match(es)")
+    if not pending:
+        print("nothing to resolve")
+        return 0
+
+    rows = []
+    unresolved: dict[str, int] = {}
+    for prediction_id, match_id, innings, over_num, ball_in_over, probability in pending:
+        label = labels.get((match_id, innings, over_num, ball_in_over))
+        if label is None:
+            reason = reasons.get(match_id) or "ball excluded by section 9.1 (no required_run_rate)"
+            unresolved[reason] = unresolved.get(reason, 0) + 1
+            continue
+        brier, logloss = _metrics(probability, label)
+        rows.append(
+            (
+                prediction_id,
+                json.dumps(
+                    {
+                        "batting_team_won": bool(label),
+                        "source": "match_states.batting_team_won",
+                    }
+                ),
+                brier,
+                logloss,
             )
+        )
 
-        with supabase_conn.cursor() as cur:
-            for start in range(0, len(rows), INSERT_BATCH):
-                cur.executemany(
-                    """
-                    INSERT INTO prediction_outcomes
-                        (prediction_id, actual, brier, log_loss, resolved_at)
-                    VALUES (%s, %s, %s, %s, now())
-                    ON CONFLICT (prediction_id) DO NOTHING
-                    """,
-                    rows[start : start + INSERT_BATCH],
-                )
-        supabase_conn.commit()
+    with supabase_conn.cursor() as cur:
+        for start in range(0, len(rows), INSERT_BATCH):
+            cur.executemany(
+                """
+                INSERT INTO prediction_outcomes
+                    (prediction_id, actual, brier, log_loss, resolved_at)
+                VALUES (%s, %s, %s, %s, now())
+                ON CONFLICT (prediction_id) DO NOTHING
+                """,
+                rows[start : start + INSERT_BATCH],
+            )
+    supabase_conn.commit()
 
     print(f"resolved {len(rows)}")
     for reason, count in sorted(unresolved.items(), key=lambda kv: -kv[1]):

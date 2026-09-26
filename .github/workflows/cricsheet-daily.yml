@@ -1,0 +1,108 @@
+name: Cricsheet daily ingest
+
+# Every newly released men's T20/ODI match on Cricsheet, loaded with the
+# corpus loader, scored by the served model and logged as the BACKFILL
+# cohort. See api/src/ingest/daily_cricsheet.py.
+#
+# The corpus is not here and never will be (SPEC.md section 2.1). The job
+# rebuilds the as-of summaries from Supabase's feature_ledger inside the
+# throwaway Postgres below, with the same code the corpus uses; the parity
+# test in tests/ingest/test_daily_cricsheet.py proves the result identical.
+#
+# 02:00 UTC: before the calibration monitor (03:00), so tonight's matches are
+# in tonight's report, and before the backup (04:00), so they are in it too.
+#
+# workflow_dispatch for the same reason calibration.yml has it, plus the
+# catch-up: `bundle=all since=2026-08-24` ingests everything since the corpus
+# ended. `drill_unreachable_source` points the download at a host that cannot
+# resolve, to prove an unreachable Cricsheet turns the run red - a boolean
+# rather than a free-text URL, so a dispatch cannot aim the job anywhere else.
+#
+# THE LOGS ARE PUBLIC (so is the repository). The job prints counts and
+# timings only - see PUBLIC_KEYS and redact() in ingest/daily_cricsheet.py.
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+    inputs:
+      bundle:
+        description: "recently_added_30 (daily) or all (catch-up)"
+        type: choice
+        options: [recently_added_30, all]
+        default: recently_added_30
+      since:
+        description: "ignore matches dated before this (YYYY-MM-DD), optional"
+        required: false
+      drill_unreachable_source:
+        description: "failure drill: download from an unreachable host (must go red)"
+        type: boolean
+        default: false
+
+# Least privilege: the job reads the repository and nothing else. Supabase is
+# reached with its own secret, and artifact upload uses the runtime token,
+# not GITHUB_TOKEN.
+permissions:
+  contents: read
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    # A daily run and a dispatched catch-up must never interleave: both
+    # assign match ids and replace the summaries.
+    concurrency:
+      group: cricsheet-daily
+      cancel-in-progress: false
+    services:
+      stage:
+        image: postgres:17.6
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: stage
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      STAGE_URL: postgresql://postgres:postgres@localhost:5433/stage?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install api package
+        run: pip install -e "./api[dev]"
+      - name: Apply migrations to the stage database
+        run: npx supabase db push --db-url "$STAGE_URL"
+      - name: Ingest
+        working-directory: api/src
+        env:
+          # SESSION pooler, port 5432 (SPEC.md section 2.4). Direct
+          # connections are IPv6-only and unreachable from a runner.
+          SUPABASE_SESSION_POOLER_URL: ${{ secrets.SUPABASE_SESSION_POOLER_URL }}
+          MODEL_CACHE_DIR: ${{ runner.temp }}/models
+          BUNDLE: ${{ inputs.bundle || 'recently_added_30' }}
+          SINCE: ${{ inputs.since }}
+          DRILL: ${{ inputs.drill_unreachable_source || false }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_SESSION_POOLER_URL" || {
+            echo "SUPABASE_SESSION_POOLER_URL is not set"; exit 1; }
+          args=(run --stage-url "$STAGE_URL" --bundle "$BUNDLE" --report "$RUNNER_TEMP/daily-report.json")
+          if [ -n "$SINCE" ]; then args+=(--since "$SINCE"); fi
+          # .invalid is reserved (RFC 2606) and never resolves.
+          if [ "$DRILL" = "true" ]; then args+=(--bundle-url "https://cricsheet.invalid/recently_added_30_json.zip"); fi
+          python -u -m ingest.daily_cricsheet "${args[@]}"
+      - name: Keep the report as an artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cricsheet-daily-report
+          path: ${{ runner.temp }}/daily-report.json
+          if-no-files-found: warn

@@ -39,6 +39,7 @@ import psycopg
 from dotenv import dotenv_values
 
 from features.asof_summary import DERIVED_TABLES, DerivedTable, content_hash
+from features.feature_ledger import assert_corpus_caught_up
 
 # Kept in its own module rather than appended to asof_summary's tuple: these
 # are not as-of summaries, they are career aggregates, and the two are
@@ -178,6 +179,9 @@ def _local_rebuilt_at(local_conn, table: DerivedTable):
 def run() -> None:
     local_url, supabase_url = _env_urls()
     with psycopg.connect(local_url) as local_conn, psycopg.connect(supabase_url) as supabase_conn:
+        # The daily Cricsheet job rebuilds the summaries on Supabase from a
+        # ledger that may be ahead of this corpus; pushing now would undo it.
+        assert_corpus_caught_up(local_conn, supabase_conn)
         for table, id_column, columns in TABLES:
             count = sync_table(local_conn, supabase_conn, table, id_column, columns)
             print(f"synced {count} rows -> {table}")

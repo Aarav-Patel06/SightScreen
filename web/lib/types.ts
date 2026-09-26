@@ -321,6 +321,51 @@ export type Database = {
           },
         ]
       }
+      feature_ledger: {
+        Row: {
+          chase_batting_team_won: boolean | null
+          cricsheet_id: string
+          first_innings_runs: number | null
+          format: string
+          match_id: number
+          result_method: string | null
+          start_time: string
+          status: string
+          team_a: number | null
+          team_b: number | null
+          venue_id: number | null
+          winner: number | null
+        }
+        Insert: {
+          chase_batting_team_won?: boolean | null
+          cricsheet_id: string
+          first_innings_runs?: number | null
+          format: string
+          match_id: number
+          result_method?: string | null
+          start_time: string
+          status: string
+          team_a?: number | null
+          team_b?: number | null
+          venue_id?: number | null
+          winner?: number | null
+        }
+        Update: {
+          chase_batting_team_won?: boolean | null
+          cricsheet_id?: string
+          first_innings_runs?: number | null
+          format?: string
+          match_id?: number
+          result_method?: string | null
+          start_time?: string
+          status?: string
+          team_a?: number | null
+          team_b?: number | null
+          venue_id?: number | null
+          winner?: number | null
+        }
+        Relationships: []
+      }
       match_states: {
         Row: {
           balls_bowled: number

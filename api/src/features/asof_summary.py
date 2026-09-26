@@ -105,9 +105,21 @@ def _env() -> dict[str, str]:
 # training keys on) equals it for every row - both checked in
 # tests/features/test_asof_summary.py.
 
-VENUE_SUMMARY_REBUILD_SQL = f"""
+# The two per-match inputs are parameters so the daily Cricsheet job can feed
+# them from feature_ledger instead of match_states/deliveries, which a runner
+# does not have. Everything after them - the per-day grouping, breakpoints and
+# windowed sums - is this one statement on both paths.
+FIRST_INNINGS_PER_MATCH_GROUPED = f"""{FIRST_INNINGS_PER_MATCH_SELECT}
+    GROUP BY d.match_id"""
+
+
+def venue_summary_rebuild_sql(
+    chase_per_match: str = CHASE_PER_MATCH_SELECT,
+    first_inns_per_match: str = FIRST_INNINGS_PER_MATCH_GROUPED,
+) -> str:
+    return f"""
 WITH chase_per_match AS (
-    {CHASE_PER_MATCH_SELECT}
+    {chase_per_match}
 ), chase_per_day AS (
     SELECT m2.venue_id,
            (m2.start_time AT TIME ZONE 'UTC')::date AS effective_date,
@@ -118,8 +130,7 @@ WITH chase_per_match AS (
     WHERE m2.venue_id IS NOT NULL
     GROUP BY 1, 2
 ), first_inns_per_match AS (
-    {FIRST_INNINGS_PER_MATCH_SELECT}
-    GROUP BY d.match_id
+    {first_inns_per_match}
 ), first_inns_per_day AS (
     SELECT m3.venue_id,
            (m3.start_time AT TIME ZONE 'UTC')::date AS effective_date,
@@ -151,6 +162,9 @@ SELECT venue_id, effective_date,
 FROM per_day
 WINDOW w AS (PARTITION BY venue_id ORDER BY effective_date ROWS UNBOUNDED PRECEDING)
 """
+
+
+VENUE_SUMMARY_REBUILD_SQL = venue_summary_rebuild_sql()
 
 
 # --- Elo summary -----------------------------------------------------------
@@ -197,10 +211,10 @@ ORDER BY team_id, format, effective_date, as_of DESC, match_id DESC
 ELO_REBUILD_FLOAT_DIGITS = "SET extra_float_digits = 1"
 
 
-def rebuild_venue_summary(conn) -> int:
+def rebuild_venue_summary(conn, sql: str = VENUE_SUMMARY_REBUILD_SQL) -> int:
     with conn.cursor() as cur:
         cur.execute("DELETE FROM venue_asof_summary")
-        cur.execute(VENUE_SUMMARY_REBUILD_SQL)
+        cur.execute(sql)
         cur.execute("SELECT count(*) FROM venue_asof_summary")
         return cur.fetchone()[0]
 
@@ -264,9 +278,9 @@ def record_sync_state(conn, table: DerivedTable, *, synced: bool) -> tuple[str, 
     return digest, row_count
 
 
-def rebuild_all(conn) -> dict:
+def rebuild_all(conn, venue_sql: str = VENUE_SUMMARY_REBUILD_SQL) -> dict:
     """Both summaries plus their sync-state rows, in one transaction."""
-    venue_rows = rebuild_venue_summary(conn)
+    venue_rows = rebuild_venue_summary(conn, venue_sql)
     elo_rows = rebuild_elo_summary(conn)
     hashes = {t.name: record_sync_state(conn, t, synced=False)[0] for t in DERIVED_TABLES}
     conn.commit()

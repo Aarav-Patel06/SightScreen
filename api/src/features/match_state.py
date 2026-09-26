@@ -191,6 +191,24 @@ def _env() -> dict[str, str]:
     return env
 
 
+def rebuild_match_states(conn) -> int:
+    """TRUNCATE + REBUILD_SQL on the given connection, uncommitted. Returns
+    rows inserted. Shared by `rebuild` and the daily Cricsheet job, which
+    runs it against a throwaway database holding only the new matches."""
+    with conn.cursor() as cur:
+        cur.execute("TRUNCATE match_states")
+        cur.execute(
+            REBUILD_SQL,
+            {
+                "t20_pp": PHASE_FRACTIONS["T20"][0],
+                "t20_mid": PHASE_FRACTIONS["T20"][1],
+                "odi_pp": PHASE_FRACTIONS["ODI"][0],
+                "odi_mid": PHASE_FRACTIONS["ODI"][1],
+            },
+        )
+        return cur.rowcount
+
+
 def rebuild() -> dict:
     """Truncates match_states and rebuilds it from deliveries + matches in
     one pass. Idempotent: running it twice in a row produces byte-identical
@@ -201,18 +219,7 @@ def rebuild() -> dict:
     start = time.monotonic()
 
     with psycopg.connect(db_url) as conn:
-        with conn.cursor() as cur:
-            cur.execute("TRUNCATE match_states")
-            cur.execute(
-                REBUILD_SQL,
-                {
-                    "t20_pp": PHASE_FRACTIONS["T20"][0],
-                    "t20_mid": PHASE_FRACTIONS["T20"][1],
-                    "odi_pp": PHASE_FRACTIONS["ODI"][0],
-                    "odi_mid": PHASE_FRACTIONS["ODI"][1],
-                },
-            )
-            rows_inserted = cur.rowcount
+        rows_inserted = rebuild_match_states(conn)
         conn.commit()
 
         with conn.cursor() as cur:
