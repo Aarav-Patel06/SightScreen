@@ -270,13 +270,30 @@ describe("the hero strip", () => {
 });
 
 describe("the LIVE NOW flag", () => {
-  it("is true only when the match row says live", async () => {
+  it("is true when the match row says live and the last snapshot is recent", async () => {
     healthy();
     matchesQuery.mockResolvedValue({
       data: [{ ...MATCHES[0], status: "live" }],
       error: null,
     });
+    const now = new Date().toISOString();
+    stripQuery.mockResolvedValue({
+      data: STRIP_ROWS.map((row) => ({ ...row, created_at: now })),
+      error: null,
+    });
     expect((await loadHeroMatch()).match.isLive).toBe(true);
+  });
+
+  it("is false when the row says live but the last snapshot is old", async () => {
+    // A match that stopped updating must never display as live. STRIP_ROWS
+    // were written in July; a status column that was never flipped to
+    // 'complete' does not make them current.
+    healthy();
+    matchesQuery.mockResolvedValue({
+      data: [{ ...MATCHES[0], status: "live" }],
+      error: null,
+    });
+    expect((await loadHeroMatch()).match.isLive).toBe(false);
   });
 
   it("is false for a completed match", async () => {

@@ -5,15 +5,12 @@
  * if something is live, and an empty slot if not — not a "no live matches"
  * placeholder.
  *
- * DO NOT KEY THIS OFF `matches.status`. The column exists, is indexed, and
- * holds 'live' for exactly the matches you would want — and it is wrong.
- * Nothing in the repository ever runs `UPDATE matches`: `_ensure_match_row`
- * is `ON CONFLICT DO NOTHING`, and `live_loop.py` detects the end of a match
- * from the provider snapshot in memory without writing that back. A match
- * inserted as 'live' stays 'live' forever, so the three matches the worker
- * tracked in September 2026 are still marked live and always will be. A
- * status-keyed header would show a permanently frozen sparkline, which is the
- * worst available outcome: it looks like the product is working.
+ * DO NOT KEY THIS OFF `matches.status` ALONE. The worker now writes it
+ * (`record_status`), but for months it never wrote 'complete' - the adapter
+ * dropped ended matches before the loop could see them - so rows said 'live'
+ * long after the last ball. A status-keyed surface shows a frozen match as
+ * live, which is the worst available outcome: it looks like the product is
+ * working. `isLiveMatch` below requires status AND recency.
  *
  * The signal that cannot lie is recency. `predictions.source` is written by
  * the producer and never inferred — 'live' means predicted before the result
@@ -87,3 +84,36 @@ export function isRecent(createdAt: string, now: number, windowMs = LIVE_WINDOW_
   if (!Number.isFinite(age)) return false;
   return age >= 0 && age < windowMs;
 }
+
+/**
+ * Should a match get live treatment - "LIVE NOW", "updates every 15s",
+ * "Need X off Y"?
+ *
+ * Only when its row says 'live' AND its latest prediction is recent. Either
+ * alone has failed: status stayed 'live' on finished matches, and a replay
+ * writes fresh rows for a match played months ago. A match that stopped
+ * updating never displays as live.
+ *
+ * The window is LIVE_WINDOW_MS, the header's, so the header and the pages
+ * cannot disagree. Five minutes clears every ordinary gap between predictions
+ * (an over change, a review, drinks) - the innings break comes before the
+ * first innings-2 prediction exists - and a wrong call in this direction
+ * costs a briefly missing badge, not a false claim that a match is on.
+ */
+export function isLiveMatch(
+  status: string | null,
+  latestCreatedAt: string | null,
+  now: number
+): boolean {
+  if (status !== "live" || latestCreatedAt === null) return false;
+  if (isRecent(latestCreatedAt, now)) return true;
+  // The one allowance: this also runs in the browser, whose clock can trail
+  // the database's by seconds, so a row just written can look slightly in
+  // the future. Up to CLOCK_SKEW_MS ahead is skew; further is isRecent's
+  // misconfiguration and stays not-live. NaN fails (standing rule 15).
+  const ahead = Date.parse(latestCreatedAt) - now;
+  return Number.isFinite(ahead) && ahead >= 0 && ahead < CLOCK_SKEW_MS;
+}
+
+/** How far ahead of the reader's clock a row may be and still count. */
+const CLOCK_SKEW_MS = 60_000;

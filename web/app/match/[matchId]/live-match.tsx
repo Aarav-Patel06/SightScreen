@@ -26,6 +26,8 @@ import {
 } from "recharts";
 
 import { battingTeamName, winSubject } from "@/lib/batting-team";
+import { isLiveMatch } from "@/lib/live-match";
+import { resultLine } from "@/lib/match-index";
 import { highWaterMark, mergePredictions } from "@/lib/merge-predictions";
 import { parsePrediction, type Phase, type WinProbPrediction } from "@/lib/prediction";
 import { HATCH_PITCH_PX, toMarks } from "@/lib/ball-strip";
@@ -42,6 +44,8 @@ interface Header {
   teamBId: number | null;
   venue: string | null;
   startDate: string;
+  status: string;
+  winner: string | null;
 }
 
 // SPEC.md 12.2: "Pre-toss predictions must be visibly marked low-confidence.
@@ -144,6 +148,10 @@ export function LiveMatch({
     "connecting"
   );
   const [recovered, setRecovered] = useState(0);
+  // The clock isLiveMatch reads. Advanced on each resync tick and on each
+  // streamed row, so a match that stops updating drops its live treatment
+  // within one tick of crossing the window, without a reload.
+  const [now, setNow] = useState(() => Date.now());
   // Refs, not state: the effect reads these inside its callbacks, and
   // re-running it on every new ball would tear down the channel.
   const latest = useRef(highWaterMark(initialPredictions));
@@ -204,6 +212,7 @@ export function LiveMatch({
           if (parsed === null) return;
           streamed.current.add(parsed.prediction_id);
           latest.current = Math.max(latest.current, parsed.prediction_id);
+          setNow(Date.now());
           setPredictions((current) => mergePredictions(current, [parsed]));
         }
       )
@@ -236,6 +245,7 @@ export function LiveMatch({
     // stream alone is broken for every user arriving after a quiet period,
     // which on a project that idles is most of them.
     const timer = setInterval(async () => {
+      setNow(Date.now());
       const rows = await reconcile();
       if (cancelled || rows.length === 0) return;
       // Rows written after we were listening, that the stream never brought.
@@ -289,8 +299,30 @@ export function LiveMatch({
       { id: header.teamBId, name: header.teamB },
     ])
   );
+  const live = isLiveMatch(header.status, current?.created_at ?? null, now);
   const percent = current ? `${Math.round(current.p * 100)}%` : "--";
   const confidence = current ? CONFIDENCE[current.phase] : null;
+
+  // Live: what is still needed. Complete: the result. Neither - a row that
+  // says live but stopped updating - is said plainly, not dressed as live.
+  let situation = "No predictions yet for this match.";
+  if (current && live) {
+    situation = `Need ${current.runs_required} off ${current.balls_remaining}, ${
+      10 - current.wickets
+    } wickets left`;
+  } else if (current && header.status === "complete") {
+    situation =
+      resultLine({
+        winner: header.winner,
+        chaseWon: null,
+        runsRequired: current.runs_required,
+        ballsRemaining: current.balls_remaining,
+      }) ?? `Match complete · chase needed ${current.runs_required} off ${current.balls_remaining}`;
+  } else if (current) {
+    situation = `Stopped updating ${current.created_at.slice(0, 16).replace("T", " ")} UTC · last state: needed ${
+      current.runs_required
+    } off ${current.balls_remaining}`;
+  }
 
   return (
     <>
@@ -304,25 +336,23 @@ export function LiveMatch({
           {header.startDate}
         </div>
         <div className="small" style={{ marginTop: 8 }}>
-          {current
-            ? `Need ${current.runs_required} off ${current.balls_remaining}, ${
-                10 - current.wickets
-              } wickets left`
-            : "No predictions yet for this match."}
+          {situation}
         </div>
-        <div className="tiny muted" style={{ marginTop: 8 }}>
-          {/* Per SPEC.md 4.3's 2026-09-14 edit: never "42s behind live".
-              CricketData publishes no per-ball timestamp, so the provider leg
-              is unmeasurable and claiming a figure would be inventing one. */}
-          updates every 15s · provider lag not published ·{" "}
-          {connection === "live"
-            ? "subscribed"
-            : connection === "error"
-              ? "subscription error"
-              : "connecting"}
-          {recovered > 0 &&
-            ` · ${recovered} update${recovered === 1 ? "" : "s"} the stream dropped, recovered by resync`}
-        </div>
+        {live && (
+          <div className="tiny muted" style={{ marginTop: 8 }}>
+            {/* Per SPEC.md 4.3's 2026-09-14 edit: never "42s behind live".
+                CricketData publishes no per-ball timestamp, so the provider leg
+                is unmeasurable and claiming a figure would be inventing one. */}
+            updates every 15s · provider lag not published ·{" "}
+            {connection === "live"
+              ? "subscribed"
+              : connection === "error"
+                ? "subscription error"
+                : "connecting"}
+            {recovered > 0 &&
+              ` · ${recovered} update${recovered === 1 ? "" : "s"} the stream dropped, recovered by resync`}
+          </div>
+        )}
       </div>
 
       {/* 12.1 item 2 - WP bar, history strip, last-over delta */}

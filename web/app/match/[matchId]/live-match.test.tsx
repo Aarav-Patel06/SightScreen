@@ -80,17 +80,20 @@ const header = {
   teamBId: 2,
   venue: "Somewhere",
   startDate: "2026-04-01",
+  status: "live",
+  winner: null,
 };
 
 function ball(
   prediction_id: number,
   balls_bowled: number,
   phase: WinProbPrediction["phase"],
-  p: number
+  p: number,
+  created_at = new Date().toISOString()
 ): WinProbPrediction {
   return {
     prediction_id,
-    created_at: "2026-04-01T10:00:00Z",
+    created_at,
     model_version: "winprob2-20260910",
     batting_team_id: 1,
     p,
@@ -116,7 +119,7 @@ afterEach(() => {
 function row(prediction_id: number, balls_bowled: number, p: number) {
   return {
     prediction_id,
-    created_at: "2026-04-01T10:00:00Z",
+    created_at: new Date().toISOString(),
     model_version: "winprob2-20260910",
     match_id: 9339,
     batting_team_id: 1,
@@ -333,10 +336,11 @@ describe("whose probability it is", () => {
     teamAId: 29,
     teamB: "India",
     teamBId: 20,
+    status: "complete",
+    winner: "England",
   };
   const lastBall = (batting_team_id: number | null): WinProbPrediction => ({
-    ...ball(1, 299, "death", 0.0112),
-    created_at: "2026-09-24T23:00:44Z",
+    ...ball(1, 299, "death", 0.0112, "2026-09-24T23:00:44Z"),
     balls_remaining: 1,
     runs_required: 32,
     score: 356,
@@ -368,5 +372,39 @@ describe("whose probability it is", () => {
       "batting side win probability 1%"
     );
     expect(screen.queryByText(/(England|India) to win/)).toBeNull();
+  });
+});
+
+describe("live treatment", () => {
+  // A match that stopped updating must never display as live. Status alone
+  // is not enough: the worker failed to write 'complete' for months, so a row
+  // can say 'live' long after the last ball.
+
+  it("is withheld when status says live but the last snapshot is old", () => {
+    const hourAgo = new Date(Date.now() - 60 * 60_000).toISOString();
+    render(
+      <LiveMatch
+        matchId={9339}
+        header={{ ...header, status: "live" }}
+        initialPredictions={[ball(1, 60, "middle", 0.5, hourAgo)]}
+      />
+    );
+    expect(screen.queryByText(/updates every 15s/)).toBeNull();
+    expect(screen.queryByText(/subscribed|connecting/)).toBeNull();
+    expect(screen.queryByText(/^Need \d+ off \d+/)).toBeNull();
+    expect(screen.getByText(/Stopped updating/)).toBeTruthy();
+  });
+
+  it("shows a completed match's result instead of what was needed", () => {
+    render(
+      <LiveMatch
+        matchId={9339}
+        header={{ ...header, status: "complete", winner: "Defenders" }}
+        initialPredictions={[ball(1, 119, "death", 0.1)]}
+      />
+    );
+    expect(screen.getByText("Defenders won · chase needed 40 off 1")).toBeTruthy();
+    expect(screen.queryByText(/^Need \d+ off \d+/)).toBeNull();
+    expect(screen.queryByText(/updates every 15s/)).toBeNull();
   });
 });

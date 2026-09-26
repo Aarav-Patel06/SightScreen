@@ -23,7 +23,7 @@ import { unstable_cache } from "next/cache";
 import { NextResponse } from "next/server";
 
 import { battingTeamName } from "@/lib/batting-team";
-import { LIVE_WINDOW_MS, isRecent, shortName } from "@/lib/live-match";
+import { LIVE_WINDOW_MS, isLiveMatch, shortName } from "@/lib/live-match";
 import { parsePrediction, type WinProbPrediction } from "@/lib/prediction";
 import { supabaseServer } from "@/lib/supabase-server";
 
@@ -58,16 +58,19 @@ async function readLive(): Promise<LivePayload | null> {
     .maybeSingle();
 
   if (error || !data) return null;
-  if (!isRecent(data.created_at, Date.now())) return null;
 
   const prediction = parsePrediction(data as never);
   if (prediction === null) return null;
 
   const { data: match } = await supabase
     .from("matches")
-    .select("team_a, team_b")
+    .select("team_a, team_b, status")
     .eq("match_id", data.match_id)
     .maybeSingle();
+
+  // The same rule as the match page and the hero: status AND recency. A
+  // chase the worker has marked decided leaves the header at once.
+  if (!isLiveMatch(match?.status ?? null, data.created_at, Date.now())) return null;
 
   const ids = [match?.team_a, match?.team_b].filter((id): id is number => typeof id === "number");
   const { data: teams } = await supabase.from("teams").select("team_id, name").in("team_id", ids);

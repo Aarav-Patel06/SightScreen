@@ -496,6 +496,8 @@ class CricketDataClient:
         self._snapshots: dict[int, MatchSnapshot] = {}
         self._deliveries: dict[int, list[Delivery]] = {}
         self._provider_ids: dict[int, str] = {}
+        # Provider ids last listed as in progress - see list_live_matches.
+        self._live_seen: set[str] = set()
         self._rejections: list[tuple[str, str]] = []
 
     # -- provider plumbing --
@@ -602,7 +604,14 @@ class CricketDataClient:
     def list_live_matches(self) -> list[MatchSummary]:
         summaries: list[MatchSummary] = []
         for snapshot in self._fetch_snapshots():
-            if not snapshot.started or snapshot.ended:
+            if not snapshot.started:
+                continue
+            # An ended match is returned ONCE more if this client was tracking
+            # it, so the loop polls its final snapshot (the last ball) and
+            # writes 'complete'. It used to be skipped outright, which meant
+            # the loop never saw the match again and the row said 'live'
+            # forever. One ended before we saw it costs no quota: skipped.
+            if snapshot.ended and snapshot.provider_id not in self._live_seen:
                 continue
             try:
                 match_id = self._ensure_match_row(snapshot)
@@ -612,11 +621,21 @@ class CricketDataClient:
                 # that covers every live match at once.
                 self._rejections.append((snapshot.provider_id, str(exc)))
                 continue
-            self._ingest(match_id, snapshot)
+            # First sighting only. poll() ingests every later snapshot and
+            # returns what it added; ingesting here too absorbed each new
+            # ball before poll looked, so poll returned nothing and balls
+            # bowled between iterations never reached the predictor.
+            if match_id not in self._snapshots:
+                self._ingest(match_id, snapshot)
+            self._provider_ids[match_id] = snapshot.provider_id
+            if snapshot.ended:
+                self._live_seen.discard(snapshot.provider_id)
+            else:
+                self._live_seen.add(snapshot.provider_id)
             state = self.get_match_state(match_id)
             summaries.append(
                 MatchSummary(
-                    match_id=match_id, status=state.status,
+                    match_id=match_id, status=_status_of(snapshot),
                     team_a=state.team_a, team_b=state.team_b, venue_id=state.venue_id,
                 )
             )

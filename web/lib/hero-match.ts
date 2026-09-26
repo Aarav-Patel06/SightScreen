@@ -34,6 +34,7 @@
 import HERO_FIXTURE from "./fixtures/hero-match.json";
 import { toMarks, type Mark } from "./ball-strip";
 import { battingTeamName } from "./batting-team";
+import { isLiveMatch } from "./live-match";
 import { parsePrediction, type WinProbPrediction } from "./prediction";
 import { supabaseServer } from "./supabase-server";
 
@@ -65,10 +66,10 @@ export interface HeroMatch {
   /**
    * Is this match in progress right now?
    *
-   * Read from `matches.status`, which the live worker owns and which the
-   * mirror deliberately never refreshes. Today every row is 'complete', so
-   * the LIVE NOW tag renders for nobody - which is correct, and is why the
-   * tag is tested rather than eyeballed.
+   * lib/live-match.ts's isLiveMatch: `matches.status` says 'live' AND the
+   * latest prediction is recent. Status alone stayed 'live' on finished
+   * matches for months, and a LIVE NOW tag on one of those is the worst thing
+   * this page could get wrong.
    */
   isLive: boolean;
 }
@@ -215,7 +216,7 @@ export async function loadHeroMatch(): Promise<HeroResult> {
         { id: hit.team_a, name: teamA },
         { id: hit.team_b, name: teamB },
       ]),
-      isLive: hit.status === "live",
+      isLive: isLiveMatch(hit.status, latest?.created_at ?? null, Date.now()),
     },
     stale: false,
   };

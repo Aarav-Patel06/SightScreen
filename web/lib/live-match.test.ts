@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { LIVE_WINDOW_MS, isRecent, shortName } from "./live-match";
+import { LIVE_WINDOW_MS, isLiveMatch, isRecent, shortName } from "./live-match";
 
 describe("shortName", () => {
   it("takes initials of the significant words", () => {
@@ -82,5 +82,36 @@ describe("isRecent", () => {
     // The concrete case this whole module exists for: the worker tracked
     // three matches in September 2026 and nothing ever cleared their status.
     expect(isRecent("2026-09-18T14:30:00Z", now)).toBe(false);
+  });
+});
+
+describe("isLiveMatch", () => {
+  // Live treatment needs BOTH signals. Status alone stayed 'live' on
+  // finished matches; recency alone is true of a replay of an old match.
+  const now = Date.parse("2026-09-23T12:00:00Z");
+
+  it("is live when the row says live and the last snapshot is recent", () => {
+    expect(isLiveMatch("live", "2026-09-23T11:59:45Z", now)).toBe(true);
+  });
+
+  it("is not live when the row says live but the last snapshot is old", () => {
+    expect(isLiveMatch("live", "2026-09-23T11:00:00Z", now)).toBe(false);
+  });
+
+  it("is not live when the snapshot is recent but the match is complete", () => {
+    expect(isLiveMatch("complete", "2026-09-23T11:59:45Z", now)).toBe(false);
+  });
+
+  it("is not live with no snapshot at all", () => {
+    expect(isLiveMatch("live", null, now)).toBe(false);
+  });
+
+  it("tolerates a browser clock a few seconds behind the database", () => {
+    expect(isLiveMatch("live", "2026-09-23T12:00:05Z", now)).toBe(true);
+  });
+
+  it("still rejects a timestamp far in the future, as isRecent does", () => {
+    expect(isLiveMatch("live", "2026-09-23T12:05:00Z", now)).toBe(false);
+    expect(isLiveMatch("live", "not a date", now)).toBe(false);
   });
 });

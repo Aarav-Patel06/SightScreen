@@ -368,6 +368,83 @@ def test_match_row_is_idempotent_across_clients(conn):
     assert first == second
 
 
+class SteppableTransport:
+    """The recorded first match, with the chase's score and `matchEnded`
+    settable between polls - so a test can bowl a ball and end the match.
+
+    Starts one ball before the recorded finish: Barbados 96/4 off 14.4
+    chasing 100, still in progress."""
+
+    def __init__(self, fixture_dir: Path) -> None:
+        self._dir = fixture_dir
+        self.set(runs=96, overs=14.4, ended=False)
+
+    def set(self, *, runs: int, overs: float, ended: bool) -> None:
+        self._runs, self._overs, self._ended = runs, overs, ended
+
+    def get(self, endpoint: str, params: dict[str, str]) -> dict:
+        body = json.loads((self._dir / "current_matches.json").read_text(encoding="utf-8"))
+        body["data"] = body["data"][:1]
+        match = body["data"][0]
+        match["matchEnded"] = self._ended
+        match["score"][1].update({"r": self._runs, "o": self._overs})
+        return body
+
+
+def test_a_ball_bowled_between_iterations_reaches_the_loop(conn):
+    """The loop calls list_live_matches and then poll. Both used to ingest
+    the same fresh snapshot, so poll measured "before" after the list had
+    already absorbed the new ball and returned nothing - every ball that
+    arrived between iterations, the final one included, never reached the
+    predictor."""
+    raw = _raw_matches()[0]
+    _seed_teams(conn, list(raw["teams"]))
+    transport = SteppableTransport(FIXTURE_DIR)
+    client = CricketDataClient(conn, transport)
+
+    match_id = client.list_live_matches()[0].match_id
+    client.poll(match_id)
+
+    transport.set(runs=97, overs=14.5, ended=False)
+    client.list_live_matches()
+    new = client.poll(match_id)
+
+    assert len(new) == 1
+    assert new[0].runs_batter + new[0].runs_extras == 1
+
+
+def test_a_tracked_match_that_ends_is_reported_complete_once(conn):
+    """list_live_matches used to skip every ended snapshot, so the loop never
+    saw a match again once the provider said it was over: `complete` was
+    never written and the final ball was never scored. A match this client
+    was tracking is now returned once more, as complete, and then dropped."""
+    raw = _raw_matches()[0]
+    _seed_teams(conn, list(raw["teams"]))
+    transport = SteppableTransport(FIXTURE_DIR)
+    client = CricketDataClient(conn, transport)
+
+    match_id = client.list_live_matches()[0].match_id
+    client.poll(match_id)
+
+    transport.set(runs=100, overs=14.5, ended=True)
+    summaries = client.list_live_matches()
+    assert [(s.match_id, s.status) for s in summaries] == [(match_id, "complete")]
+
+    final = client.poll(match_id)
+    assert len(final) == 1, "the winning ball must reach the loop"
+    assert client.get_match_state(match_id).status == "complete"
+
+    assert client.list_live_matches() == [], "reported once, then dropped"
+
+
+def test_a_match_that_ended_before_it_was_seen_is_still_skipped(conn):
+    """No quota spent on matches that finished before the worker saw them."""
+    raw = _raw_matches()[0]
+    _seed_teams(conn, list(raw["teams"]))
+    client = CricketDataClient(conn, LiveifiedTransport(FIXTURE_DIR, ended=True))
+    assert client.list_live_matches() == []
+
+
 # --- Latency harness (Decision 5) -------------------------------------------
 
 

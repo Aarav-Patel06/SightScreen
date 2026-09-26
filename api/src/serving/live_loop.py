@@ -142,6 +142,8 @@ class LivePredictor:
         self._batting: dict[int, int] = {}
         self._declined: set[int] = set()
         self._finished: set[int] = set()
+        # Chases decided by the balls themselves - see _chase_decided.
+        self.decided: set[int] = set()
         self.logged = 0
 
     def _decline(self, match_id: int, reason: str) -> None:
@@ -169,6 +171,8 @@ class LivePredictor:
             row = builder.process(delivery)
             if row.innings != 2:
                 continue
+            if _chase_decided(row, delivery):
+                self.decided.add(match_id)
             if row.target is None:
                 self._decline(match_id, "no target known for the chase")
                 continue
@@ -296,8 +300,9 @@ class LivePredictor:
         the corpus is.
         """
         if match_id in self._finished:
-            # A completed match stays in the provider's live list for a while,
-            # so this is reached on every poll until it drops off. Standing
+            # A completed match can be listed more than once (ReplayClient
+            # keeps it; a decided chase can precede the provider's
+            # matchEnded), so this can be reached on several polls. Standing
             # rule 14: a line that repeats becomes furniture, and the next real
             # one is read past.
             return
@@ -311,6 +316,24 @@ class LivePredictor:
         self._as_of.pop(match_id, None)
         self._batting.pop(match_id, None)
         self._declined.discard(match_id)
+
+
+def _chase_decided(row, delivery) -> bool:
+    """Is the chase over once this ball is counted?
+
+    `row` is the state BEFORE the ball (the builder's discipline), so the
+    ball's own runs, wicket and legality are added here. A chase ends when
+    the target is reached, the side is all out, or the balls run out -
+    whichever comes first, and whatever the provider has said yet.
+    """
+    runs = delivery.runs_batter + delivery.runs_extras
+    wickets = delivery.wicket_count if delivery.wicket_type is not None else 0
+    legal = delivery.extra_type not in ("wide", "noball")
+    if row.target is not None and row.score + runs >= row.target:
+        return True
+    if row.wickets + wickets >= 10:
+        return True
+    return row.balls_remaining - (1 if legal else 0) <= 0
 
 
 def run_once(
@@ -350,16 +373,22 @@ def run_once(
         # costs no provider quota.
         state = client.get_match_state(match_id) if predictor is not None else None
 
-        if state is not None and predictor.record_status(match_id, state.status):
-            log(f"match {match_id}: status -> {state.status}")
-
         if predictor is not None and deliveries:
             written = predictor.observe(client, state, deliveries)
             scored = f", {written} prediction(s) logged"
 
+        # Complete when the provider says so OR when the chase is decided
+        # (target reached, all out, balls exhausted). Observed first so a
+        # ball that decides the chase is counted on the poll that brings it.
+        status = None
+        if state is not None:
+            status = "complete" if match_id in predictor.decided else state.status
+        if status is not None and predictor.record_status(match_id, status):
+            log(f"match {match_id}: status -> {status}")
+
         # section 7.2's match_end: resolve once the result is known. Outside
         # the deliveries branch for the same reason as the status read.
-        if state is not None and state.status == "complete":
+        if status == "complete":
             predictor.finish(match_id, log=log)
 
         log(

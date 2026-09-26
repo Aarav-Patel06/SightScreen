@@ -30,13 +30,15 @@ interface MatchHeader {
   teamBId: number | null;
   venue: string | null;
   startDate: string;
+  status: string;
+  winner: string | null;
 }
 
 async function loadMatch(matchId: number): Promise<MatchHeader | null> {
   const supabase = supabaseServer();
   const { data, error } = await supabase
     .from("matches")
-    .select("match_id, competition, format, start_time, team_a, team_b, venue_id")
+    .select("match_id, competition, format, start_time, team_a, team_b, venue_id, status, winner")
     .eq("match_id", matchId)
     .maybeSingle();
   if (error || !data) return null;
@@ -66,6 +68,8 @@ async function loadMatch(matchId: number): Promise<MatchHeader | null> {
     teamBId: data.team_b,
     venue: (venue.data as { name: string } | null)?.name ?? null,
     startDate: data.start_time.slice(0, 10),
+    status: data.status,
+    winner: nameOf(data.winner),
   };
 }
 

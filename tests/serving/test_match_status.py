@@ -19,7 +19,7 @@ test_live_predictor.py's `_RecordingConn`.
 from __future__ import annotations
 
 from ingest.cricketdata import _status_of
-from ingest.live_client import MatchSummary
+from ingest.live_client import Delivery, MatchSummary
 from serving.live_loop import LivePredictor, run_once
 
 
@@ -220,3 +220,71 @@ def test_no_predictor_means_no_status_write():
     run_once(client, {}, log=lines.append, predictor=None)
 
     assert client.state_calls == 0
+
+
+# --- a decided chase, whatever the provider says -------------------------
+
+
+class _ChaseClient:
+    """One innings-2 ball of a chase the provider still calls live.
+
+    `target_overs` sets how many balls the chase has. At 0.1 overs the one
+    ball bowled exhausts it, so the chase is decided on this poll; at 20
+    overs it is nowhere near. `current_teams` says nothing, so the predictor
+    declines to score - the status decision must not depend on scoring."""
+
+    def __init__(self, target_overs: float):
+        self._target_overs = target_overs
+        self._polled = False
+
+    def list_live_matches(self):
+        return [MatchSummary(match_id=77, status="live", team_a=10, team_b=11, venue_id=7)]
+
+    def poll(self, _match_id):
+        if self._polled:
+            return []
+        self._polled = True
+        return [
+            Delivery(
+                innings=2, over_num=0, ball_in_over=1, legal_ball_num=1,
+                batter_id=None, non_striker_id=None, bowler_id=None,
+                runs_batter=1, runs_extras=0, extra_type=None,
+                wicket_type=None, player_out_id=None,
+            )
+        ]
+
+    def get_match_state(self, _match_id):
+        target_overs = self._target_overs
+
+        class _State:
+            match_id = 77
+            format = "T20"
+            status = "live"
+            target_runs = 100
+        _State.target_overs = target_overs
+        return _State()
+
+    def current_teams(self, _match_id):
+        return None, None
+
+    def next_interval(self, _match_id):
+        return 15.0
+
+
+def test_a_decided_chase_marks_the_match_complete_even_if_the_provider_says_live():
+    """Balls exhausted is decided. The provider's matchEnded is one signal;
+    the chase itself is another, and it survives a worker restart after the
+    provider has dropped the match from its list."""
+    conn = _RecordingConn(rowcount=1)
+    lines: list[str] = []
+    run_once(_ChaseClient(target_overs=0.1), {}, log=lines.append, predictor=_predictor(conn))
+
+    assert [params[0] for _sql, params in conn.updates()] == ["complete"]
+    assert any("status -> complete" in line for line in lines)
+
+
+def test_an_undecided_chase_stays_live():
+    conn = _RecordingConn(rowcount=1)
+    run_once(_ChaseClient(target_overs=20), {}, log=lambda _m: None, predictor=_predictor(conn))
+
+    assert [params[0] for _sql, params in conn.updates()] == ["live"]
