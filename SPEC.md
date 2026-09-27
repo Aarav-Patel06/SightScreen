@@ -948,6 +948,18 @@ Each phase ends with a demoable artifact and explicit acceptance criteria. Do no
 
 > **This is the minimum resume-ready milestone.** If co-op applications are due and you are here, you have a real project. Everything after this is upside.
 
+### Next model task — the run rate before a chase has one (queued 2026-09-27)
+
+**The defect.** Before the chase's first legal ball `current_run_rate` and `rrr_minus_crr` are missing (0 balls: 0/0); after it they are real numbers, and after a dot ball `current_run_rate` is 0.0. The model treats missing and 0.0 very differently, so the first mark's "swing" is the feature switching, not the delivery. On match 8429 re-scoring the first prediction with a run rate of 0.0 reproduces the second exactly: 45% → 26%, with nothing about the match having changed. Across the logged backfill cohort (~480 chases) the pre-ball prediction is the *better* calibrated (Brier 0.158; mean p 0.500 against a 0.524 win rate) and the one after ball 1 is ~5.7 points pessimistic (Brier 0.170; mean p 0.469 against 0.526): a one-ball run rate is 0 or 6 and means nothing, and the model reads 0 as "scoring nothing".
+
+**The task.** Leave the run-rate features undefined until **N legal balls** have been bowled, identically in training (`features/match_state.py` REBUILD_SQL) and serving (`IncrementalMatchStateBuilder`), and retrain.
+- **Choose N by held-out evaluation, not by assumption** — candidates from 1 up to at least 12, each a full retrain on §9.1's train split, compared on validation.
+- **Check calibration on balls 2–6, not only ball 1**: the pessimism measured above is on the balls just after the switch.
+- **Judge it with the paired, match-clustered bootstrap** (§9.3): Brier overall AND for the first 5 overs, candidate against the current model on the same matches. Promote only if the overall paired interval does not show a regression and the first-5-overs interval excludes zero in the candidate's favour.
+- Parity and the as-of summaries are untouched (the change is in-match state only), but the served artifact changes, so §8.4's shadow deployment applies.
+
+**Until it ships**, the strip, the landing hero and the match page exclude the start-of-chase transition from every figure that describes a moment in the chase — biggest swing, peak, the height scale, the readout's change, the live page's last-over change (`web/lib/ball-strip.ts` `isStartOfChase`). The stored predictions are unchanged, and **the win-probability curve still shows the start-of-chase drop**.
+
 ### Phase 4 — Ball outcome model, simulation, first innings (weeks 5–6)
 
 - [ ] Multinomial ball outcome model

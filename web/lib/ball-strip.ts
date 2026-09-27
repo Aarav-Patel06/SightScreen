@@ -256,7 +256,30 @@ export function tierHasPerMarkHit(tier: Tier): boolean {
  * why the strip always renders its own scale label.
  */
 export function peakSwing(marks: readonly Mark[]): number {
-  return marks.reduce((max, mark) => Math.max(max, Math.abs(mark.swing)), 0);
+  return marks.reduce(
+    (max, mark) => (isStartOfChase(mark) ? max : Math.max(max, Math.abs(mark.swing))),
+    0
+  );
+}
+
+/**
+ * Is this the chase's first legal ball - the one whose swing is an artifact?
+ *
+ * The prediction before it has no current run rate (no balls: 0/0), and the
+ * model reads that missing value differently from the 0.0 it sees after a
+ * dot. So this mark's swing is the feature switching from missing to zero,
+ * not the delivery: on match 8429 re-scoring the first prediction with a run
+ * rate of 0.0 reproduces the second exactly, and the "swing" was 45% -> 26%.
+ *
+ * Only that switch: a wide before the first legal ball leaves the run rate
+ * missing on both sides, so its swing is real and stays. The model fix - run
+ * rate undefined until N legal balls, retrained - is SPEC.md's next model
+ * task; until it ships the curve still shows the drop, and no figure that
+ * describes a moment in the chase (biggest swing, peak, the height scale,
+ * the readout's change) may be this transition.
+ */
+export function isStartOfChase(mark: Mark): boolean {
+  return mark.ballsBowled === 0 && mark.legal && mark.event !== "unknown";
 }
 
 /**
@@ -279,7 +302,7 @@ export function describeStrip(marks: readonly Mark[], subject?: string): string 
     `${subject ? `${subject} win probability` : "Win probability"} across ${marks.length} deliveries, ` +
     `starting at ${asPercent(first.p)} and ending at ${asPercent(last.p)}. ` +
     `${wickets} wicket${wickets === 1 ? "" : "s"}, ${dots} dot balls. ` +
-    `The largest single-ball swing was ${peak} percentage points. ` +
+    `Biggest swing: ${peak} percentage points. ` +
     `The final delivery's outcome is not recorded, because no prediction ` +
     `follows it.`
   );

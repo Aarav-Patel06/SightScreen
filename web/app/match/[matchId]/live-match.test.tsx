@@ -408,3 +408,18 @@ describe("live treatment", () => {
     expect(screen.queryByText(/updates every 15s/)).toBeNull();
   });
 });
+
+describe("the last-over change on a live page", () => {
+  it("is in percentage points, and the first over does not count the start-of-chase drop", () => {
+    // Before ball 1 at 60%; ball 1 "drops" it to 40% (the run-rate artifact,
+    // see lib/ball-strip.ts isStartOfChase); then it climbs a point a ball.
+    const rows = [
+      ball(1, 0, "powerplay", 0.6),
+      ...Array.from({ length: 5 }, (_, i) => ball(i + 2, i + 1, "powerplay", 0.4 + (i + 1) * 0.01)),
+    ];
+    render(<LiveMatch matchId={9339} header={header} initialPredictions={rows} />);
+    // 0.45 now against 0.41 after ball 1: +4, not 0.45 - 0.60 = -15.
+    expect(screen.getByText("+4 percentage points last over")).toBeTruthy();
+    expect(screen.queryByText(/pts last over/)).toBeNull();
+  });
+});

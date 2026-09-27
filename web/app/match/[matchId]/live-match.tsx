@@ -269,7 +269,13 @@ export function LiveMatch({
   const current = predictions.at(-1) ?? null;
   const previousOver = useMemo(() => {
     if (current === null) return null;
-    const sixAgo = predictions.find((p) => p.balls_bowled >= current.balls_bowled - 6);
+    // Only states after the first legal ball: before it the run rate is
+    // missing, and the model reads that differently from the 0.0 after a
+    // dot, so comparing across it measures the artifact (lib/ball-strip.ts
+    // isStartOfChase), not the over.
+    const sixAgo = predictions.find(
+      (p) => p.balls_bowled > 0 && p.balls_bowled >= current.balls_bowled - 6
+    );
     return sixAgo && sixAgo !== current ? current.p - sixAgo.p : null;
   }, [predictions, current]);
 
@@ -375,8 +381,7 @@ export function LiveMatch({
             )}
             {previousOver !== null && (
               <div className="tiny muted">
-                {previousOver >= 0 ? "+" : ""}
-                {Math.round(previousOver * 100)} pts last over
+                {`${previousOver >= 0 ? "+" : ""}${Math.round(previousOver * 100)} percentage points last over`}
               </div>
             )}
           </div>

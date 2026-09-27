@@ -35,6 +35,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 
 import {
   describeStrip,
+  isStartOfChase,
   peakSwing,
   pitchFor,
   tierFor,
@@ -350,7 +351,9 @@ function MarkTier({
           );
         }
 
-        const magnitude = peak > 0 ? Math.abs(mark.swing) / peak : 0;
+        // Clamped: the start-of-chase mark is excluded from `peak` (see
+        // isStartOfChase) and can be taller than everything it is scaled by.
+        const magnitude = peak > 0 ? Math.min(1, Math.abs(mark.swing) / peak) : 0;
         const barHeight = Math.max(0.5, magnitude * half);
         const up = mark.swing >= 0;
         const y = up ? axis - barHeight : axis;
@@ -419,7 +422,7 @@ function AreaTier({
   function path(side: 1 | -1): string {
     const points = marks.map((mark, index) => {
       const signed = side === 1 ? Math.max(0, mark.swing) : Math.min(0, mark.swing);
-      const magnitude = peak > 0 ? Math.abs(signed) / peak : 0;
+      const magnitude = peak > 0 ? Math.min(1, Math.abs(signed) / peak) : 0;
       const x = (index + 0.5) * step;
       const y = axis - side * magnitude * half;
       return `${x.toFixed(2)} ${y.toFixed(2)}`;
@@ -492,6 +495,13 @@ function PhaseBaseline({
  * Reserves its line whether or not a mark is active, so scrubbing does not
  * reflow the page under the pointer.
  */
+/** A probability change in percentage points, as the readout says it. */
+function change(swing: number): string {
+  const pp = Math.round(swing * 100);
+  if (pp === 0) return "no change";
+  return `${pp > 0 ? "up" : "down"} ${Math.abs(pp)} pp`;
+}
+
 function Readout({
   mark,
   peak,
@@ -512,7 +522,14 @@ function Readout({
    * The block reserves both lines whether or not a mark is active, so
    * scrubbing never reflows the page under the pointer.
    */
-  const subject = battingTeam ? `${battingTeam} win probability` : "Win probability";
+  // The probability AFTER this ball: "India 44% to win, up 2 pp" has to
+  // mean the ball took it to 44%. mark.p is the state before the ball. The
+  // start of the chase is the exception - its change is the run-rate
+  // artifact, so it states the pre-chase estimate and reports no change.
+  const toWin = (mark: Mark) => {
+    const p = isStartOfChase(mark) ? mark.p : mark.p + mark.swing;
+    return `${battingTeam ? `${battingTeam} ` : ""}${Math.round(p * 100)}% to win`;
+  };
 
   return (
     <div
@@ -522,7 +539,7 @@ function Readout({
     >
       {mark === null ? (
         <>
-          <span>Largest swing {Math.round(peak * 100)} percentage points</span>
+          <span>Biggest swing: {Math.round(peak * 100)} percentage points</span>
           <span>Hover to see ball-by-ball</span>
         </>
       ) : mark.event === "unknown" ? (
@@ -542,8 +559,8 @@ function Readout({
             · {describeEvent(mark)}
           </span>
           <span>
-            {subject} {Math.round(mark.p * 100)}% · moved {mark.swing >= 0 ? "+" : "−"}
-            {Math.abs(Math.round(mark.swing * 1000) / 10)} percentage points
+            {toWin(mark)}
+            {isStartOfChase(mark) ? " · start of the chase" : `, ${change(mark.swing)}`}
           </span>
         </>
       )}
