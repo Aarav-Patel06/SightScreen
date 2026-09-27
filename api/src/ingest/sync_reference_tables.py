@@ -38,7 +38,7 @@ from pathlib import Path
 import psycopg
 from dotenv import dotenv_values
 
-from db.defaults import SUPABASE_ID_FLOOR
+from db.defaults import SUPABASE_ID_FLOOR, SUPABASE_LIVE_ALIAS_FLOOR
 from features.asof_summary import DERIVED_TABLES, DerivedTable, content_hash
 from features.feature_ledger import assert_corpus_caught_up
 
@@ -75,6 +75,73 @@ def _env_urls() -> tuple[str, str]:
     return local_url, supabase_url
 
 
+ALIAS_TABLES = ("venue_aliases", "team_aliases", "player_aliases")
+
+
+class AliasCollision(RuntimeError):
+    """A corpus alias would overwrite a different alias on Supabase."""
+
+
+def _refuse_alias_overwrites(supabase_conn, table: str, columns: tuple[str, ...], rows) -> None:
+    """Never overwrite an alias row this sync did not create.
+
+    An upsert by alias_id is only safe when the id means the same alias on
+    both sides. The same (source, source_name) under the same id is the same
+    alias - the entity it points at may be re-pointed by a review decision,
+    which is exactly what the sync exists to carry. A DIFFERENT (source,
+    source_name) is a different alias that another allocator gave this id,
+    and replacing it would erase it without a trace. Refused, with nothing
+    written.
+    """
+    index = {c: i for i, c in enumerate(columns)}
+    local = {r[index["alias_id"]]: (r[index["source"]], r[index["source_name"]]) for r in rows}
+    with supabase_conn.cursor() as cur:
+        cur.execute(
+            f"SELECT alias_id, source, source_name FROM {table} WHERE alias_id = ANY(%s)", (list(local),)
+        )
+        clashes = [(a, local[a], (src, name)) for a, src, name in cur.fetchall() if local[a] != (src, name)]
+    if clashes:
+        detail = "; ".join(f"{a}: corpus {c} vs Supabase {s}" for a, c, s in clashes[:5])
+        raise AliasCollision(
+            f"{table}: {len(clashes)} alias id(s) mean different aliases on the corpus and Supabase "
+            f"({detail}). Nothing was written. See db/defaults.py's alias bands."
+        )
+
+
+def align_alias_counters(local_conn, supabase_conn) -> dict[str, tuple[int, int]]:
+    """Put each alias allocator's counter in its band. Idempotent.
+
+    Supabase's sequences (the live worker's) go to the live band, never
+    lower. The corpus's sequences are moved past any id Supabase already uses
+    below the live band - the live worker's rows from before the bands
+    existed - so the corpus can never hand one of them out again.
+    Returns {table: (supabase next, corpus next)}.
+    """
+    result = {}
+    for table in ALIAS_TABLES:
+        with supabase_conn.cursor() as cur:
+            cur.execute(
+                f"SELECT setval(pg_get_serial_sequence('{table}', 'alias_id'), GREATEST("
+                f"(SELECT MAX(alias_id) FROM {table} WHERE alias_id >= %s AND alias_id < %s), %s - 1))",
+                (SUPABASE_LIVE_ALIAS_FLOOR, SUPABASE_ID_FLOOR, SUPABASE_LIVE_ALIAS_FLOOR),
+            )
+            supabase_next = cur.fetchone()[0] + 1
+            cur.execute(f"SELECT coalesce(MAX(alias_id), 0) FROM {table} WHERE alias_id < %s", (SUPABASE_LIVE_ALIAS_FLOOR,))
+            below_live = cur.fetchone()[0]
+        with local_conn.cursor() as cur:
+            cur.execute(f"SELECT pg_get_serial_sequence('{table}', 'alias_id')")
+            sequence = cur.fetchone()[0]
+            cur.execute(f"SELECT last_value FROM {sequence}")
+            local_last = cur.fetchone()[0]
+            if local_last < below_live:
+                cur.execute(f"SELECT setval(pg_get_serial_sequence('{table}', 'alias_id'), %s)", (below_live,))
+                local_last = below_live
+        result[table] = (supabase_next, local_last + 1)
+    supabase_conn.commit()
+    local_conn.commit()
+    return result
+
+
 def sync_table(local_conn, supabase_conn, table: str, id_column: str, columns: tuple[str, ...]) -> int:
     column_list = ", ".join(columns)
     with local_conn.cursor() as cur:
@@ -82,6 +149,8 @@ def sync_table(local_conn, supabase_conn, table: str, id_column: str, columns: t
         rows = cur.fetchall()
     if not rows:
         return 0
+    if table in ALIAS_TABLES:
+        _refuse_alias_overwrites(supabase_conn, table, columns, rows)
 
     placeholders = ", ".join(["%s"] * len(columns))
     update_clause = ", ".join(f"{c} = EXCLUDED.{c}" for c in columns if c != id_column)
@@ -97,12 +166,16 @@ def sync_table(local_conn, supabase_conn, table: str, id_column: str, columns: t
         # SUPABASE_ID_FLOOR. Rows in that band are the daily Cricsheet job's
         # first-seen teams and venues; a plain MAX would move the sequence
         # into the band and let any serial insert allocate there.
-        cur.execute(
-            f"SELECT setval(pg_get_serial_sequence('{table}', '{id_column}'), "
-            f"GREATEST((SELECT MAX({id_column}) FROM {table} WHERE {id_column} < %s), 1))",
-            (SUPABASE_ID_FLOOR,),
-        )
+        if table not in ALIAS_TABLES:
+            cur.execute(
+                f"SELECT setval(pg_get_serial_sequence('{table}', '{id_column}'), "
+                f"GREATEST((SELECT MAX({id_column}) FROM {table} WHERE {id_column} < %s), 1))",
+                (SUPABASE_ID_FLOOR,),
+            )
     supabase_conn.commit()
+    if table in ALIAS_TABLES:
+        # The live worker allocates aliases from this sequence: its band.
+        align_alias_counters(local_conn, supabase_conn)
     return len(rows)
 
 
@@ -187,6 +260,7 @@ def run() -> None:
         # The daily Cricsheet job rebuilds the summaries on Supabase from a
         # ledger that may be ahead of this corpus; pushing now would undo it.
         assert_corpus_caught_up(local_conn, supabase_conn)
+        align_alias_counters(local_conn, supabase_conn)
         for table, id_column, columns in TABLES:
             count = sync_table(local_conn, supabase_conn, table, id_column, columns)
             print(f"synced {count} rows -> {table}")

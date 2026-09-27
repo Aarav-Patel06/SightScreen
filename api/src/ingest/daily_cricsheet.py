@@ -90,7 +90,7 @@ from ingest.replay_log import (
     score_match,
 )
 from ingest.sync_reference_tables import TABLES as REFERENCE_TABLES
-from ingest.sync_reference_tables import sync_derived_table
+from ingest.sync_reference_tables import align_alias_counters, sync_derived_table
 from models.artifact import active_model_row, resolve_pinned_artifact
 from models.resolve_outcomes import resolve_with
 
@@ -620,6 +620,9 @@ def catchup_local(local_url: str, supabase_conn, paths: list[Path], since: date 
         # so the loader below resolves them by exact alias instead of minting
         # its own duplicates.
         log(f"pulled from Supabase's entity band: {pull_entity_band(supabase_conn, bulk)}")
+        # And before any load creates an alias: the corpus's alias counters
+        # past every id the live worker already holds (db/defaults.py bands).
+        log(f"alias counters (Supabase next, corpus next): {align_alias_counters(bulk, supabase_conn)}")
         with bulk.cursor() as cur:
             cur.execute("SELECT external_ids->>'cricsheet' FROM matches WHERE external_ids ? 'cricsheet'")
             have = {r[0] for r in cur.fetchall()}

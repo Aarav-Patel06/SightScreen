@@ -44,23 +44,27 @@ Sessions 1 and 2 of the "daily Cricsheet + front page" feature are shipped (HEAD
 
 **Live data on Supabase today:** four live-worker matches, all `complete`: ids 1 and 2 have 0 predictions, id 3 has 25, id 1000001 has 15. **None has a resolved outcome**, because resolution reads labels from the corpus and a live match has no corpus counterpart until it's merged.
 
-### The cross-source alias gap (fix first: a collision is imminent for venues)
+### The cross-source alias gap — RESOLVED 2026-09-27
 
-Alias ids below 1,000,000 are allocated by **two sequences that don't know about each other**: the corpus's (`api/.env` `LOCAL_DATABASE_URL`) and Supabase's, which the live worker uses when it records a fuzzy match (`entity_resolution._create_alias`, source `cricketdata`). `ingest/sync_reference_tables.py` then **upserts the corpus's alias rows onto Supabase by `alias_id`**. So a corpus alias that takes an id the live worker already used overwrites the live worker's row, silently.
+Alias rows are created by three processes, which now allocate from **three bands** that cannot overlap. This extends the entity band (`db/defaults.py`):
 
-| Table | Live-worker rows on Supabase | Supabase sequence | Corpus sequence | Consequence |
-|---|---|---|---|---|
-| `venue_aliases` | **543** (Kensington Oval → venue 25) | 543 | **542** | The **next** venue alias the corpus creates gets 543, and the next sync overwrites the live worker's alias. |
-| `team_aliases` | 355–358 (Barbados Tridents 26, Jamaica Kingsmen 329, Guyana Amazon Warriors 23, Antigua and Barbuda Falcons 282) | 358 | 363 | Collides once the live worker creates 6 more team aliases (Supabase reaches 364, which the corpus also allocates next). |
+| Band | Allocator | Mechanism |
+|---|---|---|
+| 1 – 499,999 | the corpus | its own serial sequences |
+| 500,000 – 999,999 (`SUPABASE_LIVE_ALIAS_FLOOR`) | the live worker (`entity_resolution._create_alias` on Supabase, a plain serial insert on a fuzzy match) | Supabase's alias sequences are placed in this band by `sync_reference_tables.align_alias_counters`, which runs at every sync and every `catchup-local`. The worker itself is unchanged. |
+| ≥ 1,000,000 (`SUPABASE_ID_FLOOR`) | the daily job (`promote_entities`, explicit ids) | unchanged |
 
-The entity band (team, venue and alias ids ≥ `SUPABASE_ID_FLOOR` = 1,000,000 in `api/src/db/defaults.py`) is safe: only the daily job allocates there, and `sync_table` keeps Supabase's sequences below it. The gap is the space **below** the band. Options for session 3:
-- make `sync_table` refuse to overwrite a row whose `(source, source_name)` differs;
-- give live-worker aliases their own band;
-- pull `cricketdata` aliases into the corpus before any local load.
+**Why bands and not one allocator:** a single allocator would put a network call to Supabase inside every corpus load. Bands make the overlap impossible by construction.
+
+**The reference sync never overwrites an alias it didn't create.** `sync_table` refuses (`AliasCollision`, nothing written) when a corpus alias id already names a *different* `(source, source_name)` on Supabase. The same alias re-pointed at a different entity still syncs, because that's what a review decision does.
+
+**Legacy rows:** the live worker's five pre-band aliases (team 355–358, venue 543) stay where they are, since none collided. `align_alias_counters` also moves the corpus's counters past every Supabase id below the live band, so the corpus can never allocate them.
+
+**State on 2026-09-27:** no id meant different things on the two databases, in any alias or entity table, so no row repair was needed. Tests are in `tests/ingest/test_alias_bands.py`: the live worker's 543 survives a colliding sync, and each creator's next alias lands in its own band. Both were red on the old code, which overwrote 543 and handed the live worker 544.
 
 ### Open issues for session 3
 
-1. **The alias gap above.** Do this before anything that creates aliases on either side.
+1. ~~The alias gap.~~ Resolved; see above.
 2. **Cross-source merging.** A match the live worker covered is **skipped** when Cricsheet later publishes it (`daily_cricsheet.live_duplicate`: same format, same team pair, start date within ±1 day). It's logged, and its live predictions are never touched. Merging needs a crosswalk: `external_ids` gaining the `cricsheet` key on the live row, and the corpus adopting that `match_id`. Then `models/resolve_outcomes.py` can label live predictions, which is what makes `/accuracy`'s **live** population measurable. `resolve_outcomes.assert_same_matches` exists to stop this being faked with a shared integer.
 3. **The live pick end to end.** `loadHeroMatch` already prefers a fresh live chase, but it has only been tested with fakes. Nothing has run during a real Full Member international chase. The 60 s `revalidate` and the 5-minute window are the latency budget.
 4. **Live-worker rows carry no margin.** The provider feed has a winner but no `by`, so completed live matches read "X won", and `/matches` falls back to "Target reached"/"Target defended" when there is no winner at all. Merging (issue 2) fixes both.

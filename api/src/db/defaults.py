@@ -47,6 +47,18 @@ TRANSACTION_POOLER_PORT = 6543
 # in it - sync_reference_tables keeps Supabase's reference sequences below it.
 SUPABASE_ID_FLOOR = 1_000_000
 
+# ALIAS IDS HAVE THREE ALLOCATORS, SO THREE BANDS - no two can hand out the
+# same id, by construction rather than by luck:
+#   1 - 499,999          the corpus (its own serial sequences)
+#   500,000 - 999,999    the live worker: aliases it records on Supabase
+#                        (entity_resolution._create_alias, a plain serial
+#                        insert). sync_reference_tables keeps Supabase's alias
+#                        sequences in this band.
+#   >= 1,000,000         the daily Cricsheet job (explicit ids).
+# Before 2026-09-27 the first two shared a range: Supabase held live-worker
+# venue alias 543 while the corpus's counter stood at 542.
+SUPABASE_LIVE_ALIAS_FLOOR = 500_000
+
 
 # Railway injects these into every deployment. Any one of them means "this
 # process is running on Railway", which is the condition SPEC.md section
