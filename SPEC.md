@@ -18,6 +18,58 @@ This document is the authoritative reference for the project. When implementing:
 
 ---
 
+## 0a. Handoff for session 3: live prediction (written 2026-09-27, standalone)
+
+Sessions 1 and 2 of the "daily Cricsheet + front page" feature are shipped (HEAD `5b970fb` and later). Session 3 builds **live prediction and cross-source merging**. This section is written for a fresh session with no memory of the earlier ones: everything below was checked against the code and the databases on 2026-09-27.
+
+### Standing rules (set by the owner, not negotiable)
+
+- **The front page only ever shows an international between two of the 12 Full Members, live or not.** `teams.full_member` flags national sides only — 11 today, because Cricsheet withholds Afghanistan — so "both sides full_member" already means an international.
+- **Ask before adding or changing any credential** (repo secrets, keys, tokens), even when it seems to be part of an approved plan. Set them with `gh secret set` from `api/.env` via stdin; never echo one.
+- **Never build into or link into the owner's real directories** for scratch work: no junctions or symlinks to `web/node_modules`, and no `next build` into `web/.next` while a dev server is using it. Use a throwaway copy.
+- **Tests are shown red before green**, and every commit reports before it is pushed.
+
+### What exists now
+
+| Piece | Where | Notes |
+|---|---|---|
+| Daily Cricsheet ingest | `.github/workflows/cricsheet-daily.yml` → `api/src/ingest/daily_cricsheet.py` | 02:00 UTC plus dispatch. Loads new men's T20/ODI matches with the corpus loader, scores them and writes `source='backfill'`. Rebuilds the as-of summaries from `feature_ledger`, hash-verified. Records every run in `pipeline_runs`. Raw JSON is kept in the private Storage bucket `cricsheet-raw`. Full account: `supabase/SCHEMA.md`, "feature_ledger and the daily Cricsheet job". |
+| Ingest health on `/accuracy` | `web/components/ingest-status.tsx` | "Cricsheet ingest last succeeded …", flagged when older than 2 days or when the last run rejected matches. It's the only signal if GitHub disables the schedule after 60 days of no repo activity. |
+| Live worker | `api/src/serving/live_loop.py` (`LivePredictor`, `run_once`), provider adapter `api/src/ingest/cricketdata.py` (`CricketDataClient`), process `api/src/serving/entrypoint.py`, deployed on Railway | Polls CricketData (`https://api.cricapi.com/v1`, `currentMatches`/`cricScore`). It reconstructs deliveries by diffing scorecard snapshots, because the provider has no usable ball-by-ball feed (see this file's header note in `cricketdata.py`). It scores **innings 2 only** and writes `source='live'` predictions, plus `matches` rows keyed on `external_ids->>'cricketdata'` with ids from Supabase's sequence (≥ 1,000,000). `start_time` is when the worker first saw the match, not the scheduled start. It resolves teams and venues with `allow_create=False`, so it never creates entities. It marks a match `complete` when the provider says so **or** the chase is decided (`_chase_decided`). |
+| Fixture source (what is live or upcoming) | `CricketDataClient.list_live_matches` → `_fetch_snapshots` (`currentMatches`) | Recorded provider responses for tests: `tests/fixtures/cricketdata/` via `FixtureTransport`. The landing hero's fallback, used when Supabase is unreachable, is `web/lib/fixtures/hero-match.json`. |
+| Front page selection | `web/lib/hero-match.ts` `loadHeroMatch`; live test `web/lib/live-match.ts` `isLiveMatch` (`LIVE_WINDOW_MS` = 5 min); `web/app/page.tsx` `revalidate = 60` | Newest Full Member v Full Member candidate first. **A `live` row whose newest keyed prediction is under 5 minutes old takes the hero.** Keyed predictions are innings 2 only, so a fresh keyed row means "the chase has started". Otherwise the newest **`complete`** one with keyed predictions. A first-innings or quiet live match is passed over. Tests: `web/lib/hero-match.live.test.ts`. The header's live slot is `web/app/api/live/route.ts` + `web/components/live-slot.tsx`, using the same `isLiveMatch`. |
+| Completed match page | `web/app/match/[matchId]/live-match.tsx` | The real result (`web/lib/match-result.ts`, from `matches.win_by_runs` / `win_by_wickets` / `outcome_method` / `tie_winner` / `tie_decided_by`) and a two-fact chase summary (`web/lib/chase-summary.ts`): a lost chase shows its peak, a won one its low point. **Live pages still have the big number, bar and confidence line.** |
+| Probability display | `web/lib/probability.ts` | One formatter everywhere: never "100%" or "0%", but ">99%" and "<1%". |
+| Start-of-chase artifact | `web/lib/ball-strip.ts` `isStartOfChase` | The first legal ball's swing is the run-rate feature switching from missing to 0.0, not the delivery. It is excluded from every "moment" figure; the curve still shows it. The model fix is the next model task below (§11, "Next model task"), and it is **not built**. |
+
+**Live data on Supabase today:** four live-worker matches, all `complete`: ids 1 and 2 have 0 predictions, id 3 has 25, id 1000001 has 15. **None has a resolved outcome**, because resolution reads labels from the corpus and a live match has no corpus counterpart until it's merged.
+
+### The cross-source alias gap (fix first: a collision is imminent for venues)
+
+Alias ids below 1,000,000 are allocated by **two sequences that don't know about each other**: the corpus's (`api/.env` `LOCAL_DATABASE_URL`) and Supabase's, which the live worker uses when it records a fuzzy match (`entity_resolution._create_alias`, source `cricketdata`). `ingest/sync_reference_tables.py` then **upserts the corpus's alias rows onto Supabase by `alias_id`**. So a corpus alias that takes an id the live worker already used overwrites the live worker's row, silently.
+
+| Table | Live-worker rows on Supabase | Supabase sequence | Corpus sequence | Consequence |
+|---|---|---|---|---|
+| `venue_aliases` | **543** (Kensington Oval → venue 25) | 543 | **542** | The **next** venue alias the corpus creates gets 543, and the next sync overwrites the live worker's alias. |
+| `team_aliases` | 355–358 (Barbados Tridents 26, Jamaica Kingsmen 329, Guyana Amazon Warriors 23, Antigua and Barbuda Falcons 282) | 358 | 363 | Collides once the live worker creates 6 more team aliases (Supabase reaches 364, which the corpus also allocates next). |
+
+The entity band (team, venue and alias ids ≥ `SUPABASE_ID_FLOOR` = 1,000,000 in `api/src/db/defaults.py`) is safe: only the daily job allocates there, and `sync_table` keeps Supabase's sequences below it. The gap is the space **below** the band. Options for session 3:
+- make `sync_table` refuse to overwrite a row whose `(source, source_name)` differs;
+- give live-worker aliases their own band;
+- pull `cricketdata` aliases into the corpus before any local load.
+
+### Open issues for session 3
+
+1. **The alias gap above.** Do this before anything that creates aliases on either side.
+2. **Cross-source merging.** A match the live worker covered is **skipped** when Cricsheet later publishes it (`daily_cricsheet.live_duplicate`: same format, same team pair, start date within ±1 day). It's logged, and its live predictions are never touched. Merging needs a crosswalk: `external_ids` gaining the `cricsheet` key on the live row, and the corpus adopting that `match_id`. Then `models/resolve_outcomes.py` can label live predictions, which is what makes `/accuracy`'s **live** population measurable. `resolve_outcomes.assert_same_matches` exists to stop this being faked with a shared integer.
+3. **The live pick end to end.** `loadHeroMatch` already prefers a fresh live chase, but it has only been tested with fakes. Nothing has run during a real Full Member international chase. The 60 s `revalidate` and the 5-minute window are the latency budget.
+4. **Live-worker rows carry no margin.** The provider feed has a winner but no `by`, so completed live matches read "X won", and `/matches` falls back to "Target reached"/"Target defended" when there is no winner at all. Merging (issue 2) fixes both.
+5. **The next model task** (§11, "Next model task"): run rate undefined until N legal balls, N chosen by held-out evaluation. On 1000068, a single off ball 1 lowers the chaser's chance by 2.2 pp (CRR 6.0 is below RRR 7.3), and a six on the 7th ball raises it 7.4 pp as CRR doubles. N may need to be greater than 6.
+6. **`matches.result_method` collapses every method to `'dls'`**, including Awarded, VJD and Lost fewer wickets. The training split and Elo read it, so it was left alone. `outcome_method` holds the truth.
+7. **Corpus loads must go through `catchup-local`**, never plain `ingest.cricsheet run`. The corpus's `matches` sequence is at 1,000,000 (migration `20260919000001` ran on both databases), so a serial load would reuse ids Supabase has given other matches. `catchup-local` takes ids from Supabase.
+8. **The 60-day schedule disable** is only *surfaced* (`pipeline_runs` + `/accuracy`), not prevented. A keep-alive (an external cron calling GitHub's workflow `enable` endpoint) was proposed and not built. It needs a new credential, so ask first.
+9. **This machine's clock runs ahead of Supabase's.** A local build logged "JWT issued at future · PGRST303" on one landing query. Production isn't affected.
+
 ## 1. What we are building
 
 A cricket analytics platform that predicts match outcomes and individual player performance, updates live during a match, and improves measurably over time.
