@@ -40,6 +40,7 @@ from sklearn.isotonic import IsotonicRegression
 
 from eval.splits import SecondInningsDataset
 from features.as_of import compute_as_of_features
+from features.run_rate import feature_names_for, run_rate_features
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 ENV_PATH = REPO_ROOT / "api" / ".env"
@@ -114,6 +115,21 @@ class FeatureBundle:
         X = np.column_stack([self.columns[name] for name in names]).astype(np.float64)
         return X, names
 
+    def select_with_run_rate(self, variant: Variant, run_rate: dict) -> tuple[np.ndarray, list[str]]:
+        """`select`, with the run-rate features computed by features.run_rate
+        under `run_rate` - the same call serving makes. Kind 'stored' keeps
+        match_states' own columns."""
+        if run_rate["kind"] == "stored":
+            return self.select(variant)
+        names = feature_names_for(run_rate, VARIANT_FEATURES[variant])
+        cols = dict(self.columns)
+        if run_rate["kind"] != "none":
+            cols["current_run_rate"], cols["rrr_minus_crr"] = run_rate_features(
+                run_rate, cols["score"], cols["balls_bowled"], cols["balls_remaining"], cols["target"],
+                cols["required_run_rate"], cols["format"],
+            )
+        return np.column_stack([cols[n] for n in names]).astype(np.float64), names
+
 
 def _env() -> dict[str, str]:
     env = dotenv_values(ENV_PATH)
@@ -136,7 +152,8 @@ def _fetch_enrichment(conn, delivery_ids: np.ndarray) -> dict[str, np.ndarray]:
             """
             SELECT ms.delivery_id, ms.target, ms.current_run_rate, ms.rrr_minus_crr,
                    ms.partnership_runs, ms.partnership_balls, ms.balls_since_wicket,
-                   m.venue_id, d.batting_team_id, d.bowling_team_id, m.format
+                   m.venue_id, d.batting_team_id, d.bowling_team_id, m.format,
+                   ms.score, ms.balls_bowled
             FROM match_states ms
             JOIN matches m ON m.match_id = ms.match_id
             JOIN deliveries d ON d.delivery_id = ms.delivery_id
@@ -163,6 +180,8 @@ def _fetch_enrichment(conn, delivery_ids: np.ndarray) -> dict[str, np.ndarray]:
         "batting_team_id": np.array(cols[7], dtype=np.int64),
         "bowling_team_id": np.array(cols[8], dtype=np.int64),
         "format": np.array(cols[9], dtype=object),
+        "score": np.array(cols[10], dtype=np.float64),
+        "balls_bowled": np.array(cols[11], dtype=np.float64),
     }
 
 
@@ -244,6 +263,10 @@ def build_feature_bundle(conn, ds: SecondInningsDataset) -> FeatureBundle:
         "balls_since_wicket": enrichment["balls_since_wicket"],
         "phase_code": phase_code,
         **match_level,
+        # Not model features: the inputs features.run_rate needs.
+        "score": enrichment["score"],
+        "balls_bowled": enrichment["balls_bowled"],
+        "format": enrichment["format"],
     }
     return FeatureBundle(columns=columns, label=ds.label.astype(np.float64), match_id=ds.match_id)
 
