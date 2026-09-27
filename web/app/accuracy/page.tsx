@@ -36,6 +36,7 @@ import {
 } from "@/lib/accuracy";
 import { IngestStatus } from "@/components/ingest-status";
 import { HATCH_PITCH_PX } from "@/lib/ball-strip";
+import { formatProbability } from "@/lib/probability";
 import { supabaseServer } from "@/lib/supabase-server";
 
 import { ReliabilityDiagram } from "./charts";
@@ -344,7 +345,7 @@ function Scored({ population }: { population: PopulationReport }) {
                   {miss.competition}, {miss.match_date}
                 </Link>{" "}
                 <span className="muted">
-                  over {miss.over}: said {Math.round(miss.predicted * 100)}%, the
+                  over {miss.over}: said {formatProbability(miss.predicted)}, the
                   chase {miss.actual_won ? "won" : "lost"}
                 </span>
               </li>

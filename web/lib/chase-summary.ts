@@ -14,6 +14,8 @@ import type { WinProbPrediction } from "./prediction";
 export interface ChaseSummary {
   /** The highest win probability after a ball, and after how many overs. */
   peak: { p: number; afterOvers: string } | null;
+  /** The lowest, likewise - the telling figure for a chase that was WON. */
+  low: { p: number; afterOvers: string } | null;
   /** The largest single-ball swing, in whole percentage points. */
   biggest: {
     pp: number;
@@ -33,10 +35,12 @@ export function formatOvers(legalBalls: number): string {
 
 export function chaseSummary(predictions: readonly WinProbPrediction[]): ChaseSummary {
   const afterBalls = predictions.slice(1);
-  if (afterBalls.length === 0) return { peak: null, biggest: null };
+  if (afterBalls.length === 0) return { peak: null, low: null, biggest: null };
 
   const top = afterBalls.reduce((best, p) => (p.p > best.p ? p : best));
   const peak = { p: top.p, afterOvers: formatOvers(top.balls_bowled) };
+  const bottom = afterBalls.reduce((worst, p) => (p.p < worst.p ? p : worst));
+  const low = { p: bottom.p, afterOvers: formatOvers(bottom.balls_bowled) };
 
   const marks = toMarks(predictions);
   let biggest: ChaseSummary["biggest"] = null;
@@ -55,5 +59,5 @@ export function chaseSummary(predictions: readonly WinProbPrediction[]): ChaseSu
       };
     }
   }
-  return { peak, biggest };
+  return { peak, low, biggest };
 }

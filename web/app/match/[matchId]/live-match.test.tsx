@@ -13,6 +13,7 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import FIXTURE_8429 from "@/lib/fixtures/match-8429-predictions.json";
+import FIXTURE_1000068 from "@/lib/fixtures/match-1000068-predictions.json";
 import { parsePrediction, type WinProbPrediction } from "@/lib/prediction";
 
 // The component opens a Realtime channel on mount. jsdom has no websocket
@@ -501,5 +502,47 @@ describe("a completed match page", () => {
     );
     expect(container.querySelector(".wp-number")).toBeTruthy();
     expect(container.querySelector(".wp-bar")).toBeTruthy();
+  });
+});
+
+describe("probabilities at the ends, and a chase that was won", () => {
+  it("shows a live near-certainty as >99%, never 100%", () => {
+    const now = new Date().toISOString();
+    const { container } = render(
+      <LiveMatch matchId={9339} header={header} initialPredictions={[ball(1, 100, "death", 0.998, now)]} />
+    );
+    expect(container.querySelector(".wp-number")?.textContent).toBe(">99%");
+    expect(container.querySelector(".wp-bar")?.getAttribute("aria-label")).toMatch(/>99%$/);
+    expect(screen.getByText("now: >99%")).toBeTruthy();
+  });
+
+  it("shows a live near-impossibility as <1%, never 0%", () => {
+    const now = new Date().toISOString();
+    const { container } = render(
+      <LiveMatch matchId={9339} header={header} initialPredictions={[ball(1, 100, "death", 0.002, now)]} />
+    );
+    expect(container.querySelector(".wp-number")?.textContent).toBe("<1%");
+  });
+
+  it("summarises a WON chase by its low point, not its peak", () => {
+    // 1000068: England chased 146 and won; their chance only ever rose from
+    // its low, so the peak (>99% at the end) says nothing. The low does.
+    const real = FIXTURE_1000068.rows
+      .map((row) => parsePrediction(row as never))
+      .filter((p): p is WinProbPrediction => p !== null);
+    const low = Math.round(Math.min(...real.slice(1).map((p) => p.p)) * 100);
+    render(
+      <LiveMatch
+        matchId={1000068}
+        header={{
+          ...header, matchId: 1000068, teamA: "Sri Lanka", teamAId: 1, teamB: "England", teamBId: 2,
+          status: "complete", winner: "England", resultMethod: "normal", winByWickets: 6,
+        }}
+        initialPredictions={real.map((p) => ({ ...p, batting_team_id: 2 }))}
+      />
+    );
+    expect(screen.getByText(new RegExp(String.raw`^England's chance fell to ${low}% after \d+\.\d overs$`))).toBeTruthy();
+    expect(screen.queryByText(/peaked at/)).toBeNull();
+    expect(document.body.textContent).not.toMatch(/100%/);
   });
 });

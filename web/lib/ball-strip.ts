@@ -20,6 +20,7 @@
  */
 
 import type { Phase, WinProbPrediction } from "./prediction";
+import { formatProbability } from "./probability";
 
 /** What happened on a ball, reconstructed from the state before the next one. */
 export type BallEvent = "dot" | "score" | "wicket" | "unknown";
@@ -309,5 +310,5 @@ export function describeStrip(marks: readonly Mark[], subject?: string): string 
 }
 
 function asPercent(p: number): string {
-  return `${Math.round(p * 100)}%`;
+  return formatProbability(p);
 }

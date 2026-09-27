@@ -48,6 +48,6 @@ describe("chaseSummary on 8429", () => {
 
 describe("chaseSummary on a chase too short to summarise", () => {
   it("returns nothing rather than a peak of one point", () => {
-    expect(chaseSummary(predictions.slice(0, 1))).toEqual({ peak: null, biggest: null });
+    expect(chaseSummary(predictions.slice(0, 1))).toEqual({ peak: null, low: null, biggest: null });
   });
 });

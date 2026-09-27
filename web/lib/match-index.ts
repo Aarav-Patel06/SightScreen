@@ -37,6 +37,7 @@
  */
 
 import { toMarks, type Mark } from "./ball-strip";
+import { resultText, type MatchOutcome } from "./match-result";
 import { parsePrediction, type WinProbPrediction } from "./prediction";
 import { supabaseServer } from "./supabase-server";
 
@@ -59,15 +60,14 @@ export interface MatchRow {
   result: MatchResult | null;
 }
 
-export interface MatchResult {
-  /** The winning team's name, when `matches.winner` is populated. */
-  winner: string | null;
+/**
+ * The match's outcome (lib/match-result.ts's fields), plus which side won as
+ * prediction_outcomes records it - the only result a live-worker row, whose
+ * match never came from the corpus, has.
+ */
+export interface MatchResult extends MatchOutcome {
   /** True if the chasing side won, from prediction_outcomes. */
   chaseWon: boolean | null;
-  /** Runs still needed at the last ball the model saw. */
-  runsRequired: number | null;
-  /** Balls left at that same point. */
-  ballsRemaining: number | null;
 }
 
 export interface MatchIndex {
@@ -217,7 +217,7 @@ async function loadMatchRows() {
     supabase
       .from("matches")
       .select(
-        "match_id, competition, format, start_time, team_a, team_b, venue_id, winner, target_runs, result_method"
+        "match_id, competition, format, start_time, team_a, team_b, venue_id, winner, target_runs, result_method, win_by_runs, win_by_wickets, outcome_method, tie_winner, tie_decided_by"
       )
       // See UNNAMEABLE MATCHES above. Filtered in the query rather than after
       // the fetch so the count the page reports is the count it renders.
@@ -263,7 +263,7 @@ export async function loadMatchIndex(): Promise<MatchIndex> {
   const teamIds = new Set<number>();
   const venueIds = new Set<number>();
   for (const row of rows) {
-    for (const id of [row.team_a, row.team_b, row.winner]) {
+    for (const id of [row.team_a, row.team_b, row.winner, row.tie_winner]) {
       if (typeof id === "number") teamIds.add(id);
     }
     if (typeof row.venue_id === "number") venueIds.add(row.venue_id);
@@ -293,7 +293,6 @@ export async function loadMatchIndex(): Promise<MatchIndex> {
 
   const matches: MatchRow[] = rows.map((row) => {
     const predictions = byMatch?.get(row.match_id) ?? null;
-    const last = predictions?.[predictions.length - 1] ?? null;
 
     return {
       matchId: row.match_id,
@@ -304,69 +303,38 @@ export async function loadMatchIndex(): Promise<MatchIndex> {
       teamB: typeof row.team_b === "number" ? (teamName.get(row.team_b) ?? null) : null,
       venue: typeof row.venue_id === "number" ? (venueName.get(row.venue_id) ?? null) : null,
       marks: predictions && predictions.length > 0 ? toMarks(predictions) : null,
-      result: buildResult(
-        typeof row.winner === "number" ? (teamName.get(row.winner) ?? null) : null,
-        chaseWon.get(row.match_id) ?? null,
-        last
-      ),
+      result: {
+        resultMethod: row.result_method,
+        winner: typeof row.winner === "number" ? (teamName.get(row.winner) ?? null) : null,
+        winByRuns: row.win_by_runs,
+        winByWickets: row.win_by_wickets,
+        outcomeMethod: row.outcome_method,
+        tieWinner: typeof row.tie_winner === "number" ? (teamName.get(row.tie_winner) ?? null) : null,
+        tieDecidedBy: row.tie_decided_by,
+        chaseWon: chaseWon.get(row.match_id) ?? null,
+      },
     };
   });
 
   return { matches, sparklinesUnavailable: byMatch === null };
 }
 
-function buildResult(
-  winner: string | null,
-  chaseWon: boolean | null,
-  last: WinProbPrediction | null
-): MatchResult | null {
-  if (winner === null && chaseWon === null) return null;
-  return {
-    winner,
-    chaseWon,
-    runsRequired: last?.runs_required ?? null,
-    ballsRemaining: last?.balls_remaining ?? null,
-  };
-}
-
 /**
- * The result as one line.
+ * The result as one line - the same words as the match page.
  *
- * THE MARGIN IS DELIBERATELY NOT COMPUTED. The final payload is the state
- * BEFORE the last ball - the same off-by-one lib/ball-strip.ts documents - so
- * "won by 4 wickets" is not derivable from it, while "1 needed off 1" is
- * exactly true. A margin here would be a number nobody could check and most
- * people would believe.
+ * NEVER THE CHASE'S LAST STATE. This used to read "England won · chase
+ * needed 32 off 1": the final payload is the state BEFORE the last ball, so
+ * that describes a moment that never finished. The result's own columns
+ * (migration 20260927000001) say what happened.
  *
- * Degrades in one direction only: with `matches.winner` it names the team,
- * without it says which side won, and with neither it says nothing at all.
+ * Degrades one way: the full result; else, with no winner on the row (a
+ * live-worker match), which side won from prediction_outcomes - named by the
+ * target, because "Chase won" would need to know who chased; else nothing.
  */
 export function resultLine(result: MatchResult | null): string | null {
   if (result === null) return null;
-
-  // When the team is named the subject is the team; when it is not, the
-  // subject has to be the target, because "Chase defended" is nonsense and
-  // "Chase won · chase needed 4 off 3" says chase twice.
-  const who =
-    result.winner !== null
-      ? `${result.winner} won`
-      : result.chaseWon === null
-        ? null
-        : result.chaseWon
-          ? "Target reached"
-          : "Target defended";
-
-  if (who === null) return null;
-
-  if (result.runsRequired !== null && result.ballsRemaining !== null) {
-    // "chase needed", not bare "needed". The requirement belongs to the side
-    // batting second, which is NOT always the winner: match 4465 has Finland
-    // winning while Sweden chased, and "Finland won · 74 needed off 17" reads
-    // as though Finland needed 74. Naming the chase makes the sentence true
-    // in both directions without needing to know which team was batting -
-    // which Supabase cannot tell us anyway, since batting order lives in
-    // `deliveries` and that table is empty there.
-    return `${who} · chase needed ${result.runsRequired} off ${result.ballsRemaining}`;
-  }
-  return who;
+  const stated = resultText(result);
+  if (stated !== null) return stated;
+  if (result.chaseWon === null) return null;
+  return result.chaseWon ? "Target reached" : "Target defended";
 }

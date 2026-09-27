@@ -29,6 +29,7 @@ import { battingTeamName, winSubject } from "@/lib/batting-team";
 import { isLiveMatch } from "@/lib/live-match";
 import { chaseSummary, type ChaseSummary } from "@/lib/chase-summary";
 import { resultText } from "@/lib/match-result";
+import { formatProbability } from "@/lib/probability";
 import { highWaterMark, mergePredictions } from "@/lib/merge-predictions";
 import { parsePrediction, type Phase, type WinProbPrediction } from "@/lib/prediction";
 import { HATCH_PITCH_PX, describeEvent, toMarks } from "@/lib/ball-strip";
@@ -307,14 +308,17 @@ export function LiveMatch({
 
   // Whose probability p is: the batting side recorded on the row, never
   // team_a (the side that batted first) and never any other guess.
-  const subject = winSubject(
-    battingTeamName(current, [
-      { id: header.teamAId, name: header.teamA },
-      { id: header.teamBId, name: header.teamB },
-    ])
-  );
+  const battingName = battingTeamName(current, [
+    { id: header.teamAId, name: header.teamA },
+    { id: header.teamBId, name: header.teamB },
+  ]);
+  const subject = winSubject(battingName);
+  // Did the side these probabilities belong to win? Only when both names are
+  // known and agree - a tie, a no-result or an unknown batting side is not a
+  // won chase.
+  const chaseWon = battingName !== null && header.winner === battingName;
   const live = isLiveMatch(header.status, current?.created_at ?? null, now);
-  const percent = current ? `${Math.round(current.p * 100)}%` : "--";
+  const percent = current ? formatProbability(current.p) : "--";
   const confidence = current ? CONFIDENCE[current.phase] : null;
 
   // Live: what is still needed. Complete: the result. Neither - a row that
@@ -376,7 +380,7 @@ export function LiveMatch({
         // and three "not produced" phase boxes all describe a match in
         // progress. The curve and the strip below stay.
         <div className="level-2 match-hero">
-          <CompletedSummary summary={summary} subject={subject} />
+          <CompletedSummary summary={summary} subject={subject} chaseWon={chaseWon} />
         </div>
       ) : (
       <div className="level-2 match-hero">
@@ -477,7 +481,7 @@ export function LiveMatch({
                     fontSize: 12,
                   }}
                   labelFormatter={(i: number) => `after ${chartData[i]?.ball ?? 0} balls`}
-                  formatter={(value: number) => [`${value}%`, `${subject} win probability`]}
+                  formatter={(value: number) => [formatProbability(value / 100), `${subject} win probability`]}
                 />
                 <Line
                   type="monotone"
@@ -559,8 +563,16 @@ export function LiveMatch({
  * The completed chase in two facts (lib/chase-summary.ts), neither of which
  * is the pre-ball estimate or the start-of-chase transition.
  */
-function CompletedSummary({ summary, subject }: { summary: ChaseSummary; subject: string }) {
-  if (summary.peak === null) {
+function CompletedSummary({
+  summary,
+  subject,
+  chaseWon,
+}: {
+  summary: ChaseSummary;
+  subject: string;
+  chaseWon: boolean;
+}) {
+  if (summary.peak === null || summary.low === null) {
     return <p className="small muted">Too few predictions to summarise this chase.</p>;
   }
   const whose = subject === "batting side" ? "The batting side's" : `${subject}'s`;
@@ -575,7 +587,11 @@ function CompletedSummary({ summary, subject }: { summary: ChaseSummary; subject
   return (
     <>
       <p className="small">
-        {`${whose} chance peaked at ${Math.round(summary.peak.p * 100)}% after ${summary.peak.afterOvers} overs`}
+        {/* A lost chase is told by its peak - how close it came. A won one
+            by its low point: its peak is the end, which says nothing. */}
+        {chaseWon
+          ? `${whose} chance fell to ${formatProbability(summary.low.p)} after ${summary.low.afterOvers} overs`
+          : `${whose} chance peaked at ${formatProbability(summary.peak.p)} after ${summary.peak.afterOvers} overs`}
       </p>
       {biggest ? (
         <p className="small">

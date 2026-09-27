@@ -45,6 +45,7 @@ import {
   describeEvent,
 } from "@/lib/ball-strip";
 import type { Phase } from "@/lib/prediction";
+import { formatProbability } from "@/lib/probability";
 
 /** Dash pattern per phase, ordered so that "more dashes" reads as less certain. */
 const PHASE_DASH: Record<Phase, string | undefined> = {
@@ -528,7 +529,7 @@ function Readout({
   // artifact, so it states the pre-chase estimate and reports no change.
   const toWin = (mark: Mark) => {
     const p = isStartOfChase(mark) ? mark.p : mark.p + mark.swing;
-    return `${battingTeam ? `${battingTeam} ` : ""}${Math.round(p * 100)}% to win`;
+    return `${battingTeam ? `${battingTeam} ` : ""}${formatProbability(p)} to win`;
   };
 
   return (

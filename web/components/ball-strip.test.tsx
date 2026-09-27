@@ -13,6 +13,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import FIXTURE from "@/lib/fixtures/match-8429-predictions.json";
+import FIXTURE_1000068 from "@/lib/fixtures/match-1000068-predictions.json";
 import { toMarks } from "@/lib/ball-strip";
 import { parsePrediction, type WinProbPrediction } from "@/lib/prediction";
 
@@ -67,5 +68,32 @@ describe("the strip on 8429", () => {
     fireEvent.keyDown(screen.getByRole("img"), { key: "ArrowRight" });
     fireEvent.keyDown(screen.getByRole("img"), { key: "ArrowRight" });
     expect(readoutLines()[1]).toMatch(/^\d+% to win, (up \d+ pp|down \d+ pp|no change)$/);
+  });
+});
+
+describe("the strip on 1000068, a chase that ended near certainty", () => {
+  const won = toMarks(
+    FIXTURE_1000068.rows
+      .map((row) => parsePrediction(row as never))
+      .filter((p): p is WinProbPrediction => p !== null)
+  );
+
+  it("never reads 100% in the readout", () => {
+    render(<BallStrip marks={won} defaultWidth={1108} battingTeam="England" />);
+    const strip = screen.getByRole("img");
+    const lines: string[] = [];
+    for (let i = 0; i < won.length; i++) {
+      fireEvent.keyDown(strip, { key: "ArrowRight" });
+      lines.push(readoutLines()[1]);
+    }
+    expect(lines.join("\n")).not.toMatch(/\b100%|\b0%/);
+    expect(lines.some((l) => l.startsWith("England >99% to win"))).toBe(true);
+  });
+
+  it("never reads 100% in the description", () => {
+    render(<BallStrip marks={won} defaultWidth={1108} battingTeam="England" />);
+    const label = screen.getByRole("img").getAttribute("aria-label") ?? "";
+    expect(label).toContain("ending at >99%");
+    expect(label).not.toMatch(/\b100%/);
   });
 });

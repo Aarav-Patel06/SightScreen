@@ -25,6 +25,7 @@ import { useEffect, useState } from "react";
 import { BallStrip } from "@/components/ball-strip";
 import { toMarks } from "@/lib/ball-strip";
 import type { WinProbPrediction } from "@/lib/prediction";
+import { formatProbability, spokenProbability } from "@/lib/probability";
 
 interface LivePayload {
   matchId: number;
@@ -65,7 +66,7 @@ export function LiveSlot() {
   // needs a history. Until the slot carries the innings so far, this renders
   // the figure and the sides, which is what the header has room for anyway.
   const marks = toMarks([live.prediction]);
-  const percent = Math.round(live.prediction.p * 100);
+  const percent = formatProbability(live.prediction.p);
 
   return (
     <Link href={`/match/${live.matchId}`} className="live-slot">
@@ -77,10 +78,10 @@ export function LiveSlot() {
       <span className="live-strip" aria-hidden="true">
         <BallStrip marks={marks} height={18} defaultWidth={48} interactive={false} />
       </span>
-      <span className="fig live-figure">{percent}%</span>
+      <span className="fig live-figure">{percent}</span>
       <span className="visually-hidden">
         Live: {live.bowlingShort ? `${live.battingShort} batting against ${live.bowlingShort}, ` : ""}
-        {live.bowlingShort ? live.battingShort : "batting side"} win probability {percent} percent.
+        {live.bowlingShort ? live.battingShort : "batting side"} win probability {spokenProbability(live.prediction.p)}.
         Open the match page.
       </span>
     </Link>
