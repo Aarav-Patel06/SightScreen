@@ -26,11 +26,12 @@ SKIPPED, AND LOGGED, NEVER WRITTEN:
   * live      - the live worker already has this match (same format, same
                 team pair, start date within a day). Its predictions are live
                 and must not be touched; merging the two sources is later work.
-  * new_team / new_venue - the loader had to create the entity. Creating it
-                on Supabase would let Supabase and the corpus mint the same id
-                for different things. The local catch-up creates it; a later
-                daily run then picks the match up.
   * rejected  - the loader rejected the file (its own reasons, verbatim).
+  * NOT skipped: a first-seen team or venue. The loader's resolver creates it
+                with the corpus's alias rules, the features give it training's
+                cold start (Elo 1500; venue NaN under ten prior matches), and
+                it takes an id in the ENTITY_ID_FLOOR band - see "First-seen
+                teams and venues" below.
   * no balls  - not a skip: the match row and ledger row are written (Elo and
                 venue need a no-result too), there is just nothing to score.
 
@@ -60,6 +61,7 @@ import time
 import urllib.request
 import zipfile
 from collections import Counter
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -309,6 +311,139 @@ def _write_match_row(stage_conn, supabase_conn, match_id: int) -> int:
         return cur.rowcount
 
 
+# --- First-seen teams and venues --------------------------------------------------
+#
+# The stage database's resolver creates a first-seen team or venue with the
+# corpus loader's own alias rules (ingest/entity_resolution.py). What it cannot
+# do alone is give it an id that means the same thing everywhere: the corpus
+# creates entities of its own, and two databases minting ids from two
+# sequences is how one id comes to mean two things.
+#
+# So an entity first seen HERE takes an id in its own band, at or above
+# ENTITY_ID_FLOOR - the floor the live worker's match ids already use - where
+# the corpus never allocates (its sequences sit in the hundreds). The local
+# catch-up pulls the band into the corpus BEFORE loading, so the corpus loader
+# then finds these entities by exact alias and never creates a duplicate.
+
+ENTITY_ID_FLOOR = 1_000_000
+
+
+@dataclass(frozen=True)
+class Entity:
+    table: str
+    id_column: str
+    columns: tuple[str, ...]
+    alias_table: str
+
+
+TEAM_ENTITY = Entity("teams", "team_id", ("name", "short_name", "full_member"), "team_aliases")
+VENUE_ENTITY = Entity("venues", "venue_id", ("name", "city", "country"), "venue_aliases")
+ALIAS_COLUMNS = ("source", "source_name", "source_id")
+
+
+def _next_in_band(conn, table: str, column: str) -> int:
+    with conn.cursor() as cur:
+        cur.execute(
+            f"SELECT GREATEST(coalesce(max({column}), 0), %s) + 1 FROM {table}", (ENTITY_ID_FLOOR - 1,)
+        )
+        return cur.fetchone()[0]
+
+
+def promote_entities(stage_conn, supabase_conn, entity: Entity, stage_ids: set[int]) -> int:
+    """Give stage-created entities their Supabase id, on both sides, with the
+    aliases the resolver made for them.
+
+    Committed on Supabase at once: if the run dies later, the next run copies
+    them into its stage database and resolves them by exact alias, so nothing
+    is created twice. Returns how many were created.
+    """
+    if not stage_ids:
+        return 0
+    columns = ", ".join(entity.columns)
+    alias_columns = ", ".join(ALIAS_COLUMNS)
+    with supabase_conn.cursor() as cur:
+        # One writer in the band at a time. The workflow's concurrency group
+        # already serialises the job; this covers anything else.
+        cur.execute(f"LOCK TABLE {entity.table}, {entity.alias_table} IN SHARE ROW EXCLUSIVE MODE")
+    next_id = _next_in_band(supabase_conn, entity.table, entity.id_column)
+    next_alias = _next_in_band(supabase_conn, entity.alias_table, "alias_id")
+
+    with stage_conn.cursor() as stage, supabase_conn.cursor() as remote:
+        for old_id in sorted(stage_ids):
+            stage.execute(f"SELECT {columns} FROM {entity.table} WHERE {entity.id_column} = %s", (old_id,))
+            values = stage.fetchone()
+            stage.execute(
+                f"SELECT {alias_columns} FROM {entity.alias_table} "
+                f"WHERE {entity.id_column} = %s ORDER BY alias_id",
+                (old_id,),
+            )
+            aliases = stage.fetchall()
+            new_id, next_id = next_id, next_id + 1
+
+            # Stage: delete, then insert, so a UNIQUE(name) never sees the old
+            # and new rows at once.
+            stage.execute(f"DELETE FROM {entity.alias_table} WHERE {entity.id_column} = %s", (old_id,))
+            stage.execute(f"DELETE FROM {entity.table} WHERE {entity.id_column} = %s", (old_id,))
+            for target in (stage, remote):
+                target.execute(
+                    f"INSERT INTO {entity.table} ({entity.id_column}, {columns}) "
+                    f"VALUES (%s, {', '.join(['%s'] * len(entity.columns))})",
+                    (new_id, *values),
+                )
+            for alias in aliases:
+                alias_id, next_alias = next_alias, next_alias + 1
+                for target in (stage, remote):
+                    target.execute(
+                        f"INSERT INTO {entity.alias_table} (alias_id, {entity.id_column}, {alias_columns}) "
+                        f"VALUES (%s, %s, %s, %s, %s)",
+                        (alias_id, new_id, *alias),
+                    )
+    supabase_conn.commit()
+    stage_conn.commit()
+    return len(stage_ids)
+
+
+def pull_entity_band(supabase_conn, local_conn) -> dict[str, int]:
+    """The catch-up's first step: every Supabase entity and alias in the daily
+    job's band that the corpus lacks, ids unchanged. A same-named entity the
+    corpus created independently fails loudly on UNIQUE(name) - never merged
+    by guesswork."""
+    pulled = {}
+    for entity in (TEAM_ENTITY, VENUE_ENTITY):
+        columns = ", ".join((entity.id_column, *entity.columns))
+        alias_columns = ", ".join(("alias_id", entity.id_column, *ALIAS_COLUMNS))
+        with supabase_conn.cursor() as cur:
+            cur.execute(
+                f"SELECT {columns} FROM {entity.table} WHERE {entity.id_column} >= %s ORDER BY 1",
+                (ENTITY_ID_FLOOR,),
+            )
+            rows = cur.fetchall()
+            cur.execute(
+                f"SELECT {alias_columns} FROM {entity.alias_table} "
+                f"WHERE {entity.id_column} >= %s ORDER BY 1",
+                (ENTITY_ID_FLOOR,),
+            )
+            aliases = cur.fetchall()
+        count = 0
+        with local_conn.cursor() as cur:
+            for row in rows:
+                cur.execute(
+                    f"INSERT INTO {entity.table} ({columns}) VALUES ({', '.join(['%s'] * len(row))}) "
+                    f"ON CONFLICT ({entity.id_column}) DO NOTHING",
+                    row,
+                )
+                count += cur.rowcount
+            for alias in aliases:
+                cur.execute(
+                    f"INSERT INTO {entity.alias_table} ({alias_columns}) VALUES (%s, %s, %s, %s, %s) "
+                    f"ON CONFLICT (alias_id) DO NOTHING",
+                    alias,
+                )
+        local_conn.commit()
+        pulled[entity.table] = count
+    return pulled
+
+
 # --- The run -------------------------------------------------------------------
 
 
@@ -338,6 +473,8 @@ def run_daily(
         # Pass 1: load everything once to learn what it resolves to.
         load_report = LoadReport()
         eligible, pass1_ids = [], []
+        new_teams: set[int] = set()
+        new_venues: set[int] = set()
         for cand in candidates:
             load_match(stage, catalog, load_report, cand["path"])
             staged = _staged_row(stage, cand["cricsheet_id"])
@@ -349,23 +486,27 @@ def run_daily(
                 report["skipped"].append({"cricsheet_id": cand["cricsheet_id"], "why": "rejected", "detail": reason})
                 continue
             pass1_ids.append(staged["match_id"])
-            why = None
-            if staged["team_a"] > max_team or staged["team_b"] > max_team:
-                why = "new_team"
-            elif staged["venue_id"] is not None and staged["venue_id"] > max_venue:
-                why = "new_venue"
-            elif (live_id := live_duplicate(supabase_conn, staged)) is not None:
-                why, cand["live_match_id"] = "live", live_id
-            if why:
+            if (live_id := live_duplicate(supabase_conn, staged)) is not None:
                 report["skipped"].append(
-                    {"cricsheet_id": cand["cricsheet_id"], "why": why,
-                     **({"live_match_id": cand["live_match_id"]} if why == "live" else {})}
+                    {"cricsheet_id": cand["cricsheet_id"], "why": "live", "live_match_id": live_id}
                 )
                 continue
+            # A first-seen team or venue is NOT a skip: the loader's resolver
+            # created it exactly as the corpus loader would have, and the
+            # features treat it exactly as training did (Elo 1500, venue NaN
+            # under ten prior matches). It only needs a Supabase id - below.
+            new_teams.update(t for t in (staged["team_a"], staged["team_b"]) if t > max_team)
+            if staged["venue_id"] is not None and staged["venue_id"] > max_venue:
+                new_venues.add(staged["venue_id"])
             eligible.append(cand)
         if pass1_ids:
             _drop_staged(stage, pass1_ids)
         log(f"skipped: {dict(Counter(s['why'] for s in report['skipped']))}")
+        report["entities_created"] = {
+            "teams": promote_entities(stage, supabase_conn, TEAM_ENTITY, new_teams),
+            "venues": promote_entities(stage, supabase_conn, VENUE_ENTITY, new_venues),
+        }
+        log(f"entities created: {report['entities_created']}")
 
         # Ids, in (date, cricsheet id) order so Elo's same-day tie-break is
         # reproducible by the catch-up.
@@ -445,13 +586,17 @@ def run_daily(
 def catchup_local(local_url: str, supabase_conn, paths: list[Path], since: date | None) -> dict:
     """Load released matches into the LOCAL corpus for future retraining,
     adopting the id Supabase already gave a match so the two sides agree.
-    Loads every in-scope file the corpus lacks (skipped ones included - this
-    is where their new team or venue gets created). Does not rebuild or
-    retrain; prints the commands that come next."""
+    Pulls the daily job's entity band first, so first-seen teams and venues
+    keep the ids Supabase already uses. Loads every in-scope file the corpus
+    lacks. Does not rebuild or retrain; prints the commands that come next."""
     state = supabase_state(supabase_conn)
     index = {c: i for i, c in enumerate(LEDGER_COLUMNS)}
     report = LoadReport()
     with psycopg.connect(local_url) as bulk, psycopg.connect(local_url, autocommit=True) as catalog:
+        # BEFORE any load: the entities the daily job created, ids unchanged,
+        # so the loader below resolves them by exact alias instead of minting
+        # its own duplicates.
+        log(f"pulled from Supabase's entity band: {pull_entity_band(supabase_conn, bulk)}")
         with bulk.cursor() as cur:
             cur.execute("SELECT external_ids->>'cricsheet' FROM matches WHERE external_ids ? 'cricsheet'")
             have = {r[0] for r in cur.fetchall()}
@@ -483,6 +628,7 @@ def catchup_local(local_url: str, supabase_conn, paths: list[Path], since: date 
 PUBLIC_KEYS = (
     "selection",
     "reference_rows",
+    "entities_created",
     "ingested_by_format",
     "skipped_by_reason",
     "matches_written",

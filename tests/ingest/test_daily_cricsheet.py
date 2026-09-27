@@ -370,3 +370,191 @@ def test_a_failed_run_exits_non_zero_and_is_still_recorded(fake_supabase_url, st
             "SELECT pipeline, status, error_class, counts FROM pipeline_runs"
         ).fetchall()
     assert rows == [("cricsheet_daily", "failure", "URLError", {})]
+
+
+# --- 7. First-seen team and venue: the cold start -------------------------------
+#
+# Match 8002, Panama v Turks and Caicos Island (T20, 2025-04-17, Clayton
+# Panama, Panama City), is BOTH the team's and the venue's first appearance in
+# the corpus. Training gave it Elo 1500 for the new side (features.elo's
+# STARTING_RATING) and NaN venue features (fewer than MIN_VENUE_MATCHES prior
+# matches). The daily job, meeting both for the first time, must create them
+# with the loader's own alias rules and produce the identical predictions.
+
+COLD_MATCH_ID = 8002
+COLD_CRICSHEET_ID = "1481296"
+
+
+def _seed_before_first_appearance(local_url: str, fake_url: str) -> tuple[int, int]:
+    """Supabase as it would have been the day before match 8002's team and
+    venue existed: neither they, their aliases, nor any ledger or summary row
+    that mentions them."""
+    from features.feature_ledger import LEDGER_COLUMNS, ledger_rows
+
+    _truncate_all(fake_url)
+    with psycopg.connect(local_url) as src, psycopg.connect(fake_url) as dst:
+        team, venue = src.execute(
+            "SELECT team_b, venue_id FROM matches WHERE match_id = %s", (COLD_MATCH_ID,)
+        ).fetchone()
+        wheres = {
+            "venues": f"WHERE venue_id <> {venue}",
+            "teams": f"WHERE team_id <> {team}",
+            "venue_aliases": f"WHERE venue_id <> {venue}",
+            "team_aliases": f"WHERE team_id <> {team}",
+            "venue_asof_summary": f"WHERE venue_id <> {venue}",
+            "elo_asof_summary": f"WHERE team_id <> {team}",
+        }
+        for table in ("venues", "teams", "players", "venue_aliases", "team_aliases", "player_aliases",
+                      "model_versions", "venue_asof_summary", "elo_asof_summary", "reference_sync_state"):
+            _copy_table(src, dst, table, wheres.get(table, ""))
+        index = {c: i for i, c in enumerate(LEDGER_COLUMNS)}
+        keep = [
+            r for r in ledger_rows(src)
+            if r[index["cricsheet_id"]] != COLD_CRICSHEET_ID
+            and team not in (r[index["team_a"]], r[index["team_b"]], r[index["winner"]])
+            and r[index["venue_id"]] != venue
+        ]
+        placeholders = ", ".join(["%s"] * len(LEDGER_COLUMNS))
+        with dst.cursor() as cur:
+            cur.executemany(f"INSERT INTO feature_ledger VALUES ({placeholders})", keep)
+        dst.commit()
+    return team, venue
+
+
+def _cold_logged(fake_url) -> dict[tuple, float]:
+    with psycopg.connect(fake_url) as conn:
+        rows = conn.execute(
+            "SELECT p.innings, p.over_num, p.ball_in_over, (p.payload->>'p')::float8 "
+            "FROM predictions p JOIN matches m USING (match_id) "
+            "WHERE m.external_ids->>'cricsheet' = %s",
+            (COLD_CRICSHEET_ID,),
+        ).fetchall()
+    return {(i, o, b): p for i, o, b, p in rows}
+
+
+def _cold_replay(local_url, artifact) -> dict[tuple, float]:
+    from ingest.replay_log import load_balls, score_match
+
+    with psycopg.connect(local_url) as conn:
+        scored = score_match(artifact, conn, COLD_MATCH_ID, load_balls(conn, COLD_MATCH_ID))
+    return {(b["innings"], b["over_num"], b["ball_in_over"]): b["p"] for b in scored}
+
+
+@pytest.fixture(scope="module")
+def cold_file():
+    path = REPO_ROOT / "api" / _env("CRICSHEET_DATA_DIR") / f"{COLD_CRICSHEET_ID}.json"
+    if not path.exists():
+        pytest.skip(f"{path} not present")
+    return path
+
+
+def _cold_diffs(local_url, stage_url, fake_url, cold_file, artifact):
+    _seed_before_first_appearance(local_url, fake_url)
+    report = _run(stage_url, fake_url, [cold_file], artifact)
+    expected, got = _cold_replay(local_url, artifact), _cold_logged(fake_url)
+    assert expected, "the local replay produced no balls - wrong fixture match"
+    diffs = [(k, expected[k], got.get(k)) for k in expected if got.get(k) != expected[k]]
+    diffs += [(k, None, got[k]) for k in got if k not in expected]
+    return report, expected, diffs
+
+
+def test_a_first_seen_team_and_venue_get_trainings_cold_start_exactly(
+    local_url, stage_url, fake_supabase_url, cold_file, artifact
+):
+    from ingest.daily_cricsheet import ENTITY_ID_FLOOR
+
+    report, expected, diffs = _cold_diffs(local_url, stage_url, fake_supabase_url, cold_file, artifact)
+    assert report["skipped"] == [], report["skipped"]
+    assert report["entities_created"] == {"teams": 1, "venues": 1}
+    assert diffs == [], f"{len(diffs)} of {len(expected)} balls differ, e.g. {diffs[:3]}"
+
+    # Created with the loader's alias rules, in the daily job's id band.
+    with psycopg.connect(fake_supabase_url) as conn:
+        team = conn.execute(
+            "SELECT t.team_id, t.name, a.source_name FROM teams t JOIN team_aliases a USING (team_id) "
+            "WHERE t.name = 'Turks and Caicos Island'"
+        ).fetchall()
+        venue = conn.execute(
+            "SELECT v.venue_id, v.name, a.source_name FROM venues v JOIN venue_aliases a USING (venue_id) "
+            "WHERE v.name = 'Clayton Panama, Panama City'"
+        ).fetchall()
+        used = conn.execute(
+            "SELECT team_b, venue_id FROM matches WHERE external_ids->>'cricsheet' = %s",
+            (COLD_CRICSHEET_ID,),
+        ).fetchone()
+    assert len(team) == 1 and team[0][0] >= ENTITY_ID_FLOOR and team[0][2] == "Turks and Caicos Island"
+    assert len(venue) == 1 and venue[0][0] >= ENTITY_ID_FLOOR
+    assert used == (team[0][0], venue[0][0])
+    print(f"cold start: {len(expected)} balls bit-identical; team {team[0][0]}, venue {venue[0][0]}")
+
+
+def test_the_cold_start_gate_sees_a_cold_start_that_differs(
+    local_url, stage_url, fake_supabase_url, cold_file, artifact, monkeypatch
+):
+    """The same gate, with the new entities given history they do not have:
+    an Elo of 1600 for the new team, and ten prior chases at the new venue.
+    If this still matched, the gate could not tell a cold start from any
+    other."""
+    from ingest import daily_cricsheet
+
+    original = daily_cricsheet.rebuild_summaries_from_ledger
+
+    def warm_start(stage_conn, rows):
+        result = original(stage_conn, rows)
+        with stage_conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO elo_asof_summary SELECT team_id, 'T20', DATE '2020-01-01', 1600 "
+                "FROM teams WHERE team_id >= %s", (daily_cricsheet.ENTITY_ID_FLOOR,)
+            )
+            cur.execute(
+                "INSERT INTO venue_asof_summary SELECT venue_id, DATE '2020-01-01', 5.0, 10, 1600, 10 "
+                "FROM venues WHERE venue_id >= %s", (daily_cricsheet.ENTITY_ID_FLOOR,)
+            )
+        stage_conn.commit()
+        return result
+
+    monkeypatch.setattr(daily_cricsheet, "rebuild_summaries_from_ledger", warm_start)
+    _report, expected, diffs = _cold_diffs(local_url, stage_url, fake_supabase_url, cold_file, artifact)
+    assert diffs, "a warm start for the new team and venue changed nothing - the gate is blind to it"
+    worst = max(abs(e - g) for _k, e, g in diffs if e is not None and g is not None)
+    print(f"warm start: {len(diffs)} of {len(expected)} balls differ, max |dp| {worst:.4f}")
+
+
+def test_the_catch_up_adopts_the_daily_jobs_new_entities_instead_of_duplicating_them(
+    local_url, stage_url, fake_supabase_url, cold_file, artifact
+):
+    """After the daily job creates a team and venue at ids >= ENTITY_ID_FLOOR,
+    a corpus catching up must end with THOSE ids - not mint its own copies,
+    which would give one team two ids and fail the next reference sync."""
+    from ingest.cricsheet import LoadReport, load_match
+    from ingest.daily_cricsheet import ENTITY_ID_FLOOR, pull_entity_band
+
+    team, venue = _seed_before_first_appearance(local_url, fake_supabase_url)
+    _run(stage_url, fake_supabase_url, [cold_file], artifact)
+
+    # A "corpus" that has never seen the team or venue: the stage scratch
+    # database, reset and given the same reference tables minus both.
+    _truncate_all(stage_url)
+    with psycopg.connect(local_url) as src, psycopg.connect(stage_url) as corpus:
+        for table, where in (("venues", f"WHERE venue_id <> {venue}"), ("teams", f"WHERE team_id <> {team}"),
+                             ("players", ""), ("venue_aliases", f"WHERE venue_id <> {venue}"),
+                             ("team_aliases", f"WHERE team_id <> {team}"), ("player_aliases", "")):
+            _copy_table(src, corpus, table, where)
+        corpus.commit()
+
+    with psycopg.connect(fake_supabase_url) as supabase, psycopg.connect(stage_url) as corpus:
+        assert pull_entity_band(supabase, corpus) == {"teams": 1, "venues": 1}
+        with psycopg.connect(stage_url, autocommit=True) as catalog:
+            report = LoadReport()
+            load_match(corpus, catalog, report, cold_file)
+        assert report.matches_loaded == 1
+        assert report.resolution_counts["team"]["auto_created"] == 0
+        assert report.resolution_counts["venue"]["auto_created"] == 0
+        team_b, venue_id = corpus.execute(
+            "SELECT team_b, venue_id FROM matches WHERE external_ids->>'cricsheet' = %s", (COLD_CRICSHEET_ID,)
+        ).fetchone()
+        supabase_ids = supabase.execute(
+            "SELECT team_b, venue_id FROM matches WHERE external_ids->>'cricsheet' = %s", (COLD_CRICSHEET_ID,)
+        ).fetchone()
+    assert (team_b, venue_id) == supabase_ids
+    assert team_b >= ENTITY_ID_FLOOR and venue_id >= ENTITY_ID_FLOOR

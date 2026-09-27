@@ -128,11 +128,27 @@ python -m ingest.sync_reference_tables
 
 `catchup-local` loads each missing in-scope match with **the id Supabase
 already gave it**, so Elo's same-day tie-break (`ORDER BY start_time,
-match_id`) is identical on both sides. Matches the daily job skipped for a
-new team or venue are loaded too, which creates the entity; after the
-publish and sync, the next daily run predicts them (while they are still in
-Cricsheet's 30-day bundle). A match the live worker already had stays
-skipped until cross-source merging exists.
+match_id`) is identical on both sides.
+
+**First-seen teams and venues need no local step.** The daily job's stage
+database runs the corpus loader's resolver unchanged, so a new team or venue
+is created by the same alias rules, and gets training's cold start (Elo 1500;
+venue features NaN under ten prior matches). It takes an id at or above
+**1,000,000** (`ENTITY_ID_FLOOR`) — a band the corpus never allocates in —
+written to Supabase with its aliases. `catchup-local` pulls that band into the
+corpus *before* loading, so the corpus loader resolves those entities by exact
+alias and never mints a second id for the same team.
+
+**What still needs a manual local step, and how often:**
+
+| Step | When | What happens if you don't |
+|---|---|---|
+| `catchup-local` + the chain above | Before any retrain; otherwise at your convenience | Predictions are unaffected. Player pages and the agent's replica miss the new matches' players, and `sync_reference_tables` refuses to run until you do. |
+| Resolve a queued TEAM: `catchup-local`, then `python -m ingest.review_queue list --kind team` / `resolve <id> --as-existing N` or `--as-new`, then `sync_reference_tables` | Only when a run's `skipped_by_reason` shows `rejected` > 0 — the resolver met a near-miss it will not guess at (ambiguous fuzzy margin). The job's own queue lives in its throwaway stage database, so the decision is made on the corpus's queue, which the catch-up reproduces. | The match is re-tried and re-rejected daily while it is in Cricsheet's 30-day bundle; after that only a `--bundle all` run picks it up. (A queued VENUE does not reject: the match loads with no venue and NaN venue features, exactly as the corpus loader does.) |
+| Flag a new Full Member (`teams.full_member`, a migration) | When the ICC promotes a nation — years apart | The hero and previews never show its matches. |
+
+A match the live worker already had stays skipped until cross-source merging
+exists (session 3).
 
 ### `pipeline_runs` (`20260926000002_pipeline_runs.sql`)
 
