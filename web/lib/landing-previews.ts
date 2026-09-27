@@ -88,40 +88,45 @@ async function loadPreviewMatches(): Promise<PreviewMatch[] | null> {
     return null;
   }
 
-  const predictions = await supabase
-    .from("predictions")
-    .select("prediction_id, created_at, model_version, payload, match_id")
-    .in("match_id", matches.data.map((r) => r.match_id))
-    .eq("prediction_type", "win_prob")
-    .not("innings", "is", null)
-    .order("prediction_id", { ascending: true });
-
-  const byMatch = new Map<number, ReturnType<typeof parsePrediction>[]>();
-  if (predictions.error) {
-    console.warn(`[previews] strips unavailable: ${describe(predictions.error)}`);
-  } else {
-    for (const row of predictions.data ?? []) {
-      const parsed = parsePrediction(row as never);
-      if (parsed === null) continue;
-      const id = (row as { match_id: number }).match_id;
-      byMatch.set(id, [...(byMatch.get(id) ?? []), parsed]);
-    }
-  }
-
-  const out: PreviewMatch[] = [];
+  // The ROWS matches to show, chosen before any strip is read.
+  const shown: { matchId: number; date: string | null; teams: string }[] = [];
   for (const row of matches.data) {
-    if (out.length === ROWS) break;
+    if (shown.length === ROWS) break;
     const teamA = row.team_a === null ? undefined : names.get(row.team_a);
     const teamB = row.team_b === null ? undefined : names.get(row.team_b);
     if (!teamA || !teamB) continue; // never render a side it cannot name
-    const rows = byMatch.get(row.match_id) ?? [];
-    out.push({
+    shown.push({
       matchId: row.match_id,
       date: row.start_time ? row.start_time.slice(0, 10) : null,
       teams: `${teamA} v ${teamB}`,
-      marks: rows.length > 1 ? toMarks(rows as never) : null,
     });
   }
+
+  // ONE REQUEST PER STRIP. These were one fetch of every prediction for all
+  // candidates, oldest first, and PostgREST returns at most 1,000 rows per
+  // request - so once the candidates passed that, the NEWEST previews, the
+  // ones shown first, silently lost their strips. One match is at most ~305
+  // keyed rows, which a single request always holds.
+  const strips = await Promise.all(
+    shown.map((match) =>
+      supabase
+        .from("predictions")
+        .select("prediction_id, created_at, model_version, payload, match_id")
+        .eq("match_id", match.matchId)
+        .eq("prediction_type", "win_prob")
+        .not("innings", "is", null)
+        .order("prediction_id", { ascending: true })
+    )
+  );
+
+  const out: PreviewMatch[] = shown.map((match, i) => {
+    const { data, error } = strips[i];
+    if (error) console.warn(`[previews] strip unavailable for ${match.matchId}: ${describe(error)}`);
+    const parsed = (data ?? [])
+      .map((row) => parsePrediction(row as never))
+      .filter((p) => p !== null);
+    return { ...match, marks: parsed.length > 1 ? toMarks(parsed) : null };
+  });
   return out.length > 0 ? out : null;
 }
 

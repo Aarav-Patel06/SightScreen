@@ -42,6 +42,8 @@ import { supabaseServer } from "./supabase-server";
 
 /** PostgREST caps a response at 1000 rows regardless of the limit asked for. */
 const PAGE = 1000;
+/** prediction_outcomes ids per request - see loadChaseOutcomes. */
+const OUTCOME_CHUNK = 500;
 
 export interface MatchRow {
   matchId: number;
@@ -161,14 +163,27 @@ async function loadChaseOutcomes(
   if (ids.length === 0) return outcomes;
 
   try {
-    const { data, error } = await supabaseServer()
-      .from("prediction_outcomes")
-      .select("prediction_id, actual")
-      .in("prediction_id", ids);
+    // One id per match, so this passed PostgREST's 1,000-row cap once the
+    // index did - silently, blanking every result line past the thousandth.
+    // Chunked well under it (which also keeps the URL short).
+    const chunks: number[][] = [];
+    for (let i = 0; i < ids.length; i += OUTCOME_CHUNK) chunks.push(ids.slice(i, i + OUTCOME_CHUNK));
+    const results = await Promise.all(
+      chunks.map((chunk) =>
+        supabaseServer()
+          .from("prediction_outcomes")
+          .select("prediction_id, actual")
+          .in("prediction_id", chunk)
+      )
+    );
 
-    if (error || !data) {
-      console.warn(`[matches] chase outcomes unavailable: ${describe(error)}`);
-      return outcomes;
+    const data = [];
+    for (const { data: rows, error } of results) {
+      if (error || !rows) {
+        console.warn(`[matches] chase outcomes unavailable: ${describe(error)}`);
+        return outcomes;
+      }
+      data.push(...rows);
     }
 
     const byPrediction = new Map<number, boolean>();
@@ -188,10 +203,17 @@ async function loadChaseOutcomes(
   return outcomes;
 }
 
-export async function loadMatchIndex(): Promise<MatchIndex> {
+/**
+ * Every listable match, newest first, paged.
+ *
+ * Unbounded, this read stopped at PostgREST's 1,000-row cap without an error,
+ * and the daily Cricsheet job takes the table past that within months. Paged
+ * exactly as loadPredictionsByMatch is: count first, then the pages in
+ * parallel.
+ */
+async function loadMatchRows() {
   const supabase = supabaseServer();
-
-  const [matchesResult, byMatch] = await Promise.all([
+  const base = () =>
     supabase
       .from("matches")
       .select(
@@ -201,15 +223,42 @@ export async function loadMatchIndex(): Promise<MatchIndex> {
       // the fetch so the count the page reports is the count it renders.
       .not("team_a", "is", null)
       .not("team_b", "is", null)
-      .order("start_time", { ascending: false }),
-    loadPredictionsByMatch(),
-  ]);
+      // match_id breaks start_time ties, so pages cannot overlap or skip.
+      .order("start_time", { ascending: false })
+      .order("match_id", { ascending: false });
 
-  if (matchesResult.error || !matchesResult.data) {
-    console.warn(`[matches] index unavailable: ${describe(matchesResult.error)}`);
+  const { count, error: countError } = await supabase
+    .from("matches")
+    .select("*", { count: "exact", head: true })
+    .not("team_a", "is", null)
+    .not("team_b", "is", null);
+  if (countError || count === null) {
+    console.warn(`[matches] index unavailable - count failed: ${describe(countError)}`);
+    return null;
+  }
+
+  const pages = Math.ceil(count / PAGE);
+  const results = await Promise.all(
+    Array.from({ length: pages }, (_, i) => base().range(i * PAGE, i * PAGE + PAGE - 1))
+  );
+  const rows = [];
+  for (const { data, error } of results) {
+    if (error || !data) {
+      console.warn(`[matches] index unavailable: ${describe(error)}`);
+      return null;
+    }
+    rows.push(...data);
+  }
+  return rows;
+}
+
+export async function loadMatchIndex(): Promise<MatchIndex> {
+  const supabase = supabaseServer();
+
+  const [rows, byMatch] = await Promise.all([loadMatchRows(), loadPredictionsByMatch()]);
+  if (rows === null) {
     return { matches: [], sparklinesUnavailable: byMatch === null };
   }
-  const rows = matchesResult.data;
 
   const teamIds = new Set<number>();
   const venueIds = new Set<number>();

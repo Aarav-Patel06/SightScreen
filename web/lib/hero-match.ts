@@ -41,10 +41,10 @@ import { supabaseServer } from "./supabase-server";
 /**
  * How many recent Full Member matches to consider before giving up.
  *
- * Bounded because step 3 filters them against `predictions`, and an unbounded
- * candidate list would put an unbounded `.in()` in that query. Twenty is
- * comfortably more than the number of Full Member fixtures that could lack
- * predictions at once, and one PostgREST page holds their rows either way.
+ * Bounded because step 3 checks each against `predictions`, newest first,
+ * until one has keyed rows. Twenty is comfortably more than the number of
+ * Full Member fixtures that could lack predictions at once; in practice the
+ * first candidate answers and the loop makes one request.
  */
 const CANDIDATES = 20;
 
@@ -171,21 +171,30 @@ export async function loadHeroMatch(): Promise<HeroResult> {
   }
   const candidates = matchesResult.data;
 
-  const predictionsResult = await supabase
-    .from("predictions")
-    .select("match_id")
-    .in(
-      "match_id",
-      candidates.map((row) => row.match_id)
-    )
-    .not("innings", "is", null);
-  if (predictionsResult.error) {
-    return fallback(`prediction check failed: ${describe(predictionsResult.error)}`);
+  // ONE ROW PER CANDIDATE, never all of them. This used to fetch every
+  // prediction of all twenty candidates in one request - 3,642 rows by
+  // 2026-09-26 - and PostgREST returns at most 1,000 per request, silently.
+  // The newest match's rows were past the cut, so it looked unpredicted and
+  // the hero fell back to a July match. `.limit(1)` asks the only question
+  // that matters, "any keyed row?", and the answer cannot be truncated.
+  //
+  // candidates is newest-first, so the first hit is the answer.
+  let hit: (typeof candidates)[number] | undefined;
+  for (const row of candidates) {
+    const check = await supabase
+      .from("predictions")
+      .select("match_id")
+      .eq("match_id", row.match_id)
+      .not("innings", "is", null)
+      .limit(1);
+    if (check.error) {
+      return fallback(`prediction check failed: ${describe(check.error)}`);
+    }
+    if (check.data?.length) {
+      hit = row;
+      break;
+    }
   }
-  const withPredictions = new Set(predictionsResult.data.map((row) => row.match_id));
-
-  // candidates is already newest-first, so the first hit is the answer.
-  const hit = candidates.find((row) => withPredictions.has(row.match_id));
   if (!hit) {
     return fallback(`none of the ${candidates.length} most recent have keyed predictions`);
   }

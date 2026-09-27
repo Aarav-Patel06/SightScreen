@@ -35,13 +35,22 @@ vi.mock("./supabase-server", () => ({
           }),
         };
       }
-      // `predictions` is queried twice, with different chains: once to find
-      // which candidates have keyed rows (.in().not()), and once to load the
-      // chosen match's strip (.eq().eq().not().order().limit()).
+      // `predictions` is queried with two chains: once PER CANDIDATE to ask
+      // whether it has any keyed row (.eq(match_id).not().limit(1)), and once
+      // to load the chosen match's strip (.eq().eq().not().order().limit()).
+      // predictionsQuery resolves to the set of matches that have rows; the
+      // per-candidate check answers from it for the id being asked about.
       return {
         select: () => ({
-          in: () => ({ not: () => predictionsQuery() }),
-          eq: () => ({
+          eq: (_column: string, matchId: number) => ({
+            not: () => ({
+              limit: async () => {
+                const result = await predictionsQuery();
+                if (result.error) return result;
+                const rows = (result.data ?? []) as { match_id: number }[];
+                return { data: rows.filter((row) => row.match_id === matchId), error: null };
+              },
+            }),
             eq: () => ({
               not: () => ({ order: () => ({ limit: () => stripQuery() }) }),
             }),
