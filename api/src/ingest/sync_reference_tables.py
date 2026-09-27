@@ -38,6 +38,7 @@ from pathlib import Path
 import psycopg
 from dotenv import dotenv_values
 
+from db.defaults import SUPABASE_ID_FLOOR
 from features.asof_summary import DERIVED_TABLES, DerivedTable, content_hash
 from features.feature_ledger import assert_corpus_caught_up
 
@@ -92,10 +93,14 @@ def sync_table(local_conn, supabase_conn, table: str, id_column: str, columns: t
         cur.executemany(upsert_sql, rows)
         # Keep the sequence ahead of the highest synced id, so future
         # inserts made directly against Supabase (e.g. Phase 2's live
-        # worker) never collide with a synced row.
+        # worker) never collide with a synced row - but BELOW
+        # SUPABASE_ID_FLOOR. Rows in that band are the daily Cricsheet job's
+        # first-seen teams and venues; a plain MAX would move the sequence
+        # into the band and let any serial insert allocate there.
         cur.execute(
             f"SELECT setval(pg_get_serial_sequence('{table}', '{id_column}'), "
-            f"GREATEST((SELECT MAX({id_column}) FROM {table}), 1))"
+            f"GREATEST((SELECT MAX({id_column}) FROM {table} WHERE {id_column} < %s), 1))",
+            (SUPABASE_ID_FLOOR,),
         )
     supabase_conn.commit()
     return len(rows)

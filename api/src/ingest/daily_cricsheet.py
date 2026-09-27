@@ -67,6 +67,7 @@ from pathlib import Path
 
 import psycopg
 
+from db.defaults import SUPABASE_ID_FLOOR
 from db.env import env_value, require_env
 from eval.splits import TEST_SPLIT_START, assert_in_test_split
 from features.asof_summary import DERIVED_TABLES, content_hash
@@ -325,7 +326,7 @@ def _write_match_row(stage_conn, supabase_conn, match_id: int) -> int:
 # catch-up pulls the band into the corpus BEFORE loading, so the corpus loader
 # then finds these entities by exact alias and never creates a duplicate.
 
-ENTITY_ID_FLOOR = 1_000_000
+ENTITY_ID_FLOOR = SUPABASE_ID_FLOOR
 
 
 @dataclass(frozen=True)
@@ -610,6 +611,13 @@ def catchup_local(local_url: str, supabase_conn, paths: list[Path], since: date 
             match_id = state["match_id_by_cid"].get(cid)
             if match_id is None and cid in state["ledger_by_cid"]:
                 match_id = state["ledger_by_cid"][cid][index["match_id"]]
+            if match_id is None:
+                # NEVER the corpus's own serial. Migration 20260919000001 set
+                # the corpus's matches sequence to 1,000,000 as well, so a
+                # serial id here would be one Supabase has already given a
+                # different match. Supabase is the one allocator above the
+                # baseline; an id reserved and then unused is only a gap.
+                match_id = _next_supabase_id(supabase_conn)
             load_match(bulk, catalog, report, path, match_id=match_id)
     log(f"catch-up: {report.matches_loaded} loaded, {report.matches_rejected} rejected")
     for r in report.rejections:

@@ -45,3 +45,27 @@ describe("IngestStatus", () => {
     expect(screen.getByRole("alert").textContent).toMatch(/has not succeeded yet/);
   });
 });
+
+describe("IngestStatus when the last run rejected matches", () => {
+  // A rejected match is one the resolver would not guess at - a near-miss team
+  // name - and it is re-rejected daily until a person resolves it. The only
+  // place that shows is here, so it is said as plainly as a stale run.
+  it("flags the count beside a recent last success", () => {
+    render(<IngestStatus lastSucceededAt="2026-09-26T02:06:00Z" rejected={3} now={NOW} />);
+    const warning = screen.getByRole("alert");
+    expect(warning.textContent).toMatch(/3 matches rejected in the last run/);
+    expect(warning.className).toMatch(/\bflag\b/);
+    // The last-succeeded line is still stated.
+    expect(screen.getByText(/Cricsheet ingest last succeeded 2026-09-26/)).toBeTruthy();
+  });
+
+  it("uses the singular for one", () => {
+    render(<IngestStatus lastSucceededAt="2026-09-26T02:06:00Z" rejected={1} now={NOW} />);
+    expect(screen.getByRole("alert").textContent).toMatch(/1 match rejected in the last run/);
+  });
+
+  it("says nothing extra when nothing was rejected", () => {
+    render(<IngestStatus lastSucceededAt="2026-09-26T02:06:00Z" rejected={0} now={NOW} />);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+});

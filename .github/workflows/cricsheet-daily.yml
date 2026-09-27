@@ -47,8 +47,17 @@ permissions:
 jobs:
   ingest:
     runs-on: ubuntu-latest
-    # A daily run and a dispatched catch-up must never interleave: both
-    # assign match ids and replace the summaries.
+    # A cron run and a dispatch must never interleave: both hand out new
+    # match, team and venue ids and replace the summaries.
+    #
+    # QUEUE, not cancel. Cancelling a run in progress stops it between
+    # writes - recoverable (every write is idempotent and the ledger row is
+    # written last) but it throws away a catch-up's work and leaves the
+    # summaries a run behind until the next one. Queued, each run starts
+    # from the state the previous one committed. GitHub keeps at most ONE
+    # pending run per group, so a third arrival replaces the waiting one;
+    # that loses nothing, because every run reads the same bundle and skips
+    # what is already done.
     concurrency:
       group: cricsheet-daily
       cancel-in-progress: false

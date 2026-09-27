@@ -40,6 +40,13 @@ LOCAL_DB_DEFAULT_URL = (
 SESSION_POOLER_PORT = 5432
 TRANSACTION_POOLER_PORT = 6543
 
+# The id band Supabase allocates in and the corpus never does. Match ids at or
+# above it come from Supabase's sequence (20260919000001 pushed it here);
+# team and venue ids at or above it are entities the daily Cricsheet job saw
+# first (ingest/daily_cricsheet.promote_entities). Nothing else may allocate
+# in it - sync_reference_tables keeps Supabase's reference sequences below it.
+SUPABASE_ID_FLOOR = 1_000_000
+
 
 # Railway injects these into every deployment. Any one of them means "this
 # process is running on Railway", which is the condition SPEC.md section

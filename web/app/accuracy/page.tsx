@@ -55,19 +55,24 @@ async function loadReport() {
   return report === null ? null : { report, computedAt: data.computed_at };
 }
 
-/** The daily Cricsheet ingest's last success - see components/ingest-status. */
-async function loadIngestLastSuccess(): Promise<string | null> {
+/**
+ * The daily Cricsheet ingest's last success, and how many matches that run
+ * rejected - see components/ingest-status.
+ */
+async function loadIngestLastSuccess(): Promise<{ at: string | null; rejected: number }> {
   const supabase = supabaseServer();
   const { data, error } = await supabase
     .from("pipeline_runs")
-    .select("finished_at")
+    .select("finished_at, counts")
     .eq("pipeline", "cricsheet_daily")
     .eq("status", "success")
     .order("finished_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (error || !data) return null;
-  return data.finished_at;
+  if (error || !data) return { at: null, rejected: 0 };
+  const counts = data.counts as { skipped_by_reason?: { rejected?: unknown } } | null;
+  const rejected = counts?.skipped_by_reason?.rejected;
+  return { at: data.finished_at, rejected: typeof rejected === "number" ? rejected : 0 };
 }
 
 /**
@@ -352,7 +357,7 @@ function Scored({ population }: { population: PopulationReport }) {
 }
 
 export default async function AccuracyPage() {
-  const [loaded, ingestLastSuccess] = await Promise.all([loadReport(), loadIngestLastSuccess()]);
+  const [loaded, ingest] = await Promise.all([loadReport(), loadIngestLastSuccess()]);
 
   if (loaded === null) {
     return (
@@ -364,7 +369,7 @@ export default async function AccuracyPage() {
             at 03:00 UTC; until then there is nothing to show, which is better than
             showing something computed on the spot.
           </p>
-          <IngestStatus lastSucceededAt={ingestLastSuccess} now={Date.now()} />
+          <IngestStatus lastSucceededAt={ingest.at} rejected={ingest.rejected} now={Date.now()} />
         </div>
       </main>
     );
@@ -384,7 +389,7 @@ export default async function AccuracyPage() {
           Model <code>{report.model_version}</code>, measured{" "}
           {new Date(computedAt).toISOString().slice(0, 16).replace("T", " ")} UTC.
         </p>
-        <IngestStatus lastSucceededAt={ingestLastSuccess} now={Date.now()} />
+        <IngestStatus lastSucceededAt={ingest.at} rejected={ingest.rejected} now={Date.now()} />
       </div>
 
       {/* LIVE FIRST, deliberately. It is the smaller number and the honest

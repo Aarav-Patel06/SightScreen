@@ -558,3 +558,24 @@ def test_the_catch_up_adopts_the_daily_jobs_new_entities_instead_of_duplicating_
         ).fetchone()
     assert (team_b, venue_id) == supabase_ids
     assert team_b >= ENTITY_ID_FLOOR and venue_id >= ENTITY_ID_FLOOR
+
+
+def test_a_reference_sync_keeps_supabases_sequences_below_the_entity_band(stage_url, fake_supabase_url):
+    """The daily job's first-seen teams live at ids >= SUPABASE_ID_FLOOR. A
+    reference sync that set Supabase's sequence to a plain MAX(team_id) would
+    move it INTO that band, and the next serial insert would allocate there."""
+    from db.defaults import SUPABASE_ID_FLOOR
+    from ingest.sync_reference_tables import sync_table
+
+    _truncate_all(stage_url)
+    _truncate_all(fake_supabase_url)
+    with psycopg.connect(stage_url) as local, psycopg.connect(fake_supabase_url) as supabase:
+        supabase.execute(
+            "INSERT INTO teams (team_id, name) VALUES (%s, 'First Seen By The Daily Job')", (SUPABASE_ID_FLOOR,)
+        )
+        supabase.commit()
+        local.execute("INSERT INTO teams (team_id, name) VALUES (5, 'A Corpus Team')")
+        local.commit()
+        sync_table(local, supabase, "teams", "team_id", ("team_id", "name", "short_name", "full_member"))
+        last_value = supabase.execute("SELECT last_value FROM teams_team_id_seq").fetchone()[0]
+    assert last_value == 5

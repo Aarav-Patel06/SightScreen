@@ -22,11 +22,31 @@ export function ingestIsStale(lastSucceededAt: string | null, now: number): bool
 
 export function IngestStatus({
   lastSucceededAt,
+  rejected = 0,
   now,
 }: {
   lastSucceededAt: string | null;
+  /** skipped_by_reason.rejected from the latest successful run. */
+  rejected?: number;
   now: number;
 }) {
+  return (
+    <>
+      <LastSucceeded lastSucceededAt={lastSucceededAt} now={now} />
+      {rejected > 0 && (
+        // A near-miss team the resolver will not guess at. It is re-rejected
+        // every day until someone resolves it (supabase/SCHEMA.md), and this
+        // is the only place that is visible - so as plain as a stale run.
+        <p className="tiny flag" role="alert">
+          {rejected} {rejected === 1 ? "match" : "matches"} rejected in the last run - a
+          team name needs review before {rejected === 1 ? "it" : "they"} can be added.
+        </p>
+      )}
+    </>
+  );
+}
+
+function LastSucceeded({ lastSucceededAt, now }: { lastSucceededAt: string | null; now: number }) {
   if (lastSucceededAt === null) {
     return (
       <p className="tiny flag" role="alert">
