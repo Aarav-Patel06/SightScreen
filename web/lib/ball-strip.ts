@@ -264,20 +264,24 @@ export function peakSwing(marks: readonly Mark[]): number {
 }
 
 /**
- * Is this the chase's first legal ball - the one whose swing is an artifact?
+ * Is this the chase's first legal ball - the model settling, not a moment?
  *
  * The prediction before it has no current run rate (no balls: 0/0), and the
  * model reads that missing value differently from the 0.0 it sees after a
- * dot. So this mark's swing is the feature switching from missing to zero,
- * not the delivery: on match 8429 re-scoring the first prediction with a run
- * rate of 0.0 reproduces the second exactly, and the "swing" was 45% -> 26%.
+ * dot: on match 8429 re-scoring the first prediction with a run rate of 0.0
+ * reproduces the second exactly, and the "swing" was 45% -> 26%. Measured
+ * across validation chases, the estimate falls about 5 points on this ball on
+ * average, whatever the ball was - the model settling into the chase, not
+ * something that happened in it. Retraining with the run rate withheld or
+ * shrunk (SPEC.md section 11) moved or spread that fall rather than removing
+ * it, so this exclusion stays.
  *
- * Only that switch: a wide before the first legal ball leaves the run rate
- * missing on both sides, so its swing is real and stays. The model fix - run
- * rate undefined until N legal balls, retrained - is SPEC.md's next model
- * task; until it ships the curve still shows the drop, and no figure that
- * describes a moment in the chase (biggest swing, peak, the height scale,
- * the readout's change) may be this transition.
+ * Only that ball: a wide before the first legal ball leaves the run rate
+ * missing on both sides, so its swing is real and stays. The curve still
+ * shows the drop, and no figure that describes a moment in the chase (the
+ * height scale, the readout's change) may be this transition. The completed
+ * chase's summary facts go further and skip the whole first over
+ * (lib/chase-summary.ts).
  */
 export function isStartOfChase(mark: Mark): boolean {
   return mark.ballsBowled === 0 && mark.legal && mark.event !== "unknown";

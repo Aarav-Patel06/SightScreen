@@ -561,7 +561,7 @@ export function LiveMatch({
 
 /**
  * The completed chase in two facts (lib/chase-summary.ts), neither of which
- * is the pre-ball estimate or the start-of-chase transition.
+ * is taken from the chase's first over.
  */
 function CompletedSummary({
   summary,
