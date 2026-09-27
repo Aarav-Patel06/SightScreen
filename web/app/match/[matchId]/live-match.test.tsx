@@ -12,7 +12,8 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { WinProbPrediction } from "@/lib/prediction";
+import FIXTURE_8429 from "@/lib/fixtures/match-8429-predictions.json";
+import { parsePrediction, type WinProbPrediction } from "@/lib/prediction";
 
 // The component opens a Realtime channel on mount. jsdom has no websocket
 // worth the name, and this test is about what is rendered, not about the
@@ -82,6 +83,12 @@ const header = {
   startDate: "2026-04-01",
   status: "live",
   winner: null,
+  resultMethod: null,
+  winByRuns: null,
+  winByWickets: null,
+  outcomeMethod: null,
+  tieWinner: null,
+  tieDecidedBy: null,
 };
 
 function ball(
@@ -336,8 +343,11 @@ describe("whose probability it is", () => {
     teamAId: 29,
     teamB: "India",
     teamBId: 20,
-    status: "complete",
-    winner: "England",
+    // Not 'complete': a completed page no longer shows "X to win" at all (it
+    // summarises the chase instead - see "a completed match page"). The
+    // label under test belongs to the layout that still has it.
+    status: "live",
+    winner: null,
   };
   const lastBall = (batting_team_id: number | null): WinProbPrediction => ({
     ...ball(1, 299, "death", 0.0112, "2026-09-24T23:00:44Z"),
@@ -403,7 +413,10 @@ describe("live treatment", () => {
         initialPredictions={[ball(1, 119, "death", 0.1)]}
       />
     );
-    expect(screen.getByText("Defenders won · chase needed 40 off 1")).toBeTruthy();
+    // The result, and never the chase's last state - no margin is recorded
+    // on this header, so the winner only.
+    expect(screen.getByText("Defenders won")).toBeTruthy();
+    expect(screen.queryByText(/chase needed/)).toBeNull();
     expect(screen.queryByText(/^Need \d+ off \d+/)).toBeNull();
     expect(screen.queryByText(/updates every 15s/)).toBeNull();
   });
@@ -421,5 +434,72 @@ describe("the last-over change on a live page", () => {
     // 0.45 now against 0.41 after ball 1: +4, not 0.45 - 0.60 = -15.
     expect(screen.getByText("+4 percentage points last over")).toBeTruthy();
     expect(screen.queryByText(/pts last over/)).toBeNull();
+  });
+});
+
+describe("a completed match page", () => {
+  // 8429 as it is stored: England batted first, India chased 388 and fell 27
+  // short. The page says that - and not "chase needed 32 off 1", the state
+  // before a last ball that ended nothing.
+  const completed = {
+    ...header,
+    matchId: 8429,
+    competition: "India tour of England",
+    format: "ODI",
+    teamA: "England",
+    teamAId: 29,
+    teamB: "India",
+    teamBId: 20,
+    status: "complete",
+    winner: "England",
+    resultMethod: "normal",
+    winByRuns: 27,
+    winByWickets: null,
+    outcomeMethod: null,
+    tieWinner: null,
+    tieDecidedBy: null,
+  };
+  const real = FIXTURE_8429.rows
+    .map((row) => parsePrediction(row as never))
+    .filter((p): p is WinProbPrediction => p !== null);
+
+  it("states the real result, never the final chase state", () => {
+    render(<LiveMatch matchId={8429} header={completed} initialPredictions={real} />);
+    expect(screen.getByText("England won by 27 runs")).toBeTruthy();
+    expect(screen.queryByText(/chase needed|needed \d+ off/)).toBeNull();
+  });
+
+  it("drops the live furniture: no big number, bar, confidence line or phase boxes", () => {
+    const { container } = render(<LiveMatch matchId={8429} header={completed} initialPredictions={real} />);
+    expect(container.querySelector(".wp-number")).toBeNull();
+    expect(container.querySelector(".wp-bar")).toBeNull();
+    expect(container.querySelector(".phase-mark")).toBeNull();
+    expect(screen.queryByText(/pre-toss|post-toss|innings break/)).toBeNull();
+    expect(screen.queryByText(/to win$/)).toBeNull();
+  });
+
+  it("summarises the chase from stored predictions, without the pre-ball estimate", () => {
+    render(<LiveMatch matchId={8429} header={completed} initialPredictions={real} />);
+    const peak = Math.round(Math.max(...real.slice(1).map((p) => p.p)) * 100);
+    expect(screen.getByText(new RegExp(String.raw`^India's chance peaked at ${peak}% after \d+\.\d overs$`))).toBeTruthy();
+    // The summary's sentence (the strip's caption says "Biggest swing" too).
+    expect(
+      screen.getByText(/^Biggest swing: \d+ percentage points, (up|down) for India on .+ at \d+\.\d$/)
+    ).toBeTruthy();
+  });
+
+  it("keeps the curve and the strip", () => {
+    const { container } = render(<LiveMatch matchId={8429} header={completed} initialPredictions={real} />);
+    expect(screen.getByRole("heading", { name: "Win probability, India" })).toBeTruthy();
+    expect(container.querySelector(".strip-readout")).toBeTruthy();
+  });
+
+  it("leaves a live page's number and bar alone", () => {
+    const now = new Date().toISOString();
+    const { container } = render(
+      <LiveMatch matchId={9339} header={header} initialPredictions={[ball(1, 60, "middle", 0.5, now)]} />
+    );
+    expect(container.querySelector(".wp-number")).toBeTruthy();
+    expect(container.querySelector(".wp-bar")).toBeTruthy();
   });
 });

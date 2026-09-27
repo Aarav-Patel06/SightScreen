@@ -32,13 +32,21 @@ interface MatchHeader {
   startDate: string;
   status: string;
   winner: string | null;
+  resultMethod: string | null;
+  winByRuns: number | null;
+  winByWickets: number | null;
+  outcomeMethod: string | null;
+  tieWinner: string | null;
+  tieDecidedBy: string | null;
 }
 
 async function loadMatch(matchId: number): Promise<MatchHeader | null> {
   const supabase = supabaseServer();
   const { data, error } = await supabase
     .from("matches")
-    .select("match_id, competition, format, start_time, team_a, team_b, venue_id, status, winner")
+    .select(
+      "match_id, competition, format, start_time, team_a, team_b, venue_id, status, winner, result_method, win_by_runs, win_by_wickets, outcome_method, tie_winner, tie_decided_by"
+    )
     .eq("match_id", matchId)
     .maybeSingle();
   if (error || !data) return null;
@@ -49,7 +57,10 @@ async function loadMatch(matchId: number): Promise<MatchHeader | null> {
     supabase
       .from("teams")
       .select("team_id, name")
-      .in("team_id", [data.team_a, data.team_b].filter((x): x is number => x !== null)),
+      .in(
+        "team_id",
+        [data.team_a, data.team_b, data.tie_winner].filter((x): x is number => x !== null)
+      ),
     data.venue_id === null
       ? Promise.resolve({ data: null })
       : supabase.from("venues").select("name").eq("venue_id", data.venue_id).maybeSingle(),
@@ -70,6 +81,13 @@ async function loadMatch(matchId: number): Promise<MatchHeader | null> {
     startDate: data.start_time.slice(0, 10),
     status: data.status,
     winner: nameOf(data.winner),
+    resultMethod: data.result_method,
+    winByRuns: data.win_by_runs,
+    winByWickets: data.win_by_wickets,
+    outcomeMethod: data.outcome_method,
+    // A tie-breaker's winner is one of the two sides, so it is already named.
+    tieWinner: nameOf(data.tie_winner),
+    tieDecidedBy: data.tie_decided_by,
   };
 }
 

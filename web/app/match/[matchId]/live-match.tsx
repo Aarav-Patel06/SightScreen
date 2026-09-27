@@ -27,10 +27,11 @@ import {
 
 import { battingTeamName, winSubject } from "@/lib/batting-team";
 import { isLiveMatch } from "@/lib/live-match";
-import { resultLine } from "@/lib/match-index";
+import { chaseSummary, type ChaseSummary } from "@/lib/chase-summary";
+import { resultText } from "@/lib/match-result";
 import { highWaterMark, mergePredictions } from "@/lib/merge-predictions";
 import { parsePrediction, type Phase, type WinProbPrediction } from "@/lib/prediction";
-import { HATCH_PITCH_PX, toMarks } from "@/lib/ball-strip";
+import { HATCH_PITCH_PX, describeEvent, toMarks } from "@/lib/ball-strip";
 import { BallStrip } from "@/components/ball-strip";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
@@ -46,6 +47,12 @@ interface Header {
   startDate: string;
   status: string;
   winner: string | null;
+  resultMethod: string | null;
+  winByRuns: number | null;
+  winByWickets: number | null;
+  outcomeMethod: string | null;
+  tieWinner: string | null;
+  tieDecidedBy: string | null;
 }
 
 // SPEC.md 12.2: "Pre-toss predictions must be visibly marked low-confidence.
@@ -296,6 +303,7 @@ export function LiveMatch({
   );
 
   const marks = useMemo(() => toMarks(predictions), [predictions]);
+  const summary = useMemo(() => chaseSummary(predictions), [predictions]);
 
   // Whose probability p is: the batting side recorded on the row, never
   // team_a (the side that batted first) and never any other guess.
@@ -316,14 +324,10 @@ export function LiveMatch({
     situation = `Need ${current.runs_required} off ${current.balls_remaining}, ${
       10 - current.wickets
     } wickets left`;
-  } else if (current && header.status === "complete") {
-    situation =
-      resultLine({
-        winner: header.winner,
-        chaseWon: null,
-        runsRequired: current.runs_required,
-        ballsRemaining: current.balls_remaining,
-      }) ?? `Match complete · chase needed ${current.runs_required} off ${current.balls_remaining}`;
+  } else if (header.status === "complete") {
+    // The real result, never the final chase state: the last prediction is
+    // the state BEFORE the last ball. Unknown result: say only that it ended.
+    situation = resultText(header) ?? "Match complete";
   } else if (current) {
     situation = `Stopped updating ${current.created_at.slice(0, 16).replace("T", " ")} UTC · last state: needed ${
       current.runs_required
@@ -366,6 +370,15 @@ export function LiveMatch({
           this is the thing it exists to show, and levels are assigned by
           hierarchy rather than applied uniformly. The heading above stays
           level 0 - a page title is not an object. */}
+      {header.status === "complete" ? (
+        // A finished match gets the chase in two facts rather than the live
+        // furniture: a big number for the last ball, a bar, a confidence line
+        // and three "not produced" phase boxes all describe a match in
+        // progress. The curve and the strip below stay.
+        <div className="level-2 match-hero">
+          <CompletedSummary summary={summary} subject={subject} />
+        </div>
+      ) : (
       <div className="level-2 match-hero">
         <div className="row">
           <div>
@@ -423,6 +436,7 @@ export function LiveMatch({
           </span>
         </div>
       </div>
+      )}
 
       {/* ONE level-1 around the curve AND the strip, per section 5. They
           share an x-axis and are indexed by the same delivery position, so
@@ -537,6 +551,37 @@ export function LiveMatch({
           </div>
         </dl>
       </div>
+    </>
+  );
+}
+
+/**
+ * The completed chase in two facts (lib/chase-summary.ts), neither of which
+ * is the pre-ball estimate or the start-of-chase transition.
+ */
+function CompletedSummary({ summary, subject }: { summary: ChaseSummary; subject: string }) {
+  if (summary.peak === null) {
+    return <p className="small muted">Too few predictions to summarise this chase.</p>;
+  }
+  const whose = subject === "batting side" ? "The batting side's" : `${subject}'s`;
+  const biggest = summary.biggest;
+  const onWhat = biggest
+    ? biggest.event === "wicket"
+      ? "a wicket"
+      : biggest.event === "dot"
+        ? "a dot ball"
+        : describeEvent({ event: biggest.event, runs: biggest.runs, legal: biggest.legal } as never)
+    : null;
+  return (
+    <>
+      <p className="small">
+        {`${whose} chance peaked at ${Math.round(summary.peak.p * 100)}% after ${summary.peak.afterOvers} overs`}
+      </p>
+      {biggest ? (
+        <p className="small">
+          {`Biggest swing: ${biggest.pp} percentage points, ${biggest.direction} for ${subject} on ${onWhat} at ${biggest.at}`}
+        </p>
+      ) : null}
     </>
   );
 }
