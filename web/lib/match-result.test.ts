@@ -75,4 +75,9 @@ describe("resultText", () => {
     const text = resultText(outcome({ winner: "England", winByRuns: 27 }));
     expect(text).not.toMatch(/needed|required|off \d/);
   });
+
+  it("treats a missing margin column as not recorded", () => {
+    const partial = { resultMethod: "normal", winner: "India" } as unknown as MatchOutcome;
+    expect(resultText(partial)).toBe("India won");
+  });
 });

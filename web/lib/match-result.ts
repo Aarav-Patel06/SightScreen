@@ -46,11 +46,13 @@ export function resultText(outcome: MatchOutcome): string | null {
   }
 
   const winner = outcome.winner;
-  if (winner === null) return null;
+  if (winner == null) return null;
   if (outcome.outcomeMethod === "Awarded") return `${winner} were awarded the match`;
   if (outcome.outcomeMethod === "Lost fewer wickets") return `${winner} won (lost fewer wickets)`;
-  if (outcome.winByRuns !== null) return `${winner} won by ${plural(outcome.winByRuns, "run")}${suffix}`;
-  if (outcome.winByWickets !== null) {
+  // `!= null`, not `!== null`: a row selected without these columns has them
+  // undefined, and that is "not recorded" too - never "by undefined runs".
+  if (outcome.winByRuns != null) return `${winner} won by ${plural(outcome.winByRuns, "run")}${suffix}`;
+  if (outcome.winByWickets != null) {
     return `${winner} won by ${plural(outcome.winByWickets, "wicket")}${suffix}`;
   }
   return `${winner} won${suffix}`;

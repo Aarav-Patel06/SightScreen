@@ -35,6 +35,7 @@ import HERO_FIXTURE from "./fixtures/hero-match.json";
 import { toMarks, type Mark } from "./ball-strip";
 import { battingTeamName } from "./batting-team";
 import { isLiveMatch } from "./live-match";
+import { resultText } from "./match-result";
 import { parsePrediction, type WinProbPrediction } from "./prediction";
 import { supabaseServer } from "./supabase-server";
 
@@ -72,6 +73,15 @@ export interface HeroMatch {
    * this page could get wrong.
    */
   isLive: boolean;
+  /** "Live" or "Latest match" - what the hero is showing, said plainly. */
+  label: "Live" | "Latest match";
+  /** The result in words (lib/match-result.ts), or null while live/unknown. */
+  result: string | null;
+  /**
+   * What the strip covers: the chase only - "India's chase of 388". Null when
+   * the batting side or target is unknown, and on the fixture path.
+   */
+  chase: string | null;
 }
 
 export interface HeroResult {
@@ -111,7 +121,13 @@ function fallback(reason: string): HeroResult {
   console.warn(`[hero] using the committed fixture: ${reason}`);
   return {
     // The fixture has no strip, so there is no probability to attribute.
-    match: { ...HERO_FIXTURE.match, battingTeam: null },
+    match: {
+      ...HERO_FIXTURE.match,
+      battingTeam: null,
+      label: "Latest match",
+      result: HERO_FIXTURE.match.winner ? `${HERO_FIXTURE.match.winner} won` : null,
+      chase: null,
+    },
     marks: null,
     stale: true,
     capturedAt: HERO_FIXTURE.capturedAt,
@@ -161,7 +177,9 @@ export async function loadHeroMatch(): Promise<HeroResult> {
 
   const matchesResult = await supabase
     .from("matches")
-    .select("match_id, competition, format, start_time, team_a, team_b, winner, status")
+    .select(
+      "match_id, competition, format, start_time, team_a, team_b, winner, status, result_method, win_by_runs, win_by_wickets, outcome_method, tie_winner, tie_decided_by"
+    )
     .in("team_a", ids)
     .in("team_b", ids)
     .order("start_time", { ascending: false })
@@ -171,29 +189,35 @@ export async function loadHeroMatch(): Promise<HeroResult> {
   }
   const candidates = matchesResult.data;
 
-  // ONE ROW PER CANDIDATE, never all of them. This used to fetch every
-  // prediction of all twenty candidates in one request - 3,642 rows by
-  // 2026-09-26 - and PostgREST returns at most 1,000 per request, silently.
-  // The newest match's rows were past the cut, so it looked unpredicted and
-  // the hero fell back to a July match. `.limit(1)` asks the only question
-  // that matters, "any keyed row?", and the answer cannot be truncated.
+  // THE SELECTION RULE, newest candidate first:
+  //   - LIVE, IN ITS CHASE, with a keyed prediction under five minutes old
+  //     (isLiveMatch) takes the hero. Keyed predictions are innings 2 only -
+  //     the worker writes none in a first innings - so "has a fresh keyed
+  //     row" is "the chase has started". A live match still in its first
+  //     innings, or one gone quiet, is passed over: the previous match stays.
+  //   - otherwise the newest COMPLETED one with keyed predictions.
   //
-  // candidates is newest-first, so the first hit is the answer.
+  // ONE ROW PER CANDIDATE, never all of them: an unbounded fetch of twenty
+  // matches' predictions hit PostgREST's silent 1,000-row cap on 2026-09-26.
+  const now = Date.now();
   let hit: (typeof candidates)[number] | undefined;
   for (const row of candidates) {
+    if (row.status !== "live" && row.status !== "complete") continue;
     const check = await supabase
       .from("predictions")
-      .select("match_id")
+      .select("match_id, created_at")
       .eq("match_id", row.match_id)
       .not("innings", "is", null)
+      .order("prediction_id", { ascending: false })
       .limit(1);
     if (check.error) {
       return fallback(`prediction check failed: ${describe(check.error)}`);
     }
-    if (check.data?.length) {
-      hit = row;
-      break;
-    }
+    const newest = check.data?.[0];
+    if (!newest) continue;
+    if (row.status === "live" && !isLiveMatch(row.status, newest.created_at, now)) continue;
+    hit = row;
+    break;
   }
   if (!hit) {
     return fallback(`none of the ${candidates.length} most recent have keyed predictions`);
@@ -210,6 +234,12 @@ export async function loadHeroMatch(): Promise<HeroResult> {
 
   const predictions = await loadPredictions(hit.match_id);
   const latest = predictions.at(-1) ?? null;
+  const battingTeam = battingTeamName(latest, [
+    { id: hit.team_a, name: teamA },
+    { id: hit.team_b, name: teamB },
+  ]);
+  const isLive = isLiveMatch(hit.status, latest?.created_at ?? null, now);
+  const tieWinner = hit.tie_winner === null ? null : (names.get(hit.tie_winner) ?? null);
 
   return {
     marks: predictions.length > 1 ? toMarks(predictions) : null,
@@ -221,11 +251,21 @@ export async function loadHeroMatch(): Promise<HeroResult> {
       teamA,
       teamB,
       winner: hit.winner === null ? null : (names.get(hit.winner) ?? null),
-      battingTeam: battingTeamName(latest, [
-        { id: hit.team_a, name: teamA },
-        { id: hit.team_b, name: teamB },
-      ]),
-      isLive: isLiveMatch(hit.status, latest?.created_at ?? null, Date.now()),
+      battingTeam,
+      isLive,
+      label: isLive ? "Live" : "Latest match",
+      result: isLive
+        ? null
+        : resultText({
+            resultMethod: hit.result_method,
+            winner: hit.winner === null ? null : (names.get(hit.winner) ?? null),
+            winByRuns: hit.win_by_runs,
+            winByWickets: hit.win_by_wickets,
+            outcomeMethod: hit.outcome_method,
+            tieWinner,
+            tieDecidedBy: hit.tie_decided_by,
+          }),
+      chase: battingTeam && latest ? `${battingTeam}'s chase of ${latest.target}` : null,
     },
     stale: false,
   };

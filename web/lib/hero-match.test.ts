@@ -44,12 +44,14 @@ vi.mock("./supabase-server", () => ({
         select: () => ({
           eq: (_column: string, matchId: number) => ({
             not: () => ({
-              limit: async () => {
-                const result = await predictionsQuery();
-                if (result.error) return result;
-                const rows = (result.data ?? []) as { match_id: number }[];
-                return { data: rows.filter((row) => row.match_id === matchId), error: null };
-              },
+              order: () => ({
+                limit: async () => {
+                  const result = await predictionsQuery();
+                  if (result.error) return result;
+                  const rows = (result.data ?? []) as { match_id: number }[];
+                  return { data: rows.filter((row) => row.match_id === matchId), error: null };
+                },
+              }),
             }),
             eq: () => ({
               not: () => ({ order: () => ({ limit: () => stripQuery() }) }),
@@ -62,6 +64,16 @@ vi.mock("./supabase-server", () => ({
 }));
 
 const { loadHeroMatch } = await import("./hero-match");
+
+// The committed fixture as the hero returns it: nothing to attribute a
+// probability to, so no batting side and no chase; the winner only.
+const FALLBACK_MATCH = {
+  ...HERO_FIXTURE.match,
+  battingTeam: null,
+  label: "Latest match",
+  result: HERO_FIXTURE.match.winner ? `${HERO_FIXTURE.match.winner} won` : null,
+  chase: null,
+};
 
 const TEAMS = [
   { team_id: 3, name: "India" },
@@ -146,6 +158,10 @@ describe("when the database answers", () => {
       winner: "India",
       battingTeam: "Australia",
       isLive: false,
+      label: "Latest match",
+      // These rows carry no margin columns: the winner only, never guessed.
+      result: "India won",
+      chase: "Australia's chase of 151",
     });
   });
 
@@ -179,7 +195,7 @@ describe("when the database is unreachable", () => {
     const result = await loadHeroMatch();
     expect(result.stale).toBe(true);
     expect(result.capturedAt).toBe(HERO_FIXTURE.capturedAt);
-    expect(result.match).toEqual({ ...HERO_FIXTURE.match, battingTeam: null });
+    expect(result.match).toEqual(FALLBACK_MATCH);
   });
 
   it("says why, so a paused database is distinguishable from an empty one", async () => {
@@ -204,7 +220,7 @@ describe("when the database answers but has nothing to show", () => {
 
     const result = await loadHeroMatch();
     expect(result.stale).toBe(true);
-    expect(result.match).toEqual({ ...HERO_FIXTURE.match, battingTeam: null });
+    expect(result.match).toEqual(FALLBACK_MATCH);
   });
 
   it("falls back when no candidate has keyed predictions", async () => {
@@ -227,7 +243,7 @@ describe("when the database answers but has nothing to show", () => {
 
     const result = await loadHeroMatch();
     expect(result.stale).toBe(true);
-    expect(result.match).toEqual({ ...HERO_FIXTURE.match, battingTeam: null });
+    expect(result.match).toEqual(FALLBACK_MATCH);
   });
 });
 
@@ -290,6 +306,7 @@ describe("the LIVE NOW flag", () => {
       data: STRIP_ROWS.map((row) => ({ ...row, created_at: now })),
       error: null,
     });
+    predictionsQuery.mockResolvedValue({ data: [{ match_id: 9500, created_at: now }], error: null });
     expect((await loadHeroMatch()).match.isLive).toBe(true);
   });
 

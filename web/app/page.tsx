@@ -40,7 +40,10 @@ import { supabaseServer } from "@/lib/supabase-server";
 
 import ASK_EXAMPLE from "@/lib/fixtures/ask-example.json";
 
-export const revalidate = 3600;
+// 60s, not an hour: a live chase takes the hero (lib/hero-match.ts), and a
+// page cached for an hour would show it up to an hour late - or keep showing
+// it for an hour after the match went quiet.
+export const revalidate = 60;
 
 /** The calibration report, or null. Its own failure path; the scorecard says so. */
 async function loadScorecard(): Promise<PopulationReport[] | null> {
@@ -92,8 +95,10 @@ export default async function Home() {
       {/* ---------------------------------------------------------------- */}
       <section className="level-2 hero" aria-labelledby="hero-teams">
         <p className="hero-kicker">
-          {hero.match.competition ?? "Match"}
+          {/* What the hero is showing, said first: "Live" or "Latest match". */}
+          <span className="hero-label">{hero.match.label}</span>
           {hero.match.date ? ` · ${hero.match.date}` : null}
+          {hero.match.competition ? ` · ${hero.match.competition}` : null}
           {hero.stale ? (
             <span className="soft"> · last known good, {hero.capturedAt}</span>
           ) : null}
@@ -111,18 +116,24 @@ export default async function Home() {
           ) : null}
         </p>
 
+        {/* THE TITLE IS THE LINK, not the whole card: an <a> around the strip
+            would be invalid (the strip is itself interactive - it takes
+            focus and arrow keys) and would swallow its hover. */}
         <p className="hero-teams" id="hero-teams">
-          {hero.match.teamA} <span className="soft">v</span> {hero.match.teamB}
+          <Link className="hero-link" href={`/match/${hero.match.matchId}`}>
+            {hero.match.teamA} <span className="soft">v</span> {hero.match.teamB}
+          </Link>
         </p>
 
-        {hero.match.winner ? (
-          <p className="hero-result">
-            <span className="fig">{hero.match.winner}</span> <span className="soft">won</span>
-          </p>
-        ) : null}
+        {hero.match.result ? <p className="hero-result">{hero.match.result}</p> : null}
 
         {hero.marks ? (
           <>
+            {hero.match.chase ? (
+              // The strip is the second innings only - the model scores
+              // nothing before the chase starts - so it says whose chase.
+              <p className="hero-chase soft">{hero.match.chase}</p>
+            ) : null}
             <BallStrip
               marks={hero.marks}
               height={96}
@@ -131,6 +142,11 @@ export default async function Home() {
               className="hero-strip"
               battingTeam={winSubject(hero.match.battingTeam)}
             />
+            <p className="hero-legend soft">
+              <span className="hero-legend-wicket" aria-hidden="true" /> wicket
+              <span aria-hidden="true"> · </span>
+              baseline dotted to solid: the model&apos;s confidence, lowest to highest
+            </p>
             <p className="prose hero-note">
               Every mark is one delivery. Its height is how much that ball
               changed who was going to win, above the line for{" "}
