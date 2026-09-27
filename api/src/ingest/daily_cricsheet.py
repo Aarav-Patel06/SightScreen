@@ -80,6 +80,7 @@ from features.feature_ledger import (
 )
 from features.match_state import rebuild_match_states
 from ingest.cricsheet import ARCHIVE_URL, TARGET_FORMATS, TARGET_GENDER, LoadReport, load_match
+from ingest.raw_store import RawStore
 from ingest.replay_log import (
     CACHE_DIR,
     _MIRRORED_COLUMNS,
@@ -455,7 +456,10 @@ def run_daily(
     artifact: dict,
     model_version: str,
     since: date | None = None,
+    raw_store=None,
 ) -> dict:
+    """`raw_store` keeps each ingested match's raw JSON (ingest/raw_store.py);
+    the CLI always passes one. Tests pass a recording stand-in."""
     started = time.monotonic()
     report: dict = {"started_at": datetime.now(timezone.utc).isoformat(), "skipped": []}
     state = supabase_state(supabase_conn)
@@ -530,6 +534,16 @@ def run_daily(
         rebuild_match_states(stage)
         stage.commit()
 
+        # The raw JSON, BEFORE anything is written to Supabase: a match is
+        # only "done" once its ledger row exists, so a failed upload leaves it
+        # undone and the next run stores it again.
+        stored = 0
+        if raw_store is not None:
+            for cand in eligible:
+                raw_store.put(cand["cricsheet_id"], cand["path"].read_bytes())
+                stored += 1
+        report["raw_files_stored"] = stored
+
         ids = [c["match_id"] for c in eligible]
         new_ledger = ledger_rows(stage, ids) if ids else []
         all_rows = [r for r in state["ledger"] if r[index["match_id"]] not in set(ids)] + new_ledger
@@ -584,6 +598,12 @@ def run_daily(
 # --- Local catch-up --------------------------------------------------------------
 
 
+def corpus_data_dir() -> Path:
+    """CRICSHEET_DATA_DIR, which api/.env gives relative to api/."""
+    configured = Path(require_env("CRICSHEET_DATA_DIR"))
+    return configured if configured.is_absolute() else Path(__file__).resolve().parents[2] / configured
+
+
 def catchup_local(local_url: str, supabase_conn, paths: list[Path], since: date | None) -> dict:
     """Load released matches into the LOCAL corpus for future retraining,
     adopting the id Supabase already gave a match so the two sides agree.
@@ -593,6 +613,8 @@ def catchup_local(local_url: str, supabase_conn, paths: list[Path], since: date 
     state = supabase_state(supabase_conn)
     index = {c: i for i, c in enumerate(LEDGER_COLUMNS)}
     report = LoadReport()
+    data_dir = corpus_data_dir()
+    data_dir.mkdir(parents=True, exist_ok=True)
     with psycopg.connect(local_url) as bulk, psycopg.connect(local_url, autocommit=True) as catalog:
         # BEFORE any load: the entities the daily job created, ids unchanged,
         # so the loader below resolves them by exact alias instead of minting
@@ -619,6 +641,11 @@ def catchup_local(local_url: str, supabase_conn, paths: list[Path], since: date 
                 # baseline; an id reserved and then unused is only a gap.
                 match_id = _next_supabase_id(supabase_conn)
             load_match(bulk, catalog, report, path, match_id=match_id)
+            # Kept on disk, beside the corpus's other files, so a future
+            # re-parse never needs Cricsheet's full archive again.
+            kept = data_dir / path.name
+            if not kept.exists():
+                kept.write_bytes(path.read_bytes())
     log(f"catch-up: {report.matches_loaded} loaded, {report.matches_rejected} rejected")
     for r in report.rejections:
         log(f"  rejected {r['file']}: {r['reason']}")
@@ -642,6 +669,7 @@ PUBLIC_KEYS = (
     "matches_written",
     "predictions_written",
     "ledger_rows_written",
+    "raw_files_stored",
     "summary_rows_pushed",
     "elapsed_seconds",
 )
@@ -725,7 +753,11 @@ def _main(args) -> dict:
             version, _path, _notes = active_model_row(supabase_conn)
             artifact = resolve_pinned_artifact(supabase_conn, version, Path(env_value("MODEL_CACHE_DIR", str(CACHE_DIR))))
             log(f"model {version}")
-            report = run_daily(args.stage_url, supabase_conn, paths, artifact, version, args.since)
+            store = RawStore()
+            store.ensure_bucket()
+            report = run_daily(
+                args.stage_url, supabase_conn, paths, artifact, version, args.since, raw_store=store
+            )
 
     summary = public_summary(report)
     log(json.dumps(summary, indent=2, default=str))

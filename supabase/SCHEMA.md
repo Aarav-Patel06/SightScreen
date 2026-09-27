@@ -150,6 +150,14 @@ alias and never mints a second id for the same team.
 A match the live worker already had stays skipped until cross-source merging
 exists (session 3).
 
+**Raw JSON is kept for every ingested match**, so a re-parse never needs
+Cricsheet's full archive: the daily job stores it gzipped in the private
+Storage bucket `cricsheet-raw` (`<cricsheet_id>.json.gz`, ~5 KB each, before
+any Supabase write), and `catchup-local` writes it to `CRICSHEET_DATA_DIR`
+beside the corpus's other files. `python -m ingest.backfill_outcomes` is the
+worked example: it reads disk, then the bucket, and only falls back to the
+archive for what neither has.
+
 ### `pipeline_runs` (`20260926000002_pipeline_runs.sql`)
 
 One row per daily-ingest run, success or failure, written by the job at the

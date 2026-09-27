@@ -393,6 +393,35 @@ def _match_outcome(info: dict, team_names: list[str], team_ids: dict[str, int]) 
     return team_ids[winner_name], result_method
 
 
+OUTCOME_DETAIL_COLUMNS = ("win_by_runs", "win_by_wickets", "outcome_method", "tie_winner", "tie_decided_by")
+
+
+def outcome_detail(info: dict, team_ids: dict[str, int]) -> dict:
+    """The rest of `outcome`: the margin, the method verbatim, and who won a
+    tie that was then decided. NULL means not recorded - a margin is never
+    guessed, and a tie-breaker naming neither team is dropped, not matched.
+
+    Separate from _match_outcome deliberately. That one feeds result_method,
+    which the training split and Elo read; this only describes the result.
+    """
+    outcome = info.get("outcome", {})
+    by = outcome.get("by", {})
+    tie_name, decided_by = None, None
+    if outcome.get("result") == "tie":
+        if outcome.get("eliminator"):
+            tie_name, decided_by = outcome["eliminator"], "super_over"
+        elif outcome.get("bowl_out"):
+            tie_name, decided_by = outcome["bowl_out"], "bowl_out"
+    tie_winner = team_ids.get(tie_name) if tie_name else None
+    return {
+        "win_by_runs": by.get("runs"),
+        "win_by_wickets": by.get("wickets"),
+        "outcome_method": outcome.get("method"),
+        "tie_winner": tie_winner,
+        "tie_decided_by": decided_by if tie_winner is not None else None,
+    }
+
+
 def _extract_target(
     innings_list: list[dict],
     result_method: str,
@@ -448,9 +477,11 @@ def _insert_match_row(
             INSERT INTO matches
               (match_id, external_ids, competition, format, venue_id, start_time,
                team_a, team_b, toss_winner, toss_decision, winner, result_method,
-               status, has_reconciliation_anomaly, target_runs, target_overs)
+               status, has_reconciliation_anomaly, target_runs, target_overs,
+               win_by_runs, win_by_wickets, outcome_method, tie_winner, tie_decided_by)
             VALUES (COALESCE(%s, nextval(pg_get_serial_sequence('matches', 'match_id'))),
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'complete', %s, %s, %s)
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'complete', %s, %s, %s,
+                    %s, %s, %s, %s, %s)
             RETURNING match_id
             """,
             (
@@ -472,6 +503,7 @@ def _insert_match_row(
                 has_reconciliation_anomaly,
                 target_runs,
                 target_overs,
+                *outcome_detail(info, team_ids).values(),
             ),
         )
         return cur.fetchone()[0]

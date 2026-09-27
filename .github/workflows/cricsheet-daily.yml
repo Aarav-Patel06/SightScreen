@@ -95,6 +95,11 @@ jobs:
           # SESSION pooler, port 5432 (SPEC.md section 2.4). Direct
           # connections are IPv6-only and unreachable from a runner.
           SUPABASE_SESSION_POOLER_URL: ${{ secrets.SUPABASE_SESSION_POOLER_URL }}
+          # The raw-JSON store (ingest/raw_store.py): a private Storage
+          # bucket, reached with the secret key. It reaches nothing the pooler
+          # URL above does not already.
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           MODEL_CACHE_DIR: ${{ runner.temp }}/models
           BUNDLE: ${{ inputs.bundle || 'recently_added_30' }}
           SINCE: ${{ inputs.since }}

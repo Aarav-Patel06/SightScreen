@@ -167,12 +167,14 @@ def _excluded(row, index, mode: str) -> bool:
     return False
 
 
-def _run(stage_url, fake_url, files, artifact):
+def _run(stage_url, fake_url, files, artifact, raw_store=None):
     from ingest.daily_cricsheet import run_daily
 
     _truncate_all(stage_url)
     with psycopg.connect(fake_url) as supabase_conn:
-        return run_daily(stage_url, supabase_conn, files, artifact, artifact["model_version"])
+        return run_daily(
+            stage_url, supabase_conn, files, artifact, artifact["model_version"], raw_store=raw_store
+        )
 
 
 def _logged(fake_url) -> dict[tuple, float]:
@@ -579,3 +581,44 @@ def test_a_reference_sync_keeps_supabases_sequences_below_the_entity_band(stage_
         sync_table(local, supabase, "teams", "team_id", ("team_id", "name", "short_name", "full_member"))
         last_value = supabase.execute("SELECT last_value FROM teams_team_id_seq").fetchone()[0]
     assert last_value == 5
+
+
+# --- 8. The raw JSON is kept ---------------------------------------------------------
+
+
+class RecordingStore:
+    def __init__(self, fail: bool = False) -> None:
+        self.objects: dict[str, bytes] = {}
+        self.fail = fail
+
+    def put(self, cricsheet_id: str, raw: bytes) -> None:
+        if self.fail:
+            raise ConnectionError("storage unreachable")
+        self.objects[cricsheet_id] = raw
+
+
+def test_every_ingested_match_keeps_its_raw_json(local_url, stage_url, fake_supabase_url, parity_file, artifact):
+    """So a future re-parse - a column the loader did not read the first
+    time - never needs Cricsheet's full archive."""
+    _seed_fake_supabase(local_url, fake_supabase_url, "current")
+    store = RecordingStore()
+    report = _run(stage_url, fake_supabase_url, [parity_file], artifact, raw_store=store)
+    assert report["raw_files_stored"] == 1
+    assert store.objects == {PARITY_CRICSHEET_ID: parity_file.read_bytes()}
+
+
+def test_a_match_whose_raw_json_cannot_be_kept_is_not_ingested(
+    local_url, stage_url, fake_supabase_url, parity_file, artifact
+):
+    """The upload comes before any Supabase write, so a failure leaves the
+    match undone - and the next run, finding no ledger row, stores it again."""
+    _seed_fake_supabase(local_url, fake_supabase_url, "current")
+    with pytest.raises(ConnectionError):
+        _run(stage_url, fake_supabase_url, [parity_file], artifact, raw_store=RecordingStore(fail=True))
+    with psycopg.connect(fake_supabase_url) as conn:
+        written = conn.execute(
+            "SELECT (SELECT count(*) FROM matches WHERE external_ids ? 'cricsheet'), "
+            "(SELECT count(*) FROM feature_ledger WHERE cricsheet_id = %s)",
+            (PARITY_CRICSHEET_ID,),
+        ).fetchone()
+    assert written == (0, 0)

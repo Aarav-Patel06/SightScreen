@@ -459,6 +459,7 @@ export type Database = {
           format: string
           has_reconciliation_anomaly: boolean
           match_id: number
+          outcome_method: string | null
           result_method: string | null
           start_time: string
           status: string
@@ -466,9 +467,13 @@ export type Database = {
           target_runs: number | null
           team_a: number | null
           team_b: number | null
+          tie_decided_by: string | null
+          tie_winner: number | null
           toss_decision: string | null
           toss_winner: number | null
           venue_id: number | null
+          win_by_runs: number | null
+          win_by_wickets: number | null
           winner: number | null
         }
         Insert: {
@@ -477,6 +482,7 @@ export type Database = {
           format: string
           has_reconciliation_anomaly?: boolean
           match_id?: number
+          outcome_method?: string | null
           result_method?: string | null
           start_time: string
           status: string
@@ -484,9 +490,13 @@ export type Database = {
           target_runs?: number | null
           team_a?: number | null
           team_b?: number | null
+          tie_decided_by?: string | null
+          tie_winner?: number | null
           toss_decision?: string | null
           toss_winner?: number | null
           venue_id?: number | null
+          win_by_runs?: number | null
+          win_by_wickets?: number | null
           winner?: number | null
         }
         Update: {
@@ -495,6 +505,7 @@ export type Database = {
           format?: string
           has_reconciliation_anomaly?: boolean
           match_id?: number
+          outcome_method?: string | null
           result_method?: string | null
           start_time?: string
           status?: string
@@ -502,9 +513,13 @@ export type Database = {
           target_runs?: number | null
           team_a?: number | null
           team_b?: number | null
+          tie_decided_by?: string | null
+          tie_winner?: number | null
           toss_decision?: string | null
           toss_winner?: number | null
           venue_id?: number | null
+          win_by_runs?: number | null
+          win_by_wickets?: number | null
           winner?: number | null
         }
         Relationships: [
@@ -518,6 +533,13 @@ export type Database = {
           {
             foreignKeyName: "matches_team_b_fkey"
             columns: ["team_b"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["team_id"]
+          },
+          {
+            foreignKeyName: "matches_tie_winner_fkey"
+            columns: ["tie_winner"]
             isOneToOne: false
             referencedRelation: "teams"
             referencedColumns: ["team_id"]

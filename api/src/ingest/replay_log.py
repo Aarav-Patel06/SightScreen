@@ -206,6 +206,13 @@ _MIRRORED_COLUMNS = (
     # populated locally, 0% on Supabase. Exactly the shape the census exists
     # to surface, and it had gone unnoticed through three earlier instances.
     "target_overs",
+    # The result's margin and method (migration 20260927000001), so the match
+    # page can say "won by 31 runs" instead of the last state the model saw.
+    "win_by_runs",
+    "win_by_wickets",
+    "outcome_method",
+    "tie_winner",
+    "tie_decided_by",
 )
 
 # Updated on conflict - everything except the key and `status`.
