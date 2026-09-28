@@ -58,19 +58,25 @@ def _request(url: str, *, body: dict | None = None, headers: dict | None = None)
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json", **(headers or {})})
     try:
         with urllib.request.urlopen(req, timeout=30) as reply:
-            return reply.status, reply.read().decode()[:300]
+            return reply.status, reply.read().decode()
     except urllib.error.HTTPError as error:
-        return error.code, error.read().decode()[:300]
+        return error.code, error.read().decode()
     except Exception as error:  # noqa: BLE001 - never echo a request (it may carry the secret)
         return 0, type(error).__name__
 
 
+def _sha_from(url: str) -> str:
+    status, body = _request(url)
+    if status != 200:
+        return f"unreachable ({status})"
+    try:
+        return json.loads(body).get("git_sha", "unknown")
+    except (ValueError, AttributeError):
+        return "unreadable reply"  # e.g. mid-restart; polled again
+
+
 def reported() -> dict[str, str]:
-    out = {}
-    status, body = _request(f"{WEB}/api/version")
-    out["web"] = json.loads(body).get("git_sha", "unknown") if status == 200 else f"unreachable ({status})"
-    status, body = _request(f"{API}/health")
-    out["api"] = json.loads(body).get("git_sha", "unknown") if status == 200 else f"unreachable ({status})"
+    out = {"web": _sha_from(f"{WEB}/api/version"), "api": _sha_from(f"{API}/health")}
     url = os.environ.get("SUPABASE_SESSION_POOLER_URL")
     if not url:
         out["worker"] = "unchecked (SUPABASE_SESSION_POOLER_URL not set)"

@@ -56,3 +56,15 @@ def test_a_service_behind_main_fails_after_the_window(monkeypatch):
 def test_every_service_on_main_passes(monkeypatch):
     monkeypatch.setattr(check, "reported", lambda: {"web": "a" * 40, "api": "a" * 40, "worker": "a" * 40})
     assert check.check_sha("a" * 40, wait_minutes=0) == 0
+
+
+def test_a_long_or_garbled_health_reply_is_read_not_crashed_on(monkeypatch):
+    import json as _json
+
+    long_health = _json.dumps({"git_sha": "c" * 40, "model_notes": "x" * 2000})
+    replies = {check.WEB + "/api/version": (200, "<html>restarting"), check.API + "/health": (200, long_health)}
+    monkeypatch.setattr(check, "_request", lambda url, **_: replies[url])
+    monkeypatch.delenv("SUPABASE_SESSION_POOLER_URL", raising=False)
+    now = check.reported()
+    assert now["api"] == "c" * 40
+    assert now["web"] == "unreadable reply"
