@@ -184,3 +184,68 @@ promotes nothing.
 balls 2-6; reliability by decile for the first 5 overs and for balls 2-6,
 with match-clustered CIs; early-chase bias by band; and the switch
 diagnostic.
+
+## Test result: the single look (2026-09-27)
+
+**Pre-registered rule: commit `4c0b0dd`.** The final stage records it as
+`code_commit` and refuses to run with uncommitted changes. One run, exit 0,
+no re-runs or adjustments. Rows were aligned by `delivery_id`, and the test
+split matched the cached bundle (270,737 rows). Raw report (gitignored):
+`api/data/eval_reports/run_rate_final_1790555999.json`.
+
+**Test set for every figure below: the current test split, 2,287 chases,
+2025-01-01 to 2026-09-17**, unless labelled otherwise.
+
+### Promotion rule, P vs S: promoted
+
+Paired, match-clustered 95% CI of Brier_S − Brier_P, ×10⁻⁴; positive
+favours P.
+
+| Condition | Result | Needs | Verdict |
+|---|---|---|---|
+| 1. overall | +0.9 [−7.6, +9.6] | lower bound > −20 | pass |
+| 2. final 3 overs | −0.5 [−7.6, +6.8] | lower bound > −20 | pass |
+| 3. first 5 overs | +2.0 [−6.0, +10.5] | not entirely below zero | pass |
+| 4. P vs logistic baseline | +0.0105 [+0.0073, +0.0136] (logistic 0.13169) | entirely above zero | pass |
+
+### Brier and log loss
+
+| | Overall | Final 3 overs | First 5 overs | Balls 2-6 | Log loss |
+|---|---|---|---|---|---|
+| S `winprob2-20260910` | 0.12127 | 0.06348 | 0.15895 | 0.17622 | 0.37496 |
+| P | 0.12119 | 0.06354 | 0.15875 | 0.17575 | 0.37511 |
+| A `a_n6` | 0.12137 | 0.06369 | 0.15885 | 0.17561 | 0.37575 |
+
+S's **0.1232** from Phase 1 was measured on **Phase 1's test split**, a
+smaller, earlier set. It is not comparable with 0.12127.
+
+**P vs S is one combined effect:** the partnership features removed,
+KNOWN_SKEW closed, and a fresh retrain. It is indistinguishable from zero
+on every segment. The calibration rule chose identity for P, which stopped
+early at 149 rounds.
+
+**A vs P (descriptive, not promotable):** overall −1.8 [−9.4, +5.5], first 5
+overs −1.0 [−8.9, +6.9], final 3 overs −1.6 [−7.2, +3.7]. The run-rate
+change has no measurable effect, as selection predicted.
+
+### Early chase on the test split
+
+Mean (p − won), pp, match-clustered 95% CI.
+
+| | Before ball 1 | After 1 ball | After 2-5 | After 12-29 |
+|---|---|---|---|---|
+| S | −2.1 [−3.9, −0.3] | −4.6 [−6.3, −2.7] | −3.5 [−5.3, −1.7] | −2.0 [−3.6, −0.4] |
+| P | −0.6 [−2.4, +1.2] | −4.4 [−6.1, −2.5] | −3.0 [−4.8, −1.2] | −2.2 [−3.7, −0.5] |
+| A | −2.6 [−4.3, −0.8] | −2.5 [−4.3, −0.6] | −2.5 [−4.3, −0.7] | −2.2 [−3.8, −0.6] |
+
+- **The sign is the opposite of validation's** (+5 to +8 pp, Jul-Dec 2024),
+  so the direction of the early bias is not stable across periods.
+- **Switch diagnostic:**
+  - S moves −2.94 pp [−3.23, −2.66] on the first ball;
+  - P moves −4.36 [−4.70, −4.02];
+  - A moves −0.18 on ball 1 and −1.09 [−1.47, −0.70] at ball 6.
+
+  The ball-1 display exclusion stays, and is more necessary under P.
+- **Reliability deciles outside their match-clustered CI:**
+  - first 5 overs: S 4/10, P 3/10, A 3/10;
+  - balls 2-6: S 5/10, P 2/10, A 1/10.

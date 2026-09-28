@@ -40,7 +40,7 @@ Sessions 1 and 2 of the "daily Cricsheet + front page" feature are shipped (HEAD
 | Front page selection | `web/lib/hero-match.ts` `loadHeroMatch`; live test `web/lib/live-match.ts` `isLiveMatch` (`LIVE_WINDOW_MS` = 5 min); `web/app/page.tsx` `revalidate = 60` | Newest Full Member v Full Member candidate first. **A `live` row whose newest keyed prediction is under 5 minutes old takes the hero.** Keyed predictions are innings 2 only, so a fresh keyed row means "the chase has started". Otherwise the newest **`complete`** one with keyed predictions. A first-innings or quiet live match is passed over. Tests: `web/lib/hero-match.live.test.ts`. The header's live slot is `web/app/api/live/route.ts` + `web/components/live-slot.tsx`, using the same `isLiveMatch`. |
 | Completed match page | `web/app/match/[matchId]/live-match.tsx` | The real result (`web/lib/match-result.ts`, from `matches.win_by_runs` / `win_by_wickets` / `outcome_method` / `tie_winner` / `tie_decided_by`) and a two-fact chase summary (`web/lib/chase-summary.ts`): a lost chase shows its peak, a won one its low point. **Live pages still have the big number, bar and confidence line.** |
 | Probability display | `web/lib/probability.ts` | One formatter everywhere: never "100%" or "0%", but ">99%" and "<1%". |
-| Start of the chase | `web/lib/ball-strip.ts` `isStartOfChase`; `web/lib/chase-summary.ts` `FIRST_OVER_BALLS` | The first legal ball's swing is the model settling into the chase, not a moment in the match: the run rate switches from missing to a number, and on validation the estimate falls about 5 pp on that ball whatever it was. It is excluded from every "moment" figure; the curve still shows it. The completed chase's summary facts skip the whole first over (§12.2). Retraining with the run rate withheld or shrunk did not remove the fall (§11, "Next model task"), so the exclusion stays. |
+| Start of the chase | `web/lib/ball-strip.ts` `isStartOfChase`; `web/lib/chase-summary.ts` `FIRST_OVER_BALLS` | The first legal ball's swing is the model settling into the chase, not a moment in the match: the run rate switches from missing to a number, and on validation the estimate falls about 5 pp on that ball whatever it was. It is excluded from every "moment" figure; the curve still shows it. The completed chase's summary facts skip the whole first over (§12.2). Retraining with the run rate withheld or shrunk did not remove the fall (§11, "Next model task"), so the exclusion stays. It is more necessary under the promoted P: its first-ball move is −4.4 pp on the test split, against −2.9 for S. |
 
 **Live data on Supabase today:** four live-worker matches, all `complete`: ids 1 and 2 have 0 predictions, id 3 has 25, id 1000001 has 15. **None has a resolved outcome**, because resolution reads labels from the corpus and a live match has no corpus counterpart until it's merged.
 
@@ -68,7 +68,7 @@ Alias rows are created by three processes, which now allocate from **three bands
 2. **Cross-source merging.** A match the live worker covered is **skipped** when Cricsheet later publishes it (`daily_cricsheet.live_duplicate`: same format, same team pair, start date within ±1 day). It's logged, and its live predictions are never touched. Merging needs a crosswalk: `external_ids` gaining the `cricsheet` key on the live row, and the corpus adopting that `match_id`. Then `models/resolve_outcomes.py` can label live predictions, which is what makes `/accuracy`'s **live** population measurable. `resolve_outcomes.assert_same_matches` exists to stop this being faked with a shared integer.
 3. **The live pick end to end.** `loadHeroMatch` already prefers a fresh live chase, but it has only been tested with fakes. Nothing has run during a real Full Member international chase. The 60 s `revalidate` and the 5-minute window are the latency budget.
 4. **Live-worker rows carry no margin.** The provider feed has a winner but no `by`, so completed live matches read "X won", and `/matches` falls back to "Target reached"/"Target defended" when there is no winner at all. Merging (issue 2) fixes both.
-5. **The next model task** (§11, "Next model task"): run rate undefined until N legal balls, N chosen by held-out evaluation. On 1000068, a single off ball 1 lowers the chaser's chance by 2.2 pp (CRR 6.0 is below RRR 7.3), and a six on the 7th ball raises it 7.4 pp as CRR doubles. N may need to be greater than 6. **Update 2026-09-27: selection done and negative** - no run-rate treatment beat today's on validation, and the early-chase fall is the model settling, not only the feature switch. The test split is unscored; see §11 and `docs/run-rate-selection.md`.
+5. **The next model task** (§11, "Next model task"): run rate undefined until N legal balls, N chosen by held-out evaluation. On 1000068, a single off ball 1 lowers the chaser's chance by 2.2 pp (CRR 6.0 is below RRR 7.3), and a six on the 7th ball raises it 7.4 pp as CRR doubles. N may need to be greater than 6. **Update 2026-09-27: selection done and negative** - no run-rate treatment beat today's on validation, and the early-chase fall is the model settling, not only the feature switch. **Test look done** at the pre-registered `4c0b0dd`: P (`state_venue_elo_no_partnership`, today's run rate, identity) is promoted under the rule, non-inferior to S. Registration, shadow deployment and the switch wait for the owner (§11, `docs/run-rate-selection.md`).
 6. **`matches.result_method` collapses every method to `'dls'`**, including Awarded, VJD and Lost fewer wickets. The training split and Elo read it, so it was left alone. `outcome_method` holds the truth.
 7. **Corpus loads must go through `catchup-local`**, never plain `ingest.cricsheet run`. The corpus's `matches` sequence is at 1,000,000 (migration `20260919000001` ran on both databases), so a serial load would reuse ids Supabase has given other matches. `catchup-local` takes ids from Supabase.
 8. **The 60-day schedule disable** is only *surfaced* (`pipeline_runs` + `/accuracy`), not prevented. A keep-alive (an external cron calling GitHub's workflow `enable` endpoint) was proposed and not built. It needs a new credential, so ask first.
@@ -1036,13 +1036,29 @@ Each phase ends with a demoable artifact and explicit acceptance criteria. Do no
   - **The margin.** 0.0020 is about 18% of the served model's 0.0110 edge over the logistic baseline (0.1342 − 0.1232, Phase 1's test split). A bounded cost is acceptable because the live feed cannot deliver the partnership features reliably (2.66% of reconstructed states wrong at the 15 s poll): P uses only what the feed supplies, while S is fed approximations. P vs S is reported as one combined effect: partnership removal, the KNOWN_SKEW closure, and a fresh retrain.
   - The owner approved the single test look on 2026-09-27, after the leak canary was resolved (§9.1). This commit is the pre-registered rule; the test report cites its hash, and there is no second attempt.
 
-**Known limitation, 2026-09-27 - early chases are optimistic.** On the validation select chunk (Jul-Dec 2024, 649 chases), predictions in the first five overs of a chase run **+5 to +8 pp above the observed win rate** for the chasing side:
-- **Pre-existing:** the served `winprob2-20260910` shows +6.8 pp before ball 1 and about +5 pp to ball 29.
-- **Mostly T20:** ODI's 62 chases are too few to say.
-- **Concentrated in 2024-Q4:** +8 to +11 pp, against a Q3 within noise.
-- **No calibrator fixes it.** Every non-identity calibrator makes it worse.
+**Test look, 2026-09-27 - P promoted under the pre-registered rule (commit `4c0b0dd`).** One run, no re-runs. Test split: 2,287 chases, 2025-01-01 to 2026-09-17. All figures are paired, match-clustered 95% CIs of Brier_S − Brier_P, ×10⁻⁴; positive favours P.
+- **The four conditions all pass:**
+  - overall +0.9 [−7.6, +9.6];
+  - final 3 overs −0.5 [−7.6, +6.8];
+  - first 5 overs +2.0 [−6.0, +10.5];
+  - P against the logistic baseline +0.0105 [+0.0073, +0.0136].
+- **Brier on this test split:** P 0.12119 overall and 0.06354 in the final 3 overs; S 0.12127 and 0.06348. S's original **0.1232** was measured on Phase 1's test split, a smaller and different match set, so the two S figures are not comparable.
+- **P vs S is one combined effect,** indistinguishable from zero: the partnership features removed, KNOWN_SKEW closed, and a fresh retrain.
+- **A vs P (descriptive):** overall −1.8 [−9.4, +5.5], first 5 overs −1.0 [−8.9, +6.9]. The run-rate change has no measurable effect.
+- **Not yet done:** registration, shadow deployment and the switch are separate steps, each confirmed by the owner. Full record: `docs/run-rate-selection.md`.
 
-It isn't fixed. It is the opposite sign to the backfill cohort's reading (test-split matches, pessimistic after ball 1), so the test look will be the first measurement of whether it persists into 2025-26. Until then, early-chase figures carry this caveat.
+**Known limitation, 2026-09-27 - early-chase bias whose direction is not stable.** In the first five overs of a chase, the model's error has a sign that changes between periods:
+
+| Period | Set | Before ball 1 | After 1 ball | After 2-5 balls | After 12-29 balls |
+|---|---|---|---|---|---|
+| Jul-Dec 2024 | validation select chunk, 649 chases, S | +6.8 | +5.0 | +4.8 | +5.0 |
+| 2025-01 to 2026-09-17 | test split, 2,287 chases, S | −2.1 [−3.9, −0.3] | −4.6 [−6.3, −2.7] | −3.5 [−5.3, −1.7] | −2.0 [−3.6, −0.4] |
+| 2025-01 to 2026-09-17 | test split, 2,287 chases, P | −0.6 [−2.4, +1.2] | −4.4 [−6.1, −2.5] | −3.0 [−4.8, −1.2] | −2.2 [−3.7, −0.5] |
+
+The figures are mean (p − won) in pp; positive is optimistic for the chasing side. Validation's optimism was concentrated in 2024-Q4 (+8 to +11 pp), and no calibrator removed it.
+- **No correction is applied.** A fixed shift fitted to one period would have the wrong sign in the next.
+- **Early-chase figures carry this caveat.**
+- **The ball-1 display exclusion stays, and is more necessary under P.** P's mean first-ball move on the test split is −4.36 pp [−4.70, −4.02], against S's −2.94 [−3.23, −2.66]. P starts well calibrated and turns pessimistic on that ball.
 
 **Known issue, 2026-09-27 - the ball-36 `phase_code` jump.** In every model measured, T20 chases rise 0.8-1.9 pp on average on the ball after the powerplay ends (36 legal balls, where `phase_code` switches from powerplay to middle; significant for all candidates on the validation select chunk). The same kind of feature switch as the start of the chase, found by the same diagnostic. Not fixed; no display rule covers it yet.
 

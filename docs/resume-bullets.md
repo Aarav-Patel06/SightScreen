@@ -4,7 +4,7 @@ Drafted from SPEC.md §14's claim list, but using **measured** figures from the
 project rather than the spec's targets. Every number here traces to a
 committed report or a close-out document; none is aspirational.
 
-Six drafts. Cut to the three or four that fit the role — notes below each say
+Seven drafts. Cut to the three or four that fit the role — notes below each say
 what it is doing and when to drop it.
 
 ---
@@ -88,6 +88,26 @@ the examples.*
 *The operational-maturity bullet. The last clause is the interesting half:
 most monitoring jobs are written as if acting is success. Drop this one first
 if you are over length — #3 already carries the "identity won" idea.*
+
+---
+
+**7.** *(added 2026-09-27. Every `[VERIFY]` stays until production confirms
+it: P registered, shadowed, and switched to active.)*
+> Replaced the live model with one that uses only features the
+> snapshot-reconstructed live feed can actually deliver `[VERIFY: switched to
+> active in production]`, under a non-inferiority rule committed before the
+> held-out data was scored. On 2,287 held-out chases (test split, Jan 2025 -
+> Sep 2026), the Brier difference was +0.00009 [−0.00076, +0.00096], with
+> 0.12119 overall and 0.06354 in the final three overs, against a 0.0020
+> margin. Thirteen alternative run-rate treatments were selected on
+> validation and rejected, because none beat the existing one.
+
+*The discipline bullet: it pairs a pre-registered rule with a negative
+result that was kept. Label the test set every time. The 0.12119 and 0.06354
+are on the current test split (2,287 chases, to 2026-09-17), NOT the Phase 1
+test split behind bullet 1's figures, and the two must never be quoted side
+by side as if comparable. Until the `[VERIFY]` clears, say "promoted under the
+rule" rather than "replaced the live model".*
 
 ---
 
