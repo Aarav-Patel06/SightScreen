@@ -115,18 +115,22 @@ def fake_supabase_url(local_url):
     return _scratch(local_url, "cricket_daily_fake_supabase_test")
 
 
-@pytest.fixture(scope="module")
-def artifact(local_url):
+# Every version the daily job may serve: the active model, and P, registered
+# non-active on 2026-09-28 ahead of its shadow run (SPEC.md section 11). Each
+# gets the full suite - bit-identical parity included - with the fake
+# Supabase marking it active, which is what the job will see when it serves.
+SERVED_VERSIONS = ("winprob2-20260910", "winprob2-20260927")
+
+
+@pytest.fixture(scope="module", params=SERVED_VERSIONS)
+def artifact(local_url, request):
     from models.registry import load_model_version
 
     with psycopg.connect(local_url) as conn:
-        row = conn.execute("SELECT model_version FROM model_versions WHERE is_active").fetchone()
-        if row is None:
-            pytest.skip("no active model locally")
         try:
-            return {"artifact": load_model_version(conn, row[0]), "model_version": row[0]}
+            return {"artifact": load_model_version(conn, request.param), "model_version": request.param}
         except Exception as exc:  # noqa: BLE001 - artifact absent on a fresh checkout
-            pytest.skip(f"artifact unavailable: {exc}")
+            pytest.skip(f"artifact for {request.param} unavailable: {exc}")
 
 
 @pytest.fixture(scope="module")
@@ -170,6 +174,8 @@ def _excluded(row, index, mode: str) -> bool:
 def _run(stage_url, fake_url, files, artifact, raw_store=None):
     from ingest.daily_cricsheet import run_daily
 
+    with psycopg.connect(fake_url, autocommit=True) as fake:
+        fake.execute("UPDATE model_versions SET is_active = (model_version = %s)", (artifact["model_version"],))
     _truncate_all(stage_url)
     with psycopg.connect(fake_url) as supabase_conn:
         return run_daily(
