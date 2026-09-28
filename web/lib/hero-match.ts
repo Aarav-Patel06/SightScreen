@@ -37,7 +37,7 @@ import { battingTeamName } from "./batting-team";
 import { isLiveMatch } from "./live-match";
 import { resultText } from "./match-result";
 import { loadModelVersions } from "./load-model-versions";
-import { oneVersion } from "./model-version";
+import { oneSource, oneVersion } from "./model-version";
 import { parsePrediction, type WinProbPrediction } from "./prediction";
 import { supabaseServer } from "./supabase-server";
 
@@ -148,7 +148,7 @@ async function loadPredictions(matchId: number): Promise<WinProbPrediction[]> {
   const supabase = supabaseServer();
   const { data, error } = await supabase
     .from("predictions")
-    .select("prediction_id, created_at, model_version, payload, batting_team_id")
+    .select("prediction_id, created_at, model_version, payload, batting_team_id, source")
     .eq("match_id", matchId)
     .eq("prediction_type", "win_prob")
     .not("innings", "is", null)
@@ -159,8 +159,8 @@ async function loadPredictions(matchId: number): Promise<WinProbPrediction[]> {
     console.warn(`[hero] no strip for match ${matchId}: ${describe(error)}`);
     return [];
   }
-  // One model version per match (lib/model-version.ts).
-  return oneVersion(data, await loadModelVersions())
+  // One model version per match, then one source (lib/model-version.ts).
+  return oneSource(oneVersion(data, await loadModelVersions()))
     .map((row) => parsePrediction(row as never))
     .filter((p) => p !== null);
 }

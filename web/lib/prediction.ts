@@ -39,6 +39,13 @@ export interface WinProbPrediction extends WinProbPayload {
    * NULL when unknown; see lib/batting-team.ts for how that is rendered.
    */
   batting_team_id: number | null;
+  /**
+   * 'live' (predicted as the match happened) or 'backfill' (the complete
+   * Cricsheet version). NULL when the row was selected without the column.
+   * A merged match holds both under one version - lib/model-version.ts
+   * `oneSource` picks one to draw.
+   */
+  source?: string | null;
 }
 
 function isPhase(value: unknown): value is Phase {
@@ -78,6 +85,7 @@ export function parsePrediction(row: PredictionRow): WinProbPrediction | null {
     model_version: row.model_version,
     // Absent from rows selected without the column; unknown, not a guess.
     batting_team_id: row.batting_team_id ?? null,
+    source: row.source ?? null,
     p: payload.p as number,
     innings: payload.innings as number,
     balls_bowled: payload.balls_bowled as number,

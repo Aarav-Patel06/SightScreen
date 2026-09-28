@@ -12,7 +12,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fakeSupabase } from "./fake-postgrest";
-import { chooseVersion, isShownVersion, oneVersionPerMatch, type ModelVersionInfo } from "./model-version";
+import { chooseVersion, isShownVersion, oneSource, oneVersionPerMatch, type ModelVersionInfo } from "./model-version";
 
 let db: ReturnType<typeof fakeSupabase>;
 vi.mock("./supabase-server", () => ({ supabaseServer: () => db }));
@@ -142,6 +142,77 @@ describe("a match with rows from two versions draws one curve", () => {
     const { predictions, modelVersion } = await loadMatchPredictions(424242);
     expect(predictions).toHaveLength(0);
     expect(modelVersion).toBe(NEW);
+  });
+});
+
+/**
+ * Session 3: once the daily Cricsheet job merges a match the live worker
+ * predicted, the match holds the live chase AND the complete Cricsheet
+ * version under the SAME model version, told apart only by `source`. The
+ * page shows the Cricsheet version (complete, exact); the live rows stay the
+ * live cohort for /accuracy and are never drawn beside it.
+ */
+describe("a match with live and backfill rows of the same version draws one curve", () => {
+  const live = (p: number, firstId: number) => chase(OLD, p, firstId).map((r) => ({ ...r, source: "live" }));
+
+  function seedSources(predictions: ReturnType<typeof chase>) {
+    db = fakeSupabase({
+      teams: [
+        { team_id: ENGLAND, name: "England", full_member: true },
+        { team_id: INDIA, name: "India", full_member: true },
+      ],
+      matches: [MATCH],
+      predictions,
+      model_versions: versions(OLD) as unknown as Record<string, unknown>[],
+      prediction_outcomes: [],
+      player_index: [],
+    });
+  }
+
+  it("oneSource keeps the backfill rows when there are any, else the live ones", () => {
+    const both = [...live(0.3, 1), ...chase(OLD, 0.7, 101)];
+    expect(new Set(oneSource(both).map((r) => r.source))).toEqual(new Set(["backfill"]));
+    expect(oneSource(live(0.3, 1))).toHaveLength(6);
+  });
+
+  // The live chase was written first; the Cricsheet version arrives later.
+  const merged = () => [...live(0.3, 1), ...chase(OLD, 0.7, 101)];
+
+  it("the match page", async () => {
+    seedSources(merged());
+    const { predictions } = await loadMatchPredictions(8429);
+    expect(predictions).toHaveLength(6);
+    expect(new Set(predictions.map((x) => x.p))).toEqual(new Set([0.7]));
+  });
+
+  it("the landing hero", async () => {
+    seedSources(merged());
+    const hero = await loadHeroMatch();
+    expect(hero.marks).toHaveLength(6);
+    expect(new Set(hero.marks!.map((m) => m.p))).toEqual(new Set([0.7]));
+  });
+
+  it("the landing previews", async () => {
+    seedSources(merged());
+    const previews = await loadLandingPreviews();
+    const match = previews.matches!.find((m) => m.matchId === 8429)!;
+    expect(match.marks).toHaveLength(6);
+    expect(new Set(match.marks!.map((m) => m.p))).toEqual(new Set([0.7]));
+  });
+
+  it("/matches", async () => {
+    seedSources(merged());
+    const index = await loadMatchIndex();
+    const row = index.matches.find((m) => m.matchId === 8429)!;
+    expect(row.marks).toHaveLength(6);
+    expect(new Set(row.marks!.map((m) => m.p))).toEqual(new Set([0.7]));
+  });
+
+  it("a live-only match still draws its live curve", async () => {
+    seedSources(live(0.3, 1));
+    const { predictions } = await loadMatchPredictions(8429);
+    expect(predictions).toHaveLength(6);
+    expect(new Set(predictions.map((x) => x.p))).toEqual(new Set([0.3]));
   });
 });
 

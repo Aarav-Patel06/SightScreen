@@ -5,7 +5,7 @@
  */
 
 import { loadModelVersions } from "./load-model-versions";
-import { activeVersion, chooseVersion } from "./model-version";
+import { activeVersion, chooseVersion, oneSource } from "./model-version";
 import { parsePrediction, type WinProbPrediction } from "./prediction";
 import { supabaseServer } from "./supabase-server";
 
@@ -23,14 +23,15 @@ export interface MatchPredictions {
 export async function loadMatchPredictions(matchId: number): Promise<MatchPredictions> {
   const [rows, versions] = await Promise.all([loadPredictions(matchId), loadModelVersions()]);
   const modelVersion = chooseVersion(rows, versions) ?? activeVersion(versions);
-  return { predictions: rows.filter((row) => row.model_version === modelVersion), modelVersion };
+  // One version, then one source within it (lib/model-version.ts).
+  return { predictions: oneSource(rows.filter((row) => row.model_version === modelVersion)), modelVersion };
 }
 
 async function loadPredictions(matchId: number): Promise<WinProbPrediction[]> {
   const supabase = supabaseServer();
   const { data, error } = await supabase
     .from("predictions")
-    .select("prediction_id, created_at, model_version, payload, match_id, batting_team_id")
+    .select("prediction_id, created_at, model_version, payload, match_id, batting_team_id, source")
     .eq("match_id", matchId)
     .eq("prediction_type", "win_prob")
     // Migration 20260918000003's stated contract: "every Phase 3 reader

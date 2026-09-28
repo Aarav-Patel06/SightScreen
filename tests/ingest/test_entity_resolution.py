@@ -376,3 +376,26 @@ def test_a_present_source_id_cannot_smuggle_in_a_creation_when_suppressed(conn):
     with conn.cursor() as cur:
         cur.execute("SELECT count(*) FROM teams")
         assert cur.fetchone()[0] == 0
+
+
+# 25-26. A one-word national side (session 3). CricketData names India
+# "India", and the two-shared-token cap scored that 50 against India, Mumbai
+# Indians and West Indies alike - so the worker refused India v West Indies
+# on 2026-09-27 (unresolved_entities #47 on Supabase). A name IDENTICAL to one
+# canonical team is not the bare-subset case the cap exists for.
+def test_a_one_word_national_side_resolves_on_its_exact_name(conn):
+    india = _insert_team(conn, "India")
+    _insert_team(conn, "Mumbai Indians")
+    _insert_team(conn, "West Indies")
+
+    result = resolve_team(conn, "cricketdata", "India", allow_create=False)
+
+    assert result.outcome == "auto_resolved"
+    assert result.entity_id == india
+
+
+def test_an_exact_name_does_not_lift_a_bare_subset(conn):
+    """The cap's own case still holds: 'Titans' is not 'Gujarat Titans'."""
+    _insert_team(conn, "Gujarat Titans")
+    result = resolve_team(conn, "cricketdata", "Titans", allow_create=False)
+    assert result.outcome != "auto_resolved"

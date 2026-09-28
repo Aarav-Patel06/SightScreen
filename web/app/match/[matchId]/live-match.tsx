@@ -31,7 +31,7 @@ import { chaseSummary, type ChaseSummary } from "@/lib/chase-summary";
 import { resultText } from "@/lib/match-result";
 import { formatProbability } from "@/lib/probability";
 import { highWaterMark, mergePredictions } from "@/lib/merge-predictions";
-import { isShownVersion } from "@/lib/model-version";
+import { isShownVersion, oneSource } from "@/lib/model-version";
 import { parsePrediction, type Phase, type WinProbPrediction } from "@/lib/prediction";
 import { HATCH_PITCH_PX, describeEvent, toMarks } from "@/lib/ball-strip";
 import { BallStrip } from "@/components/ball-strip";
@@ -189,7 +189,7 @@ export function LiveMatch({
     async function reconcile(): Promise<WinProbPrediction[]> {
       const { data, error } = await supabase
         .from("predictions")
-        .select("prediction_id, created_at, model_version, payload, match_id, batting_team_id")
+        .select("prediction_id, created_at, model_version, payload, match_id, batting_team_id, source")
         .eq("match_id", matchId)
         .eq("prediction_type", "win_prob")
         // Same filter as the server loader, for the same reason - see
@@ -199,10 +199,12 @@ export function LiveMatch({
         .not("innings", "is", null)
         .order("prediction_id", { ascending: true });
       if (error || data === null) return [];
-      return data
-        .filter((row) => isShownVersion(row.model_version, modelVersion))
-        .map((row) => parsePrediction(row as never))
-        .filter((x): x is WinProbPrediction => x !== null);
+      return oneSource(
+        data
+          .filter((row) => isShownVersion(row.model_version, modelVersion))
+          .map((row) => parsePrediction(row as never))
+          .filter((x): x is WinProbPrediction => x !== null)
+      );
     }
 
     const channel = supabase
@@ -232,7 +234,9 @@ export function LiveMatch({
           streamed.current.add(parsed.prediction_id);
           latest.current = Math.max(latest.current, parsed.prediction_id);
           setNow(Date.now());
-          setPredictions((current) => mergePredictions(current, [parsed]));
+          // One source: once the Cricsheet version arrives it replaces the
+          // live rows, and a live row never joins a Cricsheet curve.
+          setPredictions((current) => oneSource(mergePredictions(current, [parsed])));
         }
       )
       .subscribe(async (status) => {
@@ -249,7 +253,7 @@ export function LiveMatch({
         if (rows.length > 0) {
           watermarkAtSubscribe.current = highWaterMark(rows);
           latest.current = Math.max(latest.current, watermarkAtSubscribe.current);
-          setPredictions((current) => mergePredictions(current, rows));
+          setPredictions((current) => oneSource(mergePredictions(current, rows)));
         }
         setConnection("live");
       });
@@ -275,7 +279,7 @@ export function LiveMatch({
       );
       for (const row of missed) streamed.current.add(row.prediction_id);
       if (missed.length > 0) setRecovered((count) => count + missed.length);
-      setPredictions((current) => mergePredictions(current, rows));
+      setPredictions((current) => oneSource(mergePredictions(current, rows)));
     }, RESYNC_MS);
 
     return () => {

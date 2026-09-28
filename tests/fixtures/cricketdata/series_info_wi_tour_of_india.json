@@ -1,0 +1,269 @@
+{
+ "apikey": "REDACTED",
+ "data": {
+  "info": {
+   "id": "702ce6cb-a551-4aab-961e-0ed1548a3c74",
+   "name": "West Indies tour of India, 2026",
+   "startdate": "2026-09-27",
+   "enddate": "Oct 17",
+   "odi": 3,
+   "t20": 5,
+   "test": 0,
+   "squads": 0,
+   "matches": 8
+  },
+  "matchList": [
+   {
+    "id": "3c451481-9fa8-400b-a7b6-27cffc21e1a8",
+    "name": "India vs West Indies, 4th T20I, West Indies tour of India, 2026",
+    "matchType": "odi",
+    "status": "Match starts at Oct 14, 13:30 GMT",
+    "venue": "Rajiv Gandhi International Stadium, Hyderabad",
+    "date": "2026-10-14",
+    "dateTimeGMT": "2026-10-14T13:30:00",
+    "teams": [
+     "India",
+     "West Indies"
+    ],
+    "teamInfo": [
+     {
+      "name": "India",
+      "shortname": "IND",
+      "img": "https://g.cricapi.com/iapi/31-637877061080567215.webp?w=48"
+     },
+     {
+      "name": "West Indies",
+      "shortname": "WI",
+      "img": "https://g.cricapi.com/iapi/100-637877077978319234.webp?w=48"
+     }
+    ],
+    "fantasyEnabled": false,
+    "bbbEnabled": false,
+    "hasSquad": false,
+    "matchStarted": false,
+    "matchEnded": false
+   },
+   {
+    "id": "56d07759-19dd-4a8c-a3d5-58bfd6a142a1",
+    "name": "India vs West Indies, 2nd ODI, West Indies tour of India, 2026",
+    "matchType": "odi",
+    "status": "Match starts at Sep 30, 08:30 GMT",
+    "venue": "Barsapara Cricket Stadium, Guwahati",
+    "date": "2026-09-30",
+    "dateTimeGMT": "2026-09-30T08:30:00",
+    "teams": [
+     "India",
+     "West Indies"
+    ],
+    "teamInfo": [
+     {
+      "name": "India",
+      "shortname": "IND",
+      "img": "https://g.cricapi.com/iapi/31-637877061080567215.webp?w=48"
+     },
+     {
+      "name": "West Indies",
+      "shortname": "WI",
+      "img": "https://g.cricapi.com/iapi/100-637877077978319234.webp?w=48"
+     }
+    ],
+    "fantasyEnabled": false,
+    "bbbEnabled": false,
+    "hasSquad": false,
+    "matchStarted": false,
+    "matchEnded": false
+   },
+   {
+    "id": "8775724e-9bb6-4494-91ca-7822c201aec5",
+    "name": "India vs West Indies, 3rd T20I, West Indies tour of India, 2026",
+    "matchType": "odi",
+    "status": "Match starts at Oct 11, 13:30 GMT",
+    "venue": "Holkar Stadium, Indore",
+    "date": "2026-10-11",
+    "dateTimeGMT": "2026-10-11T13:30:00",
+    "teams": [
+     "India",
+     "West Indies"
+    ],
+    "teamInfo": [
+     {
+      "name": "India",
+      "shortname": "IND",
+      "img": "https://g.cricapi.com/iapi/31-637877061080567215.webp?w=48"
+     },
+     {
+      "name": "West Indies",
+      "shortname": "WI",
+      "img": "https://g.cricapi.com/iapi/100-637877077978319234.webp?w=48"
+     }
+    ],
+    "fantasyEnabled": false,
+    "bbbEnabled": false,
+    "hasSquad": false,
+    "matchStarted": false,
+    "matchEnded": false
+   },
+   {
+    "id": "ff0a0eb6-4abf-474b-9aa6-99fac469b2f2",
+    "name": "India vs West Indies, 2nd T20I, West Indies tour of India, 2026",
+    "matchType": "odi",
+    "status": "Match starts at Oct 09, 13:30 GMT",
+    "venue": "JSCA International Stadium Complex, Ranchi",
+    "date": "2026-10-09",
+    "dateTimeGMT": "2026-10-09T13:30:00",
+    "teams": [
+     "India",
+     "West Indies"
+    ],
+    "teamInfo": [
+     {
+      "name": "India",
+      "shortname": "IND",
+      "img": "https://g.cricapi.com/iapi/31-637877061080567215.webp?w=48"
+     },
+     {
+      "name": "West Indies",
+      "shortname": "WI",
+      "img": "https://g.cricapi.com/iapi/100-637877077978319234.webp?w=48"
+     }
+    ],
+    "fantasyEnabled": false,
+    "bbbEnabled": false,
+    "hasSquad": false,
+    "matchStarted": false,
+    "matchEnded": false
+   },
+   {
+    "id": "da91f633-acac-4449-86f8-9bff6244053f",
+    "name": "India vs West Indies, 3rd ODI, West Indies tour of India, 2026",
+    "matchType": "odi",
+    "status": "Match starts at Oct 03, 08:30 GMT",
+    "venue": "Maharaja Yadavindra Singh International Cricket Stadium, Mullanpur, New Chandigarh",
+    "date": "2026-10-03",
+    "dateTimeGMT": "2026-10-03T08:30:00",
+    "teams": [
+     "India",
+     "West Indies"
+    ],
+    "teamInfo": [
+     {
+      "name": "India",
+      "shortname": "IND",
+      "img": "https://g.cricapi.com/iapi/31-637877061080567215.webp?w=48"
+     },
+     {
+      "name": "West Indies",
+      "shortname": "WI",
+      "img": "https://g.cricapi.com/iapi/100-637877077978319234.webp?w=48"
+     }
+    ],
+    "fantasyEnabled": false,
+    "bbbEnabled": false,
+    "hasSquad": false,
+    "matchStarted": false,
+    "matchEnded": false
+   },
+   {
+    "id": "f6ac293e-72ae-434e-aabc-dec0bdcc2114",
+    "name": "India vs West Indies, 5th T20I, West Indies tour of India, 2026",
+    "matchType": "odi",
+    "status": "Match starts at Oct 17, 13:30 GMT",
+    "venue": "M.Chinnaswamy Stadium, Bengaluru",
+    "date": "2026-10-17",
+    "dateTimeGMT": "2026-10-17T13:30:00",
+    "teams": [
+     "India",
+     "West Indies"
+    ],
+    "teamInfo": [
+     {
+      "name": "India",
+      "shortname": "IND",
+      "img": "https://g.cricapi.com/iapi/31-637877061080567215.webp?w=48"
+     },
+     {
+      "name": "West Indies",
+      "shortname": "WI",
+      "img": "https://g.cricapi.com/iapi/100-637877077978319234.webp?w=48"
+     }
+    ],
+    "fantasyEnabled": false,
+    "bbbEnabled": false,
+    "hasSquad": false,
+    "matchStarted": false,
+    "matchEnded": false
+   },
+   {
+    "id": "0643db2e-fd71-41d6-bad1-df3513607f3f",
+    "name": "India vs West Indies, 1st T20I, West Indies tour of India, 2026",
+    "matchType": "odi",
+    "status": "Match starts at Oct 06, 13:30 GMT",
+    "venue": "Bharat Ratna Shri Atal Bihari Vajpayee Ekana Cricket Stadium, Lucknow",
+    "date": "2026-10-06",
+    "dateTimeGMT": "2026-10-06T13:30:00",
+    "teams": [
+     "India",
+     "West Indies"
+    ],
+    "teamInfo": [
+     {
+      "name": "India",
+      "shortname": "IND",
+      "img": "https://g.cricapi.com/iapi/31-637877061080567215.webp?w=48"
+     },
+     {
+      "name": "West Indies",
+      "shortname": "WI",
+      "img": "https://g.cricapi.com/iapi/100-637877077978319234.webp?w=48"
+     }
+    ],
+    "fantasyEnabled": false,
+    "bbbEnabled": false,
+    "hasSquad": false,
+    "matchStarted": false,
+    "matchEnded": false
+   },
+   {
+    "id": "90ae280c-cb10-4d58-9bcc-ec95294819e6",
+    "name": "India vs West Indies, 1st ODI, West Indies tour of India, 2026",
+    "matchType": "odi",
+    "status": "India won by 8 wkts",
+    "venue": "Greenfield International Stadium, Thiruvananthapuram",
+    "date": "2026-09-27",
+    "dateTimeGMT": "2026-09-27T08:30:00",
+    "teams": [
+     "India",
+     "West Indies"
+    ],
+    "teamInfo": [
+     {
+      "name": "India",
+      "shortname": "IND",
+      "img": "https://g.cricapi.com/iapi/31-637877061080567215.webp?w=48"
+     },
+     {
+      "name": "West Indies",
+      "shortname": "WI",
+      "img": "https://g.cricapi.com/iapi/100-637877077978319234.webp?w=48"
+     }
+    ],
+    "fantasyEnabled": false,
+    "bbbEnabled": false,
+    "hasSquad": false,
+    "matchStarted": true,
+    "matchEnded": true
+   }
+  ]
+ },
+ "status": "success",
+ "info": {
+  "hitsToday": 19,
+  "hitsUsed": 1,
+  "hitsLimit": 2000,
+  "credits": 0,
+  "server": 12,
+  "queryTime": 16.2023,
+  "s": 0,
+  "cache": 0
+ }
+}

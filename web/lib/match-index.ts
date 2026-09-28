@@ -39,7 +39,7 @@
 import { toMarks, type Mark } from "./ball-strip";
 import { resultText, type MatchOutcome } from "./match-result";
 import { loadModelVersions } from "./load-model-versions";
-import { oneVersionPerMatch } from "./model-version";
+import { oneSourcePerMatch, oneVersionPerMatch } from "./model-version";
 import { parsePrediction, type WinProbPrediction } from "./prediction";
 import { supabaseServer } from "./supabase-server";
 
@@ -108,7 +108,7 @@ async function loadPredictionsByMatch(): Promise<Map<number, WinProbPrediction[]
   const base = () =>
     supabase
       .from("predictions")
-      .select("prediction_id, created_at, model_version, payload, match_id")
+      .select("prediction_id, created_at, model_version, payload, match_id, source")
       .eq("prediction_type", "win_prob")
       .not("innings", "is", null)
       .order("prediction_id", { ascending: true });
@@ -144,7 +144,7 @@ async function loadPredictionsByMatch(): Promise<Map<number, WinProbPrediction[]
   // One model version per match (lib/model-version.ts), decided over the
   // whole sweep: a match's two versions can straddle a page boundary.
   const byMatch = new Map<number, WinProbPrediction[]>();
-  for (const row of oneVersionPerMatch(swept, versions)) {
+  for (const row of oneSourcePerMatch(oneVersionPerMatch(swept, versions))) {
     const parsed = parsePrediction(row as never);
     if (parsed === null) continue;
     const matchId = (row as { match_id: number }).match_id;

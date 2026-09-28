@@ -231,6 +231,9 @@ def test_it_declines_rather_than_guessing_when_the_batting_side_is_unknown(corpu
         def current_teams(self, match_id):
             return None, None
 
+        def get_deliveries_since(self, _match_id, last_ball):
+            return deliveries[last_ball:]
+
     sink = _RecordingConn(corpus)
     messages: list[str] = []
     predictor = LivePredictor(sink, model, _StubGuard(), log=messages.append)

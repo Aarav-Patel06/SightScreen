@@ -196,6 +196,11 @@ ALLOWED_SERVING_WRITES = {
     "unresolved_entities",  # entity_resolution queues rather than auto-creating
     "prediction_outcomes",  # models/resolve_outcomes.py, one row per resolved prediction
     "calibration_runs",     # eval/calibration_monitor.py, one row per daily run
+    # serving/startup.py's `<role>_start` row (which commit a process runs,
+    # read by scripts/check_deployed.py) and serving/live_loop.py's
+    # `worker_pick` row (what the worker picked and refused, and the quota it
+    # read). Best-effort run-log rows; the table has no anon access.
+    "pipeline_runs",
 }
 
 # Functions that mutate corpus or derived tables. Serving code must not call

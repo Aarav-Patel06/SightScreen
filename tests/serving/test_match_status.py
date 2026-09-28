@@ -240,18 +240,21 @@ class _ChaseClient:
     def list_live_matches(self):
         return [MatchSummary(match_id=77, status="live", team_a=10, team_b=11, venue_id=7)]
 
+    _BALL = Delivery(
+        innings=2, over_num=0, ball_in_over=1, legal_ball_num=1,
+        batter_id=None, non_striker_id=None, bowler_id=None,
+        runs_batter=1, runs_extras=0, extra_type=None,
+        wicket_type=None, player_out_id=None,
+    )
+
     def poll(self, _match_id):
         if self._polled:
             return []
         self._polled = True
-        return [
-            Delivery(
-                innings=2, over_num=0, ball_in_over=1, legal_ball_num=1,
-                batter_id=None, non_striker_id=None, bowler_id=None,
-                runs_batter=1, runs_extras=0, extra_type=None,
-                wicket_type=None, player_out_id=None,
-            )
-        ]
+        return [self._BALL]
+
+    def get_deliveries_since(self, _match_id, last_ball):
+        return [self._BALL][last_ball:] if self._polled else []
 
     def get_match_state(self, _match_id):
         target_overs = self._target_overs

@@ -216,7 +216,13 @@ def _score_candidates(normalized_query: str, candidates: list[tuple[int, str]], 
         if kind != "player":
             candidate_tokens = set(normalized_candidate.split())
             shared = len(query_tokens & candidate_tokens)
-            if shared < MIN_SHARED_TOKENS_TEAM_VENUE:
+            # A team name IDENTICAL to a canonical one is not the bare-subset
+            # case above. Without this, a one-word national side from a
+            # second source ("India" from CricketData) scored 50 against
+            # India, Mumbai Indians and West Indies alike and never resolved
+            # (session 3). A second identical name still trips the margin.
+            identical = kind == "team" and normalized_query == normalized_candidate
+            if shared < MIN_SHARED_TOKENS_TEAM_VENUE and not identical:
                 score = min(score, UNTRUSTED_SUBSET_SCORE_CAP)
         scored.append(_Candidate(entity_id=entity_id, canonical_name=comparison_text, score=score))
     scored.sort(key=lambda c: c.score, reverse=True)

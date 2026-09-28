@@ -31,8 +31,9 @@ import json
 import re
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
-from datetime import datetime, timezone
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Protocol
@@ -59,8 +60,39 @@ INTERVAL_QUOTA_CRITICAL = 120.0
 QUOTA_STRAINED_AT = 0.90
 QUOTA_CRITICAL_AT = 0.98
 
+# The limit is never exceeded (session 3). The last HARD_FLOOR calls of the
+# day are never spent by polling: they are kept for one probe per
+# PROBE_INTERVAL, which is how the worker notices the provider's daily reset
+# (whose time the provider does not state). A whole day of probes fits
+# inside the floor, so the worker's own calls cannot reach the limit.
+HARD_FLOOR = 10
+PROBE_INTERVAL = timedelta(hours=3)
+# Past this, the day has certainly reset, even with nothing left to probe with.
+QUOTA_DAY = timedelta(hours=24)
+
+# A subscribed match's cadence by phase (session 3). The first innings is
+# polled sparsely: the model scores the chase only, so innings 1 needs just
+# the innings break and the target. It tightens near the end of the innings
+# so the break is not missed.
+INTERVAL_SPARSE = 300.0
+INTERVAL_BREAK = 60.0
+NEAR_END_BALLS = 18  # the last three overs
+NEAR_END_WICKETS = 8
+
+# Calls to finish a match from the start, upper bounds at one call per
+# iteration: (up to the chase, the chase). T20 about 330 expected, ODI about
+# 780; the bounds carry drinks, reviews, timeouts and slow over rates.
+CALLS_TO_FINISH = {"T20": (60, 390), "ODI": (150, 900)}
+# Kept back from every subscription decision: the day's remaining fixture
+# checks, a few restarts, and slippage against the projection.
+RESERVE_CALLS = 200
+
 NOMINAL_BALLS = {"T20": 120, "ODI": 300}
 FORMAT_BY_MATCH_TYPE = {"t20": "T20", "odi": "ODI"}
+# "India vs West Indies, 2nd T20I, ..." - the provider's matchType is not
+# trusted over this: recorded 2026-09-28, series_info typed all five of a
+# series's T20Is "odi" (tests/fixtures/cricketdata/series_info_*.json).
+_NAMED_FORMAT_RE = re.compile(r",\s*[^,]*\b(T20I|ODI)\b", re.IGNORECASE)
 
 # "...Match reduced to 21 overs per side due to rain, DLS target 106"
 _REDUCED_OVERS_RE = re.compile(r"reduced to (\d+(?:\.\d+)?) overs", re.IGNORECASE)
@@ -138,13 +170,39 @@ class LiveBudget:
 
     hits_today: int = 0
     hits_limit: int = 2000
+    clock: Callable[[], datetime] = field(default=lambda: datetime.now(timezone.utc), repr=False)
+    # When the provider last reported its counter. None until a response has
+    # said: the quota is unknown, not zero, before then.
+    observed_at: datetime | None = None
+    last_call_at: datetime | None = None
 
     def observe(self, body: dict) -> None:
         info = body.get("info") or {}
         if isinstance(info.get("hitsToday"), int):
             self.hits_today = info["hitsToday"]
+            self.observed_at = self.clock()
         if isinstance(info.get("hitsLimit"), int):
             self.hits_limit = info["hitsLimit"]
+
+    def before_call(self) -> None:
+        """Refuse a call the quota cannot take. Nothing is counted locally:
+        the decision reads the provider's own figure from the last response.
+
+        The first call is always allowed, because it is how the figure is
+        learned."""
+        now = self.clock()
+        if self.observed_at is not None and self.remaining <= HARD_FLOOR:
+            probe_due = (
+                self.remaining > 0
+                and self.last_call_at is not None
+                and now - self.last_call_at >= PROBE_INTERVAL
+            )
+            if not probe_due and now - self.observed_at < QUOTA_DAY:
+                raise BudgetExhausted(
+                    f"holding provider calls: {self.hits_today}/{self.hits_limit} used, "
+                    f"{HARD_FLOOR} kept for reset probes"
+                )
+        self.last_call_at = now
 
     @property
     def remaining(self) -> int:
@@ -160,6 +218,11 @@ class LiveBudget:
         remaining_balls = max(0, NOMINAL_BALLS.get(format_, 120) * 2 - balls_bowled)
         seconds_remaining = remaining_balls * 30.0
         return int(seconds_remaining / max(interval_seconds, 1.0))
+
+    def affords(self, calls: int) -> bool:
+        """Can `calls` more be spent and still leave RESERVE_CALLS? False
+        while the quota is unknown (no response seen yet)."""
+        return self.observed_at is not None and self.remaining - RESERVE_CALLS >= calls
 
     def require_affordable(self, format_: str, balls_bowled: int, interval_seconds: float) -> None:
         cost = self.estimated_cost(format_, balls_bowled, interval_seconds)
@@ -247,6 +310,15 @@ def _batting_team(label: str | None) -> str | None:
     return match.group("team").strip() if match else None
 
 
+def _format_of(raw: dict) -> str | None:
+    """The match name's own format when it states one (internationals do:
+    "2nd T20I", "3rd ODI"), else matchType."""
+    named = _NAMED_FORMAT_RE.search(raw.get("name") or "")
+    if named:
+        return "T20" if named.group(1).upper() == "T20I" else "ODI"
+    return FORMAT_BY_MATCH_TYPE.get((raw.get("matchType") or "").lower())
+
+
 def parse_match(raw: dict, observed_at: datetime | None = None) -> MatchSnapshot:
     status = raw.get("status") or ""
     reduced = _REDUCED_OVERS_RE.search(status)
@@ -264,8 +336,9 @@ def parse_match(raw: dict, observed_at: datetime | None = None) -> MatchSnapshot
         provider_id=raw["id"],
         name=raw.get("name") or "",
         # Unknown matchType is real: some rows in the live `matches` feed
-        # omit it entirely (hit during the spike).
-        format=FORMAT_BY_MATCH_TYPE.get((raw.get("matchType") or "").lower()),
+        # omit it entirely (hit during the spike). A mis-typed one is real
+        # too - see _format_of.
+        format=_format_of(raw),
         status=status,
         venue=raw.get("venue") or "",
         teams=tuple(raw.get("teams") or ()),
@@ -308,6 +381,27 @@ def scheduled_balls(snapshot: MatchSnapshot) -> tuple[int, bool]:
     return nominal, looks_reduced
 
 
+def projected_calls(format_: str, snapshot: MatchSnapshot | None = None) -> int:
+    """Upper bound on the calls still needed to finish a match, from where
+    it stands. Before the chase the innings-1 share scales with the balls
+    left in it; in the chase only the chase share remains."""
+    to_chase, chase = CALLS_TO_FINISH[format_]
+    nominal = NOMINAL_BALLS[format_]
+    if snapshot is None or not snapshot.innings:
+        return to_chase + chase
+    if len(snapshot.innings) == 1:
+        left = max(0.0, 1 - snapshot.innings[0].balls / nominal)
+        return int(to_chase * left + 0.999) + chase
+    left = max(0.0, 1 - snapshot.innings[1].balls / nominal)
+    return int(chase * left + 0.999)
+
+
+def _innings_one_over(snapshot: MatchSnapshot) -> bool:
+    first = snapshot.innings[0]
+    balls, _ = scheduled_balls(snapshot)
+    return first.wickets >= 10 or first.balls >= balls
+
+
 # --- Decision 4: the validation gate -----------------------------------------
 
 
@@ -340,7 +434,17 @@ def validate_transition(prev: MatchSnapshot | None, nxt: MatchSnapshot) -> tuple
             # a negative delivery.
             return TransitionVerdict.CORRECTION, f"innings {index + 1} score revised down"
 
-    if nxt.ball_count == prev.ball_count and len(nxt.innings) == len(prev.innings):
+    # Runs and wickets too, not just balls: a wide or no-ball scores without
+    # a legal ball, and calling it "no change" replaced the baseline and
+    # dropped its runs from the stream for the rest of the match (found by
+    # the snapshot replay, session 3).
+    if (
+        len(nxt.innings) == len(prev.innings)
+        and nxt.ball_count == prev.ball_count
+        and all(
+            (a.runs, a.wickets) == (b.runs, b.wickets) for a, b in zip(prev.innings, nxt.innings)
+        )
+    ):
         return TransitionVerdict.NO_CHANGE, "no new balls"
     return TransitionVerdict.ACCEPT, "ok"
 
@@ -474,6 +578,17 @@ def reconstruct(prev: MatchSnapshot | None, nxt: MatchSnapshot) -> list[Delivery
 # --- The adapter -------------------------------------------------------------
 
 
+# "West Indies Women", "Womens Big Bash League", "India U19", "England
+# Under-19s". Case-insensitive.
+_WOMEN_OR_AGE_RE = re.compile(r"\bwomen'?s?\b|\bu-?\s?\d{2}s?\b|\bunder[- ]?\d{2}s?\b", re.IGNORECASE)
+# "India A": case-sensitive, so a name merely ending in "a" is untouched.
+_A_SIDE_RE = re.compile(r"\sA$")
+
+
+def not_mens_senior(name: str) -> bool:
+    return bool(_WOMEN_OR_AGE_RE.search(name) or _A_SIDE_RE.search(name.strip()))
+
+
 class CricketDataClient:
     """A LiveClient over CricketData. Passes the same conformance suite as
     ReplayClient and _StaticLiveClient, unmodified.
@@ -498,16 +613,36 @@ class CricketDataClient:
         self._provider_ids: dict[int, str] = {}
         # Provider ids last listed as in progress - see list_live_matches.
         self._live_seen: set[str] = set()
+        # Snapshots list_live_matches fetched and poll has not yet consumed,
+        # by provider id - one currentMatches body serves the whole iteration.
+        self._fresh: dict[str, MatchSnapshot] = {}
+        # Provider ids the worker has picked (session 3). None tracks every
+        # started match, which is how the adapter behaved before the pick.
+        self.subscribed: set[str] | None = None
         self._rejections: list[tuple[str, str]] = []
 
     # -- provider plumbing --
 
     def _call(self, endpoint: str, params: dict[str, str]) -> dict:
+        self.budget.before_call()
         body = self._transport.get(endpoint, params)
         self.budget.observe(body)
         if body.get("status") != "success":
             raise CricketDataError(f"{endpoint} failed: {body.get('reason')}")
         return body
+
+    def list_fixtures(self) -> list[dict]:
+        """`cricScore` rows: upcoming, live and just-finished matches, one
+        call. The only endpoint that lists fixtures before they start
+        (`currentMatches` lists started matches only; checked 2026-09-28)."""
+        return self._call("cricScore", {}).get("data") or []
+
+    def snapshot_of(self, provider_id: str) -> MatchSnapshot | None:
+        """The last accepted snapshot of a tracked match, by provider id."""
+        for match_id, pid in self._provider_ids.items():
+            if pid == provider_id:
+                return self._snapshots.get(match_id)
+        return None
 
     def _fetch_snapshots(self) -> list[MatchSnapshot]:
         body = self._call("currentMatches", {"offset": "0"})
@@ -517,6 +652,11 @@ class CricketDataClient:
     # -- entity resolution --
 
     def _resolve_team(self, name: str) -> int:
+        if not_mens_senior(name):
+            # Before the resolver, which would score "West Indies Women" 100
+            # against "West Indies" and write a permanent alias to the men's
+            # side. The model and corpus are men's senior only.
+            raise UnsupportedMatch(f"team {name!r} is not a men's senior side - refusing to track")
         result = resolve_team(self._conn, SOURCE, name, source_id=None, allow_create=False)
         if result.entity_id is None:
             raise UnsupportedMatch(
@@ -603,8 +743,12 @@ class CricketDataClient:
 
     def list_live_matches(self) -> list[MatchSummary]:
         summaries: list[MatchSummary] = []
-        for snapshot in self._fetch_snapshots():
+        snapshots = self._fetch_snapshots()
+        self._fresh = {snapshot.provider_id: snapshot for snapshot in snapshots}
+        for snapshot in snapshots:
             if not snapshot.started:
+                continue
+            if self.subscribed is not None and snapshot.provider_id not in self.subscribed:
                 continue
             # An ended match is returned ONCE more if this client was tracking
             # it, so the loop polls its final snapshot (the last ball) and
@@ -750,7 +894,13 @@ class CricketDataClient:
         Returns only the newly reconstructed deliveries."""
         provider_id = self._provider_ids.get(match_id)
         before = len(self._deliveries.get(match_id, []))
-        for snapshot in self._fetch_snapshots():
+        # The body list_live_matches just fetched, when there is one: fetching
+        # again per match made an iteration cost 1+N calls, so a tracked
+        # chase cost 2 every 15s. A caller that polls without listing (the
+        # latency harness) still gets a fresh fetch.
+        fresh = self._fresh.pop(provider_id, None)
+        snapshots = [fresh] if fresh is not None else self._fetch_snapshots()
+        for snapshot in snapshots:
             if snapshot.provider_id == provider_id:
                 self._ingest(match_id, snapshot)
                 break
@@ -761,4 +911,16 @@ class CricketDataClient:
         stretch further as the daily quota runs down."""
         snapshot = self._snapshots.get(match_id)
         between_overs = bool(snapshot and snapshot.innings and snapshot.innings[-1].balls % 6 == 0)
-        return self.budget.interval(between_overs)
+        chase_cadence = self.budget.interval(between_overs)
+        if not snapshot or not snapshot.innings or snapshot.ended or snapshot.format is None:
+            return chase_cadence
+        if len(snapshot.innings) == 1:
+            # Innings 1 is sparse; near its end, and through the break, it
+            # tightens so the target and the chase's first balls are caught.
+            first = snapshot.innings[0]
+            balls, _ = scheduled_balls(snapshot)
+            near_end = first.balls >= balls - NEAR_END_BALLS or first.wickets >= NEAR_END_WICKETS
+            if _innings_one_over(snapshot) or near_end:
+                return max(chase_cadence, INTERVAL_BREAK)
+            return max(chase_cadence, INTERVAL_SPARSE)
+        return chase_cadence

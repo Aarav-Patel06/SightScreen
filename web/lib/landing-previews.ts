@@ -20,7 +20,7 @@
 
 import { toMarks, type Mark } from "./ball-strip";
 import { loadModelVersions } from "./load-model-versions";
-import { oneVersion } from "./model-version";
+import { oneSource, oneVersion } from "./model-version";
 import { parsePrediction } from "./prediction";
 import { supabaseServer } from "./supabase-server";
 
@@ -114,7 +114,7 @@ async function loadPreviewMatches(): Promise<PreviewMatch[] | null> {
     ...shown.map((match) =>
       supabase
         .from("predictions")
-        .select("prediction_id, created_at, model_version, payload, match_id")
+        .select("prediction_id, created_at, model_version, payload, match_id, source")
         .eq("match_id", match.matchId)
         .eq("prediction_type", "win_prob")
         .not("innings", "is", null)
@@ -125,8 +125,8 @@ async function loadPreviewMatches(): Promise<PreviewMatch[] | null> {
   const out: PreviewMatch[] = shown.map((match, i) => {
     const { data, error } = strips[i];
     if (error) console.warn(`[previews] strip unavailable for ${match.matchId}: ${describe(error)}`);
-    // One model version per match (lib/model-version.ts).
-    const parsed = oneVersion(data ?? [], versions)
+    // One model version per match, then one source (lib/model-version.ts).
+    const parsed = oneSource(oneVersion(data ?? [], versions))
       .map((row) => parsePrediction(row as never))
       .filter((p) => p !== null);
     return { ...match, marks: parsed.length > 1 ? toMarks(parsed) : null };

@@ -56,6 +56,21 @@ Sessions 1 and 2 of the "daily Cricsheet + front page" feature are shipped (HEAD
 | **Leak canaries** | Committed record `api/data/canary_results.json`, re-run at the end of every catch-up; CI's `canary-freshness` fails after 14 days (§9.1). |
 | **/ask** | Beta. It reaches the model, but production has no corpus (below), so it offers no example questions and says so in one line. |
 
+### Session 3, part 1 (2026-09-28): the worker picks its own match
+
+| Piece | Where | State |
+|---|---|---|
+| **Fixture check** | `live_loop.Worker`, `Subscriptions`; `CricketDataClient.list_fixtures` (`cricScore`) | Hourly plus at start: 24 calls/day idle, replacing the 600 s `currentMatches` poll (144/day). Checked against real responses 2026-09-28: `cricScore` is the only endpoint listing upcoming fixtures, and its ids equal `series_info`'s. Each change of pick writes a `pipeline_runs` row, `worker_pick`, with what was picked and refused and the provider's quota figure. |
+| **Ranking** | `ingest/match_pick.py` `rank_candidates` | Men's Full Member internationals, then other men's internationals, then major leagues (IPL, BBL, PSL, CPL, SA20, ILT20, MLC, BPL, LPL). The latest start wins a tie. **Women's, age-group and A sides are never picked** (owner, 2026-09-28: the corpus and model are men's senior only). The series is checked before any name is resolved, so county sides are never queued. |
+| **Quota** | `ingest/cricketdata.py` `LiveBudget`, `CALLS_TO_FINISH`, `RESERVE_CALLS` | Read from each response's `info.hitsToday`, never counted; unknown until the first response. Budgets: T20 450 calls, ODI 1,050, with 200 held back. At most two subscriptions, and a second only if both fit (ODI + T20 yes, two ODIs no). A started match is never dropped. The last 10 calls are never spent by polling: one probe per 3 h looks for the provider's daily reset (evidence says 00:00 IST, unconfirmed), so the worker's own calls cannot reach the limit. |
+| **Cadence** | `CricketDataClient.next_interval` | 300 s before the start and through innings 1; 60 s in its last three overs, with 8 down, and through the break; the chase 15 s in play and 45 s between overs. One call per iteration (it was 1 + N). |
+| **Late join** | `LivePredictor.observe` | The catch-up span goes through the builder unscored, so the chase is scored from the exact state at the join (it started from 0/0 before). The gap is the first live row's `balls_bowled > 0`. |
+| **Fixes found on the way** | | "India" and every other one-word national side never resolved from CricketData (the two-token cap), so the worker refused India v West Indies on 2026-09-27; an identical team name is now exempt. "West Indies Women" resolved to the men's side; refused at the adapter now. The provider types T20Is as `odi`, so the format comes from the match name. A wide caught alone by a poll was called "no change" and its run lost for the rest of the chase (found by the snapshot replay). |
+| **Snapshot replay** | `ingest/snapshot_replay.py`, `tests/serving/test_snapshot_replay.py` | England v India, 3rd ODI (Cricsheet 1496581), replayed as CricketData responses through the real `Worker.step` on a fake clock: 305 chase predictions and 704 calls against the ODI budget of 1,050. Five sabotaged workers each fail it: break missed, batting side backwards, never complete, late join from 0/0, overspending. |
+| **Web** | `web/lib/model-version.ts` `oneSource` | Within a match's version, the backfill rows are drawn if any exist, else the live rows, on the match page, the hero, `/matches` and the previews. Ready for the merge. |
+
+**Still to do (part 2, after the first live match):** the predictions key gains `source`, and the daily job's skip-if-live becomes the merge (`live_counterpart`, `resolve_live`), in that order: the migration first, then the code. **Skip-if-live stays until then.**
+
 ### The cross-source alias gap — RESOLVED 2026-09-27
 
 Alias rows are created by three processes, which now allocate from **three bands** that cannot overlap. This extends the entity band (`db/defaults.py`):

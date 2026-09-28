@@ -75,6 +75,29 @@ export function oneVersionPerMatch<T extends VersionedRow & { match_id: number }
   return rows.filter((row) => row.model_version === chosen.get(row.match_id));
 }
 
+interface SourcedRow {
+  source?: string | null;
+}
+
+/**
+ * One source within a match's version (session 3). Once the daily Cricsheet
+ * job merges a match the live worker predicted, the match holds the live
+ * chase and the complete Cricsheet version under the SAME model version. The
+ * Cricsheet version (source 'backfill') is shown: complete and exact. The
+ * live rows are the live cohort for /accuracy and are never drawn beside it.
+ * Apply after `oneVersion`.
+ */
+export function oneSource<T extends SourcedRow>(rows: readonly T[]): T[] {
+  const backfill = rows.filter((row) => row.source === "backfill");
+  return backfill.length > 0 ? backfill : [...rows];
+}
+
+/** `oneSource` for rows from many matches, each decided on its own. Order is kept. */
+export function oneSourcePerMatch<T extends SourcedRow & { match_id: number }>(rows: readonly T[]): T[] {
+  const hasBackfill = new Set(rows.filter((row) => row.source === "backfill").map((row) => row.match_id));
+  return rows.filter((row) => !hasBackfill.has(row.match_id) || row.source === "backfill");
+}
+
 /**
  * Does a row belong on a page showing `shown`? The live match page's stream
  * and resync use this to keep to the version the server chose; `null` means
