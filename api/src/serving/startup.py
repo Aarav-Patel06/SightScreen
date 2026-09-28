@@ -50,11 +50,22 @@ def supabase_url() -> str:
     return url
 
 
+def git_sha() -> str:
+    """The commit Railway built this process from, or "unknown".
+
+    Railway sets RAILWAY_GIT_COMMIT_SHA on GitHub-sourced deploys. Reported
+    because in September 2026 the services lost their GitHub connection for
+    seven days, no push deployed, and nothing a process said about itself
+    showed it (scripts/check-deployed.mjs compares this with main)."""
+    return os.environ.get("RAILWAY_GIT_COMMIT_SHA", "").strip() or "unknown"
+
+
 def banner(role: str, log=print) -> dict:
     """Report what this process actually resolved, not what it was told."""
     endpoint = resolved_endpoint(supabase_url())
     facts = {
         "service_role": role,
+        "git_sha": git_sha(),
         "on_railway": running_on_railway(),
         "db_host": f"{endpoint['host']}:{endpoint['port']}",
         # Parsed, not assumed. config.py rejects a non-pooler host outright,
