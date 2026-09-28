@@ -628,3 +628,44 @@ def test_a_match_whose_raw_json_cannot_be_kept_is_not_ingested(
             (PARITY_CRICSHEET_ID,),
         ).fetchone()
     assert written == (0, 0)
+
+
+# --- 6. Shadow ------------------------------------------------------------------
+#
+# SPEC.md section 11: P (winprob2-20260927) runs in shadow before any switch -
+# the daily job writes its predictions alongside the served model's for every
+# new match, and the web keeps showing the served one (one version per match).
+
+
+def test_a_shadow_version_is_written_alongside_the_served_one_bit_for_bit(
+    local_url, stage_url, fake_supabase_url, parity_file
+):
+    from ingest.daily_cricsheet import run_daily
+    from ingest.replay_log import load_balls, score_match
+    from models.registry import load_model_version
+
+    served, shadow = SERVED_VERSIONS
+    with psycopg.connect(local_url) as conn:
+        arts = {v: {"artifact": load_model_version(conn, v), "model_version": v} for v in (served, shadow)}
+        balls = load_balls(conn, PARITY_MATCH_ID)
+        expected = {v: {(b["innings"], b["over_num"], b["ball_in_over"]): b["p"]
+                        for b in score_match(arts[v], conn, PARITY_MATCH_ID, balls)} for v in arts}
+
+    _seed_fake_supabase(local_url, fake_supabase_url, "current")
+    with psycopg.connect(fake_supabase_url, autocommit=True) as fake:
+        fake.execute("UPDATE model_versions SET is_active = (model_version = %s), is_shadow = (model_version = %s)",
+                     (served, shadow))
+    _truncate_all(stage_url)
+    with psycopg.connect(fake_supabase_url) as supabase_conn:
+        report = run_daily(stage_url, supabase_conn, [parity_file], arts[served], served,
+                           shadows=[(shadow, arts[shadow])])
+    assert report["shadow_predictions_written"] == {shadow: len(expected[shadow])}
+
+    with psycopg.connect(fake_supabase_url) as conn:
+        rows = conn.execute(
+            "SELECT p.model_version, p.innings, p.over_num, p.ball_in_over, (p.payload->>'p')::float8, p.source "
+            "FROM predictions p JOIN matches m USING (match_id) WHERE m.external_ids->>'cricsheet' = %s",
+            (PARITY_CRICSHEET_ID,)).fetchall()
+    got = {v: {(i, o, b): p for ver, i, o, b, p, _s in rows if ver == v} for v in (served, shadow)}
+    assert got == expected, "a version's rows differ from its local replay"
+    assert {s for *_rest, s in rows} == {"backfill"}

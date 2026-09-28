@@ -457,9 +457,15 @@ def run_daily(
     model_version: str,
     since: date | None = None,
     raw_store=None,
+    shadows=(),
 ) -> dict:
     """`raw_store` keeps each ingested match's raw JSON (ingest/raw_store.py);
-    the CLI always passes one. Tests pass a recording stand-in."""
+    the CLI always passes one. Tests pass a recording stand-in.
+
+    `shadows` is [(model_version, artifact)] for versions in shadow (SPEC.md
+    section 11): each new match is also scored by each, on the same balls and
+    as-of features, and written under its own version. The web shows one
+    version per match - the active one - so shadow rows are never displayed."""
     started = time.monotonic()
     report: dict = {"started_at": datetime.now(timezone.utc).isoformat(), "skipped": []}
     state = supabase_state(supabase_conn)
@@ -551,6 +557,7 @@ def run_daily(
 
         # Score and write.
         by_format, rows_written, scored_ids = Counter(), 0, []
+        shadow_written = {version: 0 for version, _art in shadows}
         matches_written = 0
         for cand in eligible:
             match_id = cand["match_id"]
@@ -561,6 +568,9 @@ def run_daily(
                 assert_in_test_split(match_id, balls[0]["match_date"])
                 scored = score_match(artifact, stage, match_id, balls)
                 rows_written += insert_predictions(supabase_conn, match_id, model_version, scored)
+                for version, shadow_artifact in shadows:
+                    shadow_written[version] += insert_predictions(
+                        supabase_conn, match_id, version, score_match(shadow_artifact, stage, match_id, balls))
                 scored_ids.append(match_id)
             else:
                 supabase_conn.commit()
@@ -587,6 +597,7 @@ def run_daily(
         ingested_by_format=dict(by_format),
         matches_written=matches_written,
         predictions_written=rows_written,
+        shadow_predictions_written=shadow_written,
         ledger_rows_written=ledger_written,
         summary_rows_pushed=summaries_pushed,
         elapsed_seconds=round(time.monotonic() - started, 1),
@@ -674,6 +685,7 @@ PUBLIC_KEYS = (
     "skipped_by_reason",
     "matches_written",
     "predictions_written",
+    "shadow_predictions_written",
     "ledger_rows_written",
     "raw_files_stored",
     "summary_rows_pushed",
@@ -748,6 +760,21 @@ def record_run(started: datetime, status: str, summary: dict, error_class: str |
         log(f"could not record the run in pipeline_runs: {type(exc).__name__}")
 
 
+def load_shadows(supabase_conn, cache_dir: Path) -> list[tuple[str, dict]]:
+    """Every version marked is_shadow (and not active) on Supabase, with its
+    published artifact fetched and digest-checked - the same bytes the
+    registry points at, as for the active model."""
+    import joblib
+
+    from models.artifact import ensure_artifact
+
+    rows = supabase_conn.execute(
+        "SELECT model_version, artifact_path FROM model_versions WHERE is_shadow AND NOT is_active "
+        "ORDER BY model_version").fetchall()
+    return [(version, {"artifact": joblib.load(ensure_artifact(path, cache_dir, filename=f"{version}.pkl")),
+                       "model_version": version}) for version, path in rows]
+
+
 def _main(args) -> dict:
     supabase_url = require_env("SUPABASE_SESSION_POOLER_URL")
     with tempfile.TemporaryDirectory() as tmp:
@@ -759,10 +786,13 @@ def _main(args) -> dict:
             version, _path, _notes = active_model_row(supabase_conn)
             artifact = resolve_pinned_artifact(supabase_conn, version, Path(env_value("MODEL_CACHE_DIR", str(CACHE_DIR))))
             log(f"model {version}")
+            shadows = load_shadows(supabase_conn, Path(env_value("MODEL_CACHE_DIR", str(CACHE_DIR))))
+            log(f"shadow: {[v for v, _a in shadows] or 'none'}")
             store = RawStore()
             store.ensure_bucket()
             report = run_daily(
-                args.stage_url, supabase_conn, paths, artifact, version, args.since, raw_store=store
+                args.stage_url, supabase_conn, paths, artifact, version, args.since, raw_store=store,
+                shadows=shadows,
             )
 
     summary = public_summary(report)
