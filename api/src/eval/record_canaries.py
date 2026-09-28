@@ -61,7 +61,8 @@ def run() -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         junit = Path(tmp) / "canaries.xml"
         proc = subprocess.run(
-            [sys.executable, "-m", "pytest", *CANARIES.values(), "-q", "-s", "-p", "no:cacheprovider",
+            [sys.executable, "-m", "pytest", *(str(REPO_ROOT / node) for node in CANARIES.values()),
+             "-q", "-s", "-p", "no:cacheprovider",
              f"--junitxml={junit}"],
             capture_output=True, text=True, cwd=REPO_ROOT / "api",
         )
