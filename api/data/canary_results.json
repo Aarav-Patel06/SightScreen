@@ -1,0 +1,28 @@
+{
+ "ran_at": "2026-09-28T02:13:24+00:00",
+ "git_sha": "d3023b6a0653159ecebf4b9371ec7cb35e38e51e",
+ "git_dirty": false,
+ "corpus": {
+  "matches_in_match_states": 13254,
+  "newest_match_date": "2026-09-17"
+ },
+ "results": {
+  "splits_leak": {
+   "test": "tests/eval/test_splits.py::test_a_ball_level_leak_scores_implausibly_well",
+   "status": "passed",
+   "gap": 0.0268
+  },
+  "splits_no_leak_control": {
+   "test": "tests/eval/test_splits.py::test_the_canary_stays_quiet_without_a_leak",
+   "status": "passed",
+   "gap": -0.0001
+  },
+  "lightgbm_shuffled_split": {
+   "test": "tests/models/test_win_prob_2nd.py::test_canary_shows_a_loud_gap_for_lightgbm",
+   "status": "passed",
+   "gap": 0.1315
+  }
+ },
+ "passed": true,
+ "fresh_days": 14
+}
