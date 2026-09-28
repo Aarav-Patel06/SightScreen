@@ -15,8 +15,6 @@ import numpy as np
 import psycopg
 import pytest
 from dotenv import dotenv_values
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
 
 from eval.metrics import brier_score
 from eval.splits import _TRAIN_END, _VAL_END, _classify_date, get_second_innings_split, NotInTestSplit, TEST_SPLIT_START, assert_in_test_split
@@ -146,59 +144,102 @@ def test_match_states_never_holds_a_super_over_row(conn):
     assert count == 0
 
 
-# --- Decision 2, test 4: the shuffled-split canary -------------------------
+# --- Decision 2, test 4: the leak canary ----------------------------------
+#
+# Rewritten 2026-09-27. The first version fitted a 3-feature logistic
+# regression on the train split and scored the test split ("honest"), then
+# refitted on a random 80% of train+test rows and scored the other 20%
+# ("shuffled"), asserting shuffled < honest. It never measured leakage:
+#
+#   - a 3-feature linear model cannot memorise a match, so it has nothing to
+#     gain from a leak (docs/phase1-session1-baselines.md said so at the time:
+#     gap 0.0005, "uninformative for this baseline");
+#   - the two Briers were over DIFFERENT rows - the test split vs a sample
+#     that is 83-98% train-period rows - so the sign only said whether recent
+#     chases were easier than old ones for that model.
+#
+# As the daily ingest added 2025-26 chases, the test split got easier for the
+# logistic model (0.1406 on the first 241 test matches, 0.1317 on all 2,287)
+# while the train-period rows stayed at 0.1337, and the sign flipped. Nothing
+# leaked; the instrument could not have told us if something had.
+#
+# This version compares two models on the SAME rows, both fitted on the train
+# split plus an equal number of validation-period rows - so period drift
+# cancels - with a model that can exploit a leak (LightGBM, with match_date as
+# the kind of match-constant fingerprint every real model has: target, Elo,
+# venue). The only difference between the arms is whether the extra rows come
+# from the SAME matches as the scored rows (a ball-level split, the leak
+# splits.py prevents) or from different matches. It uses validation matches,
+# not test ones, so it never scores the test split.
+
+LEAK_GAP_THRESHOLD = 0.01  # measured 2026-09-27: leaky +0.027 to +0.034 over three seeds; no-leak |gap| < 0.004
+_CANARY_PARAMS = {
+    "objective": "binary", "learning_rate": 0.1, "num_leaves": 63, "min_data_in_leaf": 20,
+    "verbosity": -1, "seed": 0, "deterministic": True, "force_row_wise": True,
+}
 
 
-def _fit_predict_brier(train_ds, eval_ds) -> float:
-    features = ["required_run_rate", "wickets_in_hand", "balls_remaining"]
-    X_train = np.column_stack(
-        [train_ds.required_run_rate, train_ds.wickets_in_hand, train_ds.balls_remaining]
+def _canary_X(ds, idx=slice(None)) -> np.ndarray:
+    return np.column_stack([
+        ds.required_run_rate[idx], ds.wickets_in_hand[idx], ds.balls_remaining[idx], ds.runs_required[idx],
+        ds.match_date[idx].astype("datetime64[D]").astype(np.int64),
+    ]).astype(np.float64)
+
+
+def _canary_brier(train_ds, extra_ds, extra_idx, eval_idx) -> float:
+    import lightgbm as lgb
+
+    X = np.vstack([_canary_X(train_ds), _canary_X(extra_ds, extra_idx)])
+    y = np.concatenate([train_ds.label, extra_ds.label[extra_idx]])
+    booster = lgb.train(_CANARY_PARAMS, lgb.Dataset(X, y), num_boost_round=300)
+    return brier_score(extra_ds.label[eval_idx], booster.predict(_canary_X(extra_ds, eval_idx)))
+
+
+def _leak_gap(datasets, *, leaky: bool, seed: int = 0) -> tuple[float, float]:
+    """(reference Brier, arm Brier) on the same scored rows.
+
+    Validation matches are halved into A and B. Half of A's rows are scored.
+    The reference model sees train + rows from B (different matches). The arm
+    sees train + an equal number of rows from A's other half (the same
+    matches - a leak) if `leaky`, else a disjoint set of B rows (no leak)."""
+    train_ds, val_ds = datasets["train"], datasets["val"]
+    rng = np.random.default_rng(seed)
+    match_ids = rng.permutation(np.unique(val_ds.match_id))
+    in_a = np.isin(val_ds.match_id, match_ids[: len(match_ids) // 2])
+    rows_a, rows_b = np.flatnonzero(in_a), np.flatnonzero(~in_a)
+    rng.shuffle(rows_a)
+    rng.shuffle(rows_b)
+    scored, seen_a = rows_a[: len(rows_a) // 2], rows_a[len(rows_a) // 2:]
+    # Every arm sees the same number of extra rows; B must supply two disjoint sets.
+    n = min(len(seen_a), len(rows_b) // 2)
+    seen_a = seen_a[:n]
+    reference_rows, other_b_rows = rows_b[:n], rows_b[n: 2 * n]
+    reference = _canary_brier(train_ds, val_ds, reference_rows, scored)
+    arm = _canary_brier(train_ds, val_ds, seen_a if leaky else other_b_rows, scored)
+    return reference, arm
+
+
+def test_a_ball_level_leak_scores_implausibly_well(datasets):
+    """The canary: a model that has seen other balls of the scored matches
+    must beat one that has seen the same amount of same-period data from
+    other matches, by a clear margin. If it doesn't, the detector is broken -
+    investigate before trusting any other result."""
+    reference, leaky = _leak_gap(datasets, leaky=True)
+    print(f"\nleak canary: other matches {reference:.4f}, same matches {leaky:.4f}, gap {reference - leaky:+.4f}")
+    assert reference - leaky >= LEAK_GAP_THRESHOLD, (
+        f"leak canary gap only {reference - leaky:+.4f} (threshold {LEAK_GAP_THRESHOLD}) - the detector "
+        "cannot see a ball-level leak; investigate before trusting any evaluation"
     )
-    X_eval = np.column_stack(
-        [eval_ds.required_run_rate, eval_ds.wickets_in_hand, eval_ds.balls_remaining]
-    )
-    scaler = StandardScaler().fit(X_train)
-    model = LogisticRegression().fit(scaler.transform(X_train), train_ds.label)
-    y_prob = model.predict_proba(scaler.transform(X_eval))[:, 1]
-    return brier_score(eval_ds.label, y_prob)
 
 
-def test_shuffled_ball_level_split_scores_implausibly_well(datasets):
-    """The canary every future model gets checked against: a split that
-    ignores match_id and match_date entirely - drawing "train" and "test"
-    as a random 80/20 partition of the SAME pool, rather than a genuinely
-    held-out future period - must score better than the honest, correctly
-    match/date-disjoint split. If this test ever fails (shuffled scores no
-    better, or worse), something about the honest split stopped being
-    meaningfully harder than a leaking one - worth investigating before
-    trusting any other result in this session.
-    """
-    real_train, real_test = datasets["train"], datasets["test"]
-    real_brier = _fit_predict_brier(real_train, real_test)
-
-    pool_ids = ["delivery_id", "match_id", "match_date", "required_run_rate", "wickets_in_hand",
-                "balls_remaining", "runs_required", "phase", "label"]
-
-    def _concat(a, b):
-        return {name: np.concatenate([getattr(a, name), getattr(b, name)]) for name in pool_ids}
-
-    pooled = _concat(real_train, real_test)
-    n = len(pooled["label"])
-    rng = np.random.default_rng(0)
-    shuffled_idx = rng.permutation(n)
-    cut = int(n * 0.8)
-    train_idx, test_idx = shuffled_idx[:cut], shuffled_idx[cut:]
-
-    from eval.splits import SecondInningsDataset
-
-    shuffled_train = SecondInningsDataset(**{k: v[train_idx] for k, v in pooled.items()})
-    shuffled_test = SecondInningsDataset(**{k: v[test_idx] for k, v in pooled.items()})
-    shuffled_brier = _fit_predict_brier(shuffled_train, shuffled_test)
-
-    print(f"\nhonest test-split Brier: {real_brier:.4f}, shuffled-split Brier: {shuffled_brier:.4f}")
-    assert shuffled_brier < real_brier, (
-        "expected the leaking (shuffled) split to score better than the honest one - "
-        f"got shuffled={shuffled_brier:.4f} vs honest={real_brier:.4f}"
+def test_the_canary_stays_quiet_without_a_leak(datasets):
+    """The negative control, so the canary's pass means something: when the
+    extra rows come from other matches in BOTH arms, the gap must sit well
+    under the threshold."""
+    reference, arm = _leak_gap(datasets, leaky=False)
+    print(f"\nno-leak control: {reference:.4f} vs {arm:.4f}, gap {reference - arm:+.4f}")
+    assert abs(reference - arm) < LEAK_GAP_THRESHOLD, (
+        f"two non-leaking arms differ by {reference - arm:+.4f} - the canary's gap is not measuring a leak"
     )
 
 

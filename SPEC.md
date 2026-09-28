@@ -792,6 +792,15 @@ Test:       2025-01-01 onwards          (touched once, at the end)
 
 All splits are **by match, by date**. A random ball-level split leaks the match outcome into training through other deliveries in the same match and will produce a meaningless ~95% accuracy. `eval/splits.py` is the only place split logic may live; every training script imports from it.
 
+**The leak canaries, and when they last passed.** Both need the local corpus, so **CI skips them**, along with every other corpus test: 110 skipped in CI, listed in `docs/ci-skipped-tests.md`. They run only when someone runs them locally, so the last pass is recorded here and must be updated when they're re-run.
+
+| Canary | What it checks | Last passed | Result |
+|---|---|---|---|
+| `tests/eval/test_splits.py` `test_a_ball_level_leak_scores_implausibly_well` + `test_the_canary_stays_quiet_without_a_leak` | Same scored rows, same-period extra data; a LightGBM that saw other balls of the scored matches vs one that saw other matches. Validation matches only. | **2026-09-27** at `2608a3e` + the rewrite | gap +0.0268 (threshold 0.01); no-leak control −0.0001 |
+| `tests/models/test_win_prob_2nd.py` `test_canary_shows_a_loud_gap_for_lightgbm` | the Phase 1 shuffled-vs-honest construction on the real feature set, 1,200 + 400 chases | **2026-09-27** at `2608a3e` | gap 0.1315 (shuffled ≈ 0.0000: at this scale a leaking model memorises every match) |
+
+The first `test_splits.py` canary (3-feature logistic, honest vs shuffled Briers over *different* rows) was retired on 2026-09-27. It had started failing, and the cause was not a leak. That model can't exploit a leak, and its two Briers compared test-period rows with a sample that was 83-98% train-period rows. As the daily ingest added 2025-26 chases the test period got easier for it (0.1406 → 0.1317) and the sign flipped: it first failed with the test split cut at 2026-03-31, and failed again from 2026-08-25 on. The same result at every commit that touched its code, `fda0a1f` to `2608a3e`, confirmed the data as the cause. At full scale on train → validation, the LightGBM construction gives honest 0.1269 against shuffled 0.0285, matching Phase 1's 0.1230 / 0.0313. Nothing in the pipeline leaks.
+
 ### 9.2 Required baselines
 
 You must report against both:
