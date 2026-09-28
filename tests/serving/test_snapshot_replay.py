@@ -49,7 +49,12 @@ def seeded(conn, monkeypatch):
         )
     # The scorer only: every other step is the worker's own.
     monkeypatch.setattr(live_loop, "predict_win_prob", lambda _artifact, row, _as_of: 0.5)
-    return conn
+    yield conn
+    # model_versions is not in conftest's reset list, and this row is ACTIVE:
+    # left behind, it would be the "active model" every later test finds.
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM predictions WHERE model_version = %s", (VERSION,))
+        cur.execute("DELETE FROM model_versions WHERE model_version = %s", (VERSION,))
 
 
 def _replay(conn, **kwargs):

@@ -109,6 +109,12 @@ def conn(test_db_url):
     with connection.cursor() as cur:
         cur.execute(f"TRUNCATE {', '.join(TABLES_TO_RESET)} RESTART IDENTITY CASCADE")
     yield connection
+    # And after, not only before. In CI this database IS LOCAL_DATABASE_URL,
+    # and the corpus tests skip by finding `matches` empty: a live-worker row
+    # left by the last conn test made test_daily_cricsheet run against it and
+    # fail (session 3, CI run 36494984096).
+    with connection.cursor() as cur:
+        cur.execute(f"TRUNCATE {', '.join(TABLES_TO_RESET)} RESTART IDENTITY CASCADE")
     connection.close()
 
 
