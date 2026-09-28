@@ -39,3 +39,13 @@ records when they last passed.
 | 1 | `tests/ingest/test_live_client.py` | `LOCAL_DATABASE_URL` read from `api/.env` only |
 | 1 | `tests/serving/test_artifact.py` | the artifact `.pkl` is not in a checkout |
 | 1 | `tests/test_shared_secret_parity.py` | `AGENT_TOOL_SHARED_SECRET` not set |
+
+## Since 2026-09-28
+
+- **New, also skipped in CI:** `tests/models/test_train_serve_identity.py`
+  (3 tests, corpus). The daily parity suite now runs once per served version,
+  so a local run is about 25 tests where it was 14.
+- **What now runs where CI cannot:**
+  - the leak canaries' committed record (`canary-freshness` job, every push);
+  - golden parity for 8429 (the daily Cricsheet Action, every night, before
+    the ingest, against real Supabase).
