@@ -32,6 +32,12 @@ function readoutLines(): string[] {
   return Array.from(readout?.querySelectorAll(":scope > span") ?? []).map((s) => s.textContent ?? "");
 }
 
+// 305 key presses, each re-rendering the strip under jsdom: 4.6s for this whole
+// file in CI on 2026-09-27, against Vitest's 5s default per test, and about 8s
+// on the owner's machine, where it timed out. The time is jsdom rendering, not
+// a hang, so the limit is raised for this one test rather than globally.
+const READ_EVERY_BALL_TIMEOUT_MS = 30_000;
+
 describe("the strip on 8429", () => {
   it("captions the biggest swing in percentage points, without the start-of-chase drop", () => {
     render(<BallStrip marks={marks} defaultWidth={1108} battingTeam="India" />);
@@ -61,7 +67,7 @@ describe("the strip on 8429", () => {
       expect(model).toMatch(/^India \d+% to win, (up \d+ pp|down \d+ pp|no change)$/);
     }
     expect(seen.map(([, m]) => m).join("\n")).not.toMatch(/\bpts?\b|points(?! )/);
-  });
+  }, READ_EVERY_BALL_TIMEOUT_MS);
 
   it("names no team when it has none to name", () => {
     render(<BallStrip marks={marks} defaultWidth={1108} />);
