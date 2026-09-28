@@ -365,7 +365,17 @@ conversation, not packaging.** Railway builds it without complaint.
   `tests/db/test_float_boundary.py` will fail the moment the write is added —
   that failure is the reminder, not a nuisance.
 - **Every worker restart re-marks an in-flight match INFERRED**
-  (`cricketdata.py:594-602`), and Railway redeploys on every push.
+  (`cricketdata.py:594-602`), and Railway redeploys on every push that
+  passes CI. *Corrected 2026-09-27:* this said "on every push", and was
+  false for seven days. Both services were still connected to the old
+  `Aarav6000/SightScreen` repository. Railway lost access to it around
+  2026-09-20 ("Could not load branches", auto deploy unavailable), and both
+  services kept running `1503062` while every later push went undeployed.
+  They are now connected to `Aarav-Patel06/SightScreen` (root `api`, branch
+  `main`) with **Wait for CI** on, so a deploy follows a green CI run, not
+  the push. Each process now reports the commit it runs (`git_sha` in
+  `/health` and in the worker's startup log). Whether production matches
+  `main` is a check, not an assumption: see SPEC.md §15, 2026-09-27.
 - **KNOWN TRAIN/SERVE SKEW** awaits the next retrain, which must close it
   deliberately and say so.
 - **A live T20 latency measurement** is still pending from session 2; the
