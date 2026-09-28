@@ -77,3 +77,14 @@ def test_main_is_fetched_before_ancestry_is_judged(monkeypatch):
     monkeypatch.setattr(check, "reported", lambda: {"web": "b" * 40, "api": "b" * 40, "worker": "b" * 40})
     assert check.check_sha("a" * 40, wait_minutes=0) == 0
     assert calls[0][:3] == ["git", "fetch", "--quiet"]
+
+
+def test_the_expected_commit_is_the_newest_ci_pass_that_has_settled():
+    import json as _json
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    runs = [{"headSha": "new", "updatedAt": (now - timedelta(minutes=5)).isoformat()},
+            {"headSha": "settled", "updatedAt": (now - timedelta(minutes=25)).isoformat()},
+            {"headSha": "old", "updatedAt": (now - timedelta(hours=3)).isoformat()}]
+    assert check.settled_ci_commit(20, gh=lambda *a: _json.dumps(runs)) == "settled"

@@ -23,8 +23,15 @@ what was pushed. This does, from outside, and costs nothing: no model call.
               (SPEC.md section 0a). A 200 there means the corpus arrived:
               the check fails so CORPUS_DEFERRED gets turned off deliberately.
 
+    python scripts/check_deployed.py settled --minutes 20   # prints the commit to expect
     python scripts/check_deployed.py sha --expect <sha>
     python scripts/check_deployed.py smoke
+
+The Deployed workflow runs these hourly, never waits, and always succeeds: a
+failure opens a "[ops] Production is behind main" issue (scripts/ops_alert.py)
+instead of failing the run. A failed or pending run is a check suite on main's
+head, and Railway's "Wait for CI" skips deploying a commit with one - the
+first version of this workflow deadlocked with it (SPEC.md section 15).
 """
 
 from __future__ import annotations
@@ -100,6 +107,22 @@ def _at_or_after(expected: str, sha: str) -> bool:
     return subprocess.run(["git", "merge-base", "--is-ancestor", expected, sha], capture_output=True).returncode == 0
 
 
+def settled_ci_commit(minutes: float, gh=None) -> str:
+    """The newest main commit whose push-triggered CI passed at least
+    `minutes` ago - by then Railway (which waits for CI, then builds) and
+    Vercel have had their window, so any service behind it is behind."""
+    from datetime import datetime, timedelta, timezone
+
+    run = gh or (lambda *a: subprocess.run(["gh", *a], capture_output=True, text=True, check=True).stdout)
+    runs = json.loads(run("run", "list", "--workflow", "ci.yml", "--branch", "main", "--event", "push",
+                          "--status", "success", "--json", "headSha,updatedAt", "--limit", "30"))
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+    for r in runs:  # newest first
+        if datetime.fromisoformat(r["updatedAt"].replace("Z", "+00:00")) <= cutoff:
+            return r["headSha"]
+    raise RuntimeError(f"no push CI run on main passed more than {minutes:g} minutes ago")
+
+
 def check_sha(expected: str, wait_minutes: float) -> int:
     deadline = time.monotonic() + wait_minutes * 60
     while True:
@@ -165,7 +188,12 @@ if __name__ == "__main__":
     sub = parser.add_subparsers(dest="command", required=True)
     s = sub.add_parser("sha")
     s.add_argument("--expect", required=True)
-    s.add_argument("--wait-minutes", type=float, default=20)
+    s.add_argument("--wait-minutes", type=float, default=0)
+    t = sub.add_parser("settled")
+    t.add_argument("--minutes", type=float, default=20)
     sub.add_parser("smoke")
     args = parser.parse_args()
+    if args.command == "settled":
+        print(settled_ci_commit(args.minutes))
+        sys.exit(0)
     sys.exit(check_sha(args.expect, args.wait_minutes) if args.command == "sha" else smoke())

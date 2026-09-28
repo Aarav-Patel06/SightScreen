@@ -1,31 +1,33 @@
 name: Deployed
 
-# "Deployed" is checked, not assumed (SPEC.md section 15, 2026-09-27): both
-# Railway services ran week-old code for seven days while every health check
-# was green. After CI passes on main - and hourly, to catch drift - this asks
-# each production service which commit it runs, and fails if any is behind the
-# commit CI passed 20 minutes later. Then it smoke-tests the agent's tool path
-# without calling the model. scripts/check_deployed.py says what each check is.
+# "Deployed" is checked, not assumed (SPEC.md section 15, 2026-09-27), and the
+# check itself never gates a deploy (2026-09-28). Hourly, it asks each
+# production service which commit it runs and compares that with the newest
+# main commit whose push CI passed 20+ minutes ago; then it smoke-tests the
+# agent's tool path without calling the model.
+#
+# It NEVER waits and ALWAYS succeeds. A pending or failed run is a check suite
+# on main's head, and Railway's "Wait for CI" skips deploying a commit that has
+# one - the first version, which waited up to 20 minutes after every CI run,
+# deadlocked with it. A failure opens an "[ops]" issue instead (scripts/ops_alert.py).
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
   schedule:
     - cron: "17 * * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
+  issues: write
 
 jobs:
   deployed:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    concurrency:
-      group: deployed
-      cancel-in-progress: false
+    continue-on-error: true  # backstop: even a broken reporter must not fail the run
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,14 +36,34 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install "psycopg[binary]"
-      - name: Every service runs the commit CI passed
+      - name: Every service runs main (as of 20 minutes ago) or later
+        id: sha
+        continue-on-error: true
         env:
           SUPABASE_SESSION_POOLER_URL: ${{ secrets.SUPABASE_SESSION_POOLER_URL }}
-          EXPECT: ${{ github.event.workflow_run.head_sha || github.sha }}
-        run: python scripts/check_deployed.py sha --expect "$EXPECT" --wait-minutes 20
+        run: |
+          set -o pipefail
+          expect=$(python scripts/check_deployed.py settled --minutes 20)
+          python scripts/check_deployed.py sha --expect "$expect" 2>&1 | tee "$RUNNER_TEMP/sha.txt"
+      - name: Report deployment
+        if: always()
+        run: >-
+          python scripts/ops_alert.py --title "Production is behind main"
+          --failing ${{ steps.sha.outcome == 'failure' }}
+          --details "$(tail -n 3 "$RUNNER_TEMP/sha.txt" 2>/dev/null)"
+          --run-url "$RUN_URL"
       - name: Agent smoke check (no model call)
+        id: smoke
+        continue-on-error: true
         env:
-          # Not a repository secret yet: without it the unauthenticated half
-          # runs, and the job says the rest was skipped.
           AGENT_TOOL_SHARED_SECRET: ${{ secrets.AGENT_TOOL_SHARED_SECRET }}
-        run: python scripts/check_deployed.py smoke
+        run: |
+          set -o pipefail
+          python scripts/check_deployed.py smoke 2>&1 | tee "$RUNNER_TEMP/smoke.txt"
+      - name: Report smoke check
+        if: always()
+        run: >-
+          python scripts/ops_alert.py --title "Agent smoke check is failing"
+          --failing ${{ steps.smoke.outcome == 'failure' }}
+          --details "$(tail -n 3 "$RUNNER_TEMP/smoke.txt" 2>/dev/null)"
+          --run-url "$RUN_URL"

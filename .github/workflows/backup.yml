@@ -29,6 +29,9 @@ on:
 jobs:
   backup:
     runs-on: ubuntu-latest
+    continue-on-error: true  # see the report job below
+    outputs:
+      ok: ${{ steps.done.outputs.ok }}
     steps:
       - uses: actions/checkout@v4
 
@@ -137,3 +140,30 @@ jobs:
       - name: Stop the throwaway database
         if: always()
         run: docker rm -f restore-target || true
+      - name: Every step succeeded
+        id: done
+        run: echo "ok=true" >> "$GITHUB_OUTPUT"
+
+  # Only push-triggered CI may gate a deploy (SPEC.md section 15, 2026-09-28).
+  # This scheduled/dispatched run attaches to main's head as a check suite, and
+  # Railway's "Wait for CI" skips a commit with a failed one - so the work job
+  # is continue-on-error (the run concludes success) and a failure is reported
+  # as an "[ops]" issue instead. The steps themselves still stop at the first
+  # failure: `ok` is set only by the last one.
+  report:
+    needs: backup
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Open or close the ops issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python3 scripts/ops_alert.py --title "Supabase backup is failing"
+          --failing ${{ needs.backup.outputs.ok != 'true' }}
+          --details "A step failed or did not finish; the run has the log."
+          --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
