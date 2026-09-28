@@ -134,7 +134,13 @@ is the only test-split figure this work has used. It is also the opposite
 sign to validation, where the pre-ball prediction is the most optimistic
 one. That difference is itself something the test look will measure.
 
-## Proposed final comparison (NOT RUN; awaiting the owner's confirmation)
+## Final comparison (confirmed by the owner 2026-09-27; NOT RUN)
+
+The leak canary was rewritten on 2026-09-27 and passes again (SPEC.md §9.1),
+and the owner approved the single test look the same day. **The commit
+adding this section is the pre-registered rule**: the test report cites its
+hash. The final stage refuses to run with uncommitted changes in `api/src`.
+There are no re-runs and no adjustments after seeing numbers.
 
 Everything is scored in **one pass** over the current test split: 2,287
 chases, 2025-01-01 to 2026-09-17, as cached on 2026-09-27. This is a larger
@@ -144,28 +150,35 @@ figure will say which set it's from.
 | ID | Configuration | Role |
 |---|---|---|
 | S | served `winprob2-20260910`, as published (14 features, identity) | reference. Its Brier on the current test set is reported beside the original 0.1232, labelled as two different sets. |
-| P | `state_venue_elo_no_partnership`, today's run rate, early-stopped on all of validation, **identity** (the calibration rule's winner above) | the candidate for promotion |
-| A | `a_n6` under the same pipeline as P | the pre-fixed rule's winner, judged by SPEC's run-rate rule |
+| P | `state_venue_elo_no_partnership`, today's run rate, early-stopped on all of validation, **identity** (the calibration rule's winner above) | **the only promotable configuration** |
+| A | `a_n6` under the same pipeline as P | the pre-fixed rule's winner, **descriptive only, cannot be promoted** |
 
-**P vs S (promotion rule, fixed now).** This is the paired, match-clustered
-95% CI of (Brier_S − Brier_P), 2,000 resamples, where negative means P is
-worse. P is promoted, via §8.4 shadow deployment, only if all of these hold:
-1. overall: the CI's lower bound is above −0.0020. That margin is about an
-   eighth of the model's measured gain over the logistic baseline, 0.0149.
-2. final 3 overs: the CI's lower bound is above −0.0020.
-3. first 5 overs: the CI is not entirely below zero.
-4. P beats the three-feature logistic baseline under §9.3's rule.
+**Promotion rule, P vs S** (`PROMOTION_RULE` in
+`eval/run_rate_selection.py`). This is the paired, match-clustered 95% CI of
+(Brier_S − Brier_P), 2,000 resamples, where negative means P is worse. P is
+promoted, via §8.4 shadow deployment, only if all of these hold:
+1. overall: the CI's lower bound is above −0.0020;
+2. final 3 overs: the CI's lower bound is above −0.0020;
+3. first 5 overs: the CI is not entirely below zero;
+4. P beats the three-feature logistic baseline: the paired CI of
+   (Brier_logistic − Brier_P) lies entirely above zero (§9.3).
 
-If any of these fails, S stays and the partnership mismatch stays open.
+**Why a margin, and why 0.0020.** This is a non-inferiority rule, not §8.4's
+"must beat". P's case isn't accuracy. The live feed reconstructs deliveries
+from scorecard snapshots and can't deliver the partnership features
+reliably: 2.66% of reconstructed states carry a wrong `partnership_balls`
+at the 15 s poll (Phase 2 session 2). S is fed them anyway. A model that
+uses only what the feed can supply is worth a bounded cost. 0.0020 is about
+18% of the served model's measured edge over the logistic baseline, 0.0110
+(0.1342 − 0.1232 on Phase 1's test split). So P may give up at most about a
+fifth of what the model adds over the baseline, and condition 4 requires it
+still beats the baseline outright.
+
 P vs S is reported as a **combined effect**: removing the partnership
 features, closing KNOWN_SKEW, and a fresh retrain. It isn't attributed to
-any one of them.
-
-**A (SPEC's run-rate rule, unchanged).** A is promotable only if its overall
-paired CI against S shows no regression **and** its first-5-overs CI
-excludes zero in A's favour. A vs P isolates the run-rate change alone and
-is reported whatever the outcome. Selection predicts that A fails. If it
-passes anyway, that is reported, not explained away.
+any one of them. A vs P isolates the run-rate change alone. Selection
+predicts A is no better; that's reported whatever the outcome, and it
+promotes nothing.
 
 **Reported for S, P and A:** Brier overall, final 3 overs, first 5 overs and
 balls 2-6; reliability by decile for the first 5 overs and for balls 2-6,

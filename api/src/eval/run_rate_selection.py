@@ -14,11 +14,13 @@ read by the last one:
           five calibrators on the control scored early-chase as well as
           overall. Added after `select` found no candidate distinguishable
           from the control - it chooses nothing, it explains.
-  final   the winner and the control through the served pipeline (early
-          stopping on all of validation, five calibrators fit on the early
-          half and selected on the late half, winner refit on all of it),
-          then the test split touched once: winner, control and the served
-          artifact scored in one pass.
+  final   the control (P) and the selection winner (A) through the served
+          pipeline (early stopping on all of validation, five calibrators
+          fit on the early half and selected on the late half, winner refit
+          on all of it), then the test split touched once: P, A and the
+          served artifact (S) scored in one pass. P vs S is the one
+          promotable comparison, judged by PROMOTION_RULE; A is reported
+          descriptively only.
 
 All candidates share the served feature set `state_venue_elo_no_partnership`
 and differ only in `current_run_rate` / `rrr_minus_crr` (features.run_rate).
@@ -46,6 +48,7 @@ import pandas as pd
 import psycopg
 from dotenv import dotenv_values
 
+from eval.baselines import LogisticBaseline
 from eval.metrics import brier_score, log_loss, paired_brier_match_clustered_ci, reliability_match_clustered
 from eval.splits import get_second_innings_split
 from models.calibration import CANDIDATES as CALIBRATORS
@@ -84,6 +87,32 @@ SELECTION_RULE = (
     "paired CI against the best includes zero is tied with it; the winner is the first tied candidate "
     "in CANDIDATES order (c, then a by N, then b' by k, then b by k)."
 )
+
+
+# Confirmed by the owner 2026-09-27, before any test-split number existed
+# (docs/run-rate-selection.md, SPEC.md section 11).
+NON_INFERIORITY_MARGIN = 0.0020
+PROMOTION_RULE = (
+    "P (state_venue_elo_no_partnership, today's run rate, the calibration rule's choice) against S "
+    "(winprob2-20260910), paired match-clustered 95% CI of Brier_S - Brier_P, 2000 resamples, on the "
+    "test split. Promote P (via section 8.4 shadow deployment) only if ALL hold: (1) overall CI lower "
+    f"bound > -{NON_INFERIORITY_MARGIN}; (2) final-3-overs CI lower bound > -{NON_INFERIORITY_MARGIN}; "
+    "(3) first-5-overs CI not entirely below zero; (4) P beats the three-feature logistic baseline, "
+    "the paired CI of Brier_logistic - Brier_P entirely above zero (section 9.3). A (the selection "
+    "winner) is descriptive only and cannot be promoted."
+)
+
+
+def promotion_verdict(served_minus_p: dict, logistic_minus_p: dict) -> dict:
+    """PROMOTION_RULE applied to paired results; every condition reported,
+    not just the conclusion."""
+    conditions = {
+        "overall_non_inferior": served_minus_p["overall"]["ci_low"] > -NON_INFERIORITY_MARGIN,
+        "final_3_overs_non_inferior": served_minus_p["final_3_overs"]["ci_low"] > -NON_INFERIORITY_MARGIN,
+        "first_5_overs_not_worse": not served_minus_p["first_5_overs"]["ci_high"] < 0,
+        "beats_logistic_baseline": logistic_minus_p["ci_low"] > 0,
+    }
+    return {"rule": PROMOTION_RULE, "conditions": conditions, "promote": all(conditions.values())}
 
 
 def _env() -> dict[str, str]:
@@ -360,7 +389,15 @@ def final(cache: Path) -> dict:
     train, val = joblib.load(cache / "train.joblib"), joblib.load(cache / "val.joblib")
     fit, sel = _val_masks(val)
     prior = fit_prior(train)
-    report: dict = {"winner": chosen["winner"], "spec": chosen["spec"], "calibration": {}, "timing_seconds": {}}
+    import subprocess
+
+    commit = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=REPO_ROOT).stdout.strip()
+    dirty = subprocess.run(["git", "status", "--porcelain", "--", "api/src"], capture_output=True, text=True,
+                           cwd=REPO_ROOT).stdout.strip()
+    if dirty:
+        sys.exit("api/src has uncommitted changes - the test look must run on committed, pre-registered code")
+    report: dict = {"winner": chosen["winner"], "spec": chosen["spec"], "calibration": {}, "timing_seconds": {},
+                    "code_commit": commit}
 
     models = {}
     for name in dict.fromkeys(["control", chosen["winner"]]):
@@ -405,6 +442,7 @@ def final(cache: Path) -> dict:
             "control_minus_winner": paired(y, probs["control"], probs[w], mid, segs),
             "served_minus_control": paired(y, probs["served"], probs["control"], mid, segs),
         },
+        "early_chase_bias": {n: bias_by_band(y, p, mid, test.columns["balls_bowled"]) for n, p in probs.items()},
         "reliability_first_5_overs": {
             n: reliability_match_clustered(y[segs["first_5_overs"]], p[segs["first_5_overs"]], mid[segs["first_5_overs"]])
             for n, p in probs.items()
@@ -421,6 +459,23 @@ def final(cache: Path) -> dict:
     }
     for n, b in report["test"]["brier"].items():
         print(f"test {n:10s} " + " ".join(f"{k}={v:.5f}" for k, v in b.items()))
+
+    # Condition 4: the three-feature logistic baseline, fitted on the train
+    # split, scored on the same test rows. The split is re-read (the baseline
+    # takes datasets, not bundles) and aligned by delivery_id, since the
+    # split query has no ORDER BY.
+    with psycopg.connect(_env()["LOCAL_DATABASE_URL"]) as conn:
+        train_ds = get_second_innings_split(conn, "train")
+        test_ds = get_second_innings_split(conn, "test")
+    position = {d: i for i, d in enumerate(test_ds.delivery_id.tolist())}
+    order = np.array([position[d] for d in test.columns["delivery_id"].tolist()])
+    assert len(order) == len(test_ds) and np.array_equal(test_ds.label[order], y), "test split changed since build"
+    logistic = LogisticBaseline().fit(train_ds).predict_proba(test_ds)[order]
+    logistic_minus_p = paired_brier_match_clustered_ci(y, logistic, probs["control"], mid)
+    report["test"]["logistic_minus_control_overall"] = logistic_minus_p
+    report["test"]["promotion"] = promotion_verdict(report["test"]["paired"]["served_minus_control"], logistic_minus_p)
+    print(f"promotion (P vs S): {report['test']['promotion']['conditions']} -> "
+          f"{'PROMOTE' if report['test']['promotion']['promote'] else 'do not promote'}")
 
     np.savez(cache / "test_preds.npz", **probs)
     joblib.dump(models[w], cache / "winner_artifact.joblib")

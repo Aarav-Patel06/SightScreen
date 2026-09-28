@@ -1028,7 +1028,21 @@ Each phase ends with a demoable artifact and explicit acceptance criteria. Do no
 - **The switch diagnostic** (mean one-ball change in p per chase, zero for a calibrated model): today's model falls 5.0 pp [4.4, 5.6] on ball 1; `a_n6` moves that to ball 6 (3.1 pp); b/b′ spread a similar fall over balls 1-9. Every candidate's estimate falls about 3.5-5 pp across the first nine balls. So the ball-1 drop is **the model settling into a chase**, not purely a feature artifact, and the run-rate feature is not the lever.
 - **Early chases are optimistic, not pessimistic, on validation:** the served model predicts the chasing side +6.8 pp above the observed rate before ball 1 and about +5 pp through 5 overs. Pre-existing (served and control agree), mostly T20 (587 of 649 chases; ODI's 62 are too few to say), and concentrated in 2024-Q4 (+8 to +11 pp; Q3 within noise). Two quarters cannot separate drift from a one-off. Every non-identity calibrator made it **worse** (first-5-overs Brier significantly worse than identity for all four), so identity stays.
 - **An informal look at the test split, recorded rather than ignored:** the "pre-ball prediction is the better calibrated" finding above (Brier 0.158 vs 0.170) was measured on the logged backfill cohort, whose matches are §9.1 test-split matches. It was one descriptive comparison, it did not select anything, and it is the only test-split figure this task has used.
-- **Next:** the single test look is not spent. What goes to test and the promotion rule are proposed in `docs/run-rate-selection.md` and wait for the owner's confirmation.
+- **Next:** the single test look is not spent. **The final comparison is confirmed (2026-09-27)** and coded, not run (`eval/run_rate_selection.py` `final`, `PROMOTION_RULE`):
+  - S is `winprob2-20260910`, as published.
+  - P is `state_venue_elo_no_partnership` with today's run rate and identity calibration. It is **the only promotable configuration**.
+  - A is `a_n6`, **descriptive only**.
+  - P is promoted (§8.4 shadow deployment) only if all of these hold, on paired match-clustered 95% CIs of Brier_S − Brier_P: the overall and final-3-overs lower bounds are above **−0.0020**; the first-5-overs CI is not entirely below zero; and P beats the logistic baseline (§9.3).
+  - **The margin.** 0.0020 is about 18% of the served model's 0.0110 edge over the logistic baseline (0.1342 − 0.1232, Phase 1's test split). A bounded cost is acceptable because the live feed cannot deliver the partnership features reliably (2.66% of reconstructed states wrong at the 15 s poll): P uses only what the feed supplies, while S is fed approximations. P vs S is reported as one combined effect: partnership removal, the KNOWN_SKEW closure, and a fresh retrain.
+  - The owner approved the single test look on 2026-09-27, after the leak canary was resolved (§9.1). This commit is the pre-registered rule; the test report cites its hash, and there is no second attempt.
+
+**Known limitation, 2026-09-27 - early chases are optimistic.** On the validation select chunk (Jul-Dec 2024, 649 chases), predictions in the first five overs of a chase run **+5 to +8 pp above the observed win rate** for the chasing side:
+- **Pre-existing:** the served `winprob2-20260910` shows +6.8 pp before ball 1 and about +5 pp to ball 29.
+- **Mostly T20:** ODI's 62 chases are too few to say.
+- **Concentrated in 2024-Q4:** +8 to +11 pp, against a Q3 within noise.
+- **No calibrator fixes it.** Every non-identity calibrator makes it worse.
+
+It isn't fixed. It is the opposite sign to the backfill cohort's reading (test-split matches, pessimistic after ball 1), so the test look will be the first measurement of whether it persists into 2025-26. Until then, early-chase figures carry this caveat.
 
 **Known issue, 2026-09-27 - the ball-36 `phase_code` jump.** In every model measured, T20 chases rise 0.8-1.9 pp on average on the ball after the powerplay ends (36 legal balls, where `phase_code` switches from powerplay to middle; significant for all candidates on the validation select chunk). The same kind of feature switch as the start of the chase, found by the same diagnostic. Not fixed; no display rule covers it yet.
 
