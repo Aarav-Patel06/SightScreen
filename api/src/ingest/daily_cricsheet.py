@@ -655,7 +655,10 @@ def catchup_local(local_url: str, supabase_conn, paths: list[Path], since: date 
     log(
         "next: python -m features.match_state rebuild && python -m features.elo rebuild && "
         "python -m features.asof_summary rebuild && python -m features.player_summary rebuild && "
-        "python -m features.feature_ledger publish && python -m ingest.sync_reference_tables"
+        "python -m features.feature_ledger publish && python -m ingest.sync_reference_tables && "
+        # Last, on the rebuilt corpus; commit api/data/canary_results.json
+        # after. CI fails once it is FRESH_DAYS old (eval/record_canaries.py).
+        "python -m eval.record_canaries"
     )
     return {"loaded": report.matches_loaded, "rejected": report.matches_rejected}
 
