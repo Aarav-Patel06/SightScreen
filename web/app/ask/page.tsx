@@ -22,11 +22,14 @@
 
 import { useState } from "react";
 
+import { corpusOnThisSite } from "@/lib/ask-corpus";
+
 type Exchange = { question: string; answer?: string; note?: string };
 
 /**
  * Four example questions, and every one was checked against the corpus before
- * it shipped.
+ * it shipped. All four need the corpus, so they are offered only where it is
+ * reachable (lib/ask-corpus.ts) - never on the live site today.
  *
  * The reference design proposed "Which bowlers have the best economy vs
  * left-handers?" and "How does Rohit Sharma perform at home vs away?". Both
@@ -47,6 +50,8 @@ const EXAMPLES = [
   "How does Virat Kohli fare against Mitchell Starc?",
   "Who averaged most with the bat in 2024?",
 ] as const;
+
+const CORPUS = corpusOnThisSite();
 
 export default function AskPage() {
   const [signedIn, setSignedIn] = useState(false);
@@ -131,12 +136,20 @@ export default function AskPage() {
 
   return (
     <main className="ask">
-      <h1 className="page-title">Ask</h1>
+      <h1 className="page-title">
+        Ask <span className="beta-tag">Beta</span>
+      </h1>
       <p className="ask-intro">
-        Questions answered from 3.78 million deliveries of ball-by-ball data and the
-        model&rsquo;s own outputs. Every number comes with the sample size behind it; where
-        the data cannot answer something, the agent says so rather than estimating.
+        Questions about players, matches and the model, answered from SightScreen&rsquo;s
+        data. Every number comes with the sample size behind it; where the data cannot
+        answer something, the agent says so rather than estimating.
       </p>
+      {CORPUS ? null : (
+        <p className="soft ask-beta">
+          In beta: questions that need the ball-by-ball corpus aren&rsquo;t available on
+          the live site yet.
+        </p>
+      )}
 
       {!signedIn ? (
         <form onSubmit={signIn} className="ask-form">
@@ -170,29 +183,26 @@ export default function AskPage() {
             </button>
           </form>
 
-          <ul className="ask-examples">
-            {EXAMPLES.map((example) => (
-              <li key={example}>
-                <button
-                  type="button"
-                  className="ask-chip"
-                  disabled={busy}
-                  onClick={() => setQuestion(example)}
-                >
-                  {example}
-                </button>
-              </li>
-            ))}
-          </ul>
+          {CORPUS ? (
+            <ul className="ask-examples">
+              {EXAMPLES.map((example) => (
+                <li key={example}>
+                  <button
+                    type="button"
+                    className="ask-chip"
+                    disabled={busy}
+                    onClick={() => setQuestion(example)}
+                  >
+                    {example}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
 
-          {/* Each of these is a real model call. Four inviting buttons beside
-              a $2 daily cap is an easy way to exhaust it by accident, so the
-              cost is stated where the buttons are rather than discovered when
-              the cap trips. They FILL the box rather than submitting, so a
-              click costs nothing until you press Ask. */}
           <p className="tiny muted ask-examples-note">
-            Clicking one fills the box; it does not ask. Each question costs
-            roughly 1.7&nbsp;cents of model time against a $2 daily cap.
+            Each question costs about 1.7&nbsp;cents of model time, against a $2 daily
+            budget for the whole demo.
           </p>
         </>
       )}
@@ -200,25 +210,6 @@ export default function AskPage() {
       {notice ? (
         <p role="status" className={capped ? "ask-cap" : undefined}>
           {notice}
-        </p>
-      ) : null}
-
-      {/* §4.7 asks for tool calls to render as a collapsed line the visitor
-          can expand - "queried 3.78M deliveries" opening to the SQL. It is
-          not built, and the reason is in the same paragraph that asks for it:
-          §4.7 also says do not modify the route handler, and the route
-          returns `{ answer }` and nothing else. The tool calls happen inside
-          its agentic loop and never reach the client, so there is no way to
-          render them without changing that route - which is a logic change
-          wearing a visual change's clothes, and this session's whole
-          acceptance criterion is that those are different things.
-
-          Said here rather than silently omitted (§0.2). */}
-      {history.length > 0 ? (
-        <p className="soft ask-transparency">
-          The SQL each answer ran is not shown yet. The agent logs every query
-          it makes, but the route returns only the answer, and wiring the two
-          together is a change to a proven path rather than a visual one.
         </p>
       ) : null}
 

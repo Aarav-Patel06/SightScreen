@@ -878,6 +878,20 @@ body { margin: 0; }
   background: var(--flag);
 }
 
+/* BETA on /ask: the same register as LIVE NOW - a fact, not a badge. No pill,
+   no background, no border: small letter-spaced soft ink beside the title,
+   which says the page is incomplete without competing with it. */
+.theme-paper .beta-tag {
+  font-size: var(--t-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  vertical-align: middle;
+  margin-left: var(--space-1);
+}
+.theme-paper .ask-beta { margin-top: 0; }
+
 /* LIVE NOW: a fact, not a badge (section 6). No pill, no background, no
    border - a dot and ink text at the size of the kicker it sits in. The
    colour is --flag, which is 6.47:1 on paper, and the text is --ink, so the

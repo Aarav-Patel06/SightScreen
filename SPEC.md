@@ -62,6 +62,22 @@ Alias rows are created by three processes, which now allocate from **three bands
 
 **State on 2026-09-27:** no id meant different things on the two databases, in any alias or entity table, so no row repair was needed. Tests are in `tests/ingest/test_alias_bands.py`: the live worker's 543 survives a colliding sync, and each creator's next alias lands in its own band. Both were red on the old code, which overwrote 543 and handed the live worker 544.
 
+### Production has no corpus - DEFERRED on cost (2026-09-28)
+
+The agent's three corpus tools (`resolve_entity`, `query_ball_data`, `get_matchup`) read a replica of the ball-by-ball corpus through `AGENT_SQL_ROLE_DB_URL`. **Production has no replica.** Railway's `api` carries that variable pointing at `localhost:5433`, the owner's local Docker corpus. Inside the Railway container that is the container itself, so all three tools answer **503 "agent corpus unreachable"** (confirmed read-only, 2026-09-28).
+
+On the live site, `/ask` reaches the model, but only `get_live_prediction` (Supabase) and `get_player_form` (which explains that it's unavailable) answer. `get_live_prediction` needs a `match_id`, which only `resolve_entity` can find, so in practice no visitor question completes.
+
+`/ask` says this plainly: a Beta marker, one line ("questions that need the ball-by-ball corpus aren't available on the live site yet"), and no example questions, since all four needed the corpus. That switches on `web/lib/ask-corpus.ts`, true only on the development server today.
+
+| Option | Cost | Notes |
+|---|---|---|
+| Railway Postgres service, holding `agent_tools/replica.py`'s projection (577 MB measured: deliveries, matches, players, teams, venues; no `match_states`) | ~$3-5/mo | Beside the api, private networking, and isolated from serving. §2.1's recommended shape. |
+| Supabase Pro | $25/mo | 8 GB. It puts the replica in the SERVING database, which §2.1 rejects on blast radius (a full disk stops predictions), unless it is a separate Pro project. `AGENT_SQL_ROLE_DB_URL` also rejects a Supabase host today. |
+| Nothing (current) | $0 | `/ask` stays beta. The corpus tools' 503 is expected, and the agent smoke check treats it that way. |
+
+**Deferred by the owner.** When it's un-deferred: provision the replica, run `python -m agent_tools.replica` against it (bootstrap, load, `--verify`), set `AGENT_SQL_ROLE_DB_URL` (a variable change, so ask first), make `corpusOnThisSite` true for production, and move the smoke check's corpus tools from "expected 503" to "must answer".
+
 ### Open issues for session 3
 
 1. ~~The alias gap.~~ Resolved; see above.
