@@ -37,6 +37,10 @@ on:
         description: "failure drill: download from an unreachable host (must go red)"
         type: boolean
         default: false
+      drill_golden_parity:
+        description: "failure drill: alter one golden reference value (must go red)"
+        type: boolean
+        default: false
 
 # Least privilege: the job reads the repository and nothing else. Supabase is
 # reached with its own secret, and artifact upload uses the runtime token,
@@ -89,6 +93,31 @@ jobs:
         run: pip install -e "./api[dev]"
       - name: Apply migrations to the stage database
         run: npx supabase db push --db-url "$STAGE_URL"
+      # Golden parity (ingest/golden_parity.py): match 8429 rebuilt from its
+      # committed raw JSON and Supabase's feature_ledger, on the daily job's own
+      # path, for every version in api/data/golden/match_8429.json - and
+      # compared with that reference EXACTLY. Before the ingest, so a scoring
+      # path that has drifted writes nothing. Its own database, because the
+      # ingest needs an empty stage.
+      - name: Create the golden-parity database
+        env:
+          GOLDEN_URL: postgresql://postgres:postgres@localhost:5433/golden?sslmode=disable
+        run: |
+          PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -c "CREATE DATABASE golden"
+          npx supabase db push --db-url "$GOLDEN_URL"
+      - name: Golden parity
+        working-directory: api/src
+        env:
+          SUPABASE_SESSION_POOLER_URL: ${{ secrets.SUPABASE_SESSION_POOLER_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          GOLDEN_URL: postgresql://postgres:postgres@localhost:5433/golden?sslmode=disable
+          DRILL: ${{ inputs.drill_golden_parity || false }}
+        run: |
+          set -euo pipefail
+          args=(check --stage-url "$GOLDEN_URL" --cache-dir "$RUNNER_TEMP/golden-models")
+          if [ "$DRILL" = "true" ]; then args+=(--drill); fi
+          python -u -m ingest.golden_parity "${args[@]}"
       - name: Ingest
         working-directory: api/src
         env:
