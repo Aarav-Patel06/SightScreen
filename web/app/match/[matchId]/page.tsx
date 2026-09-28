@@ -13,7 +13,7 @@
 
 import Link from "next/link";
 
-import { parsePrediction, type WinProbPrediction } from "@/lib/prediction";
+import { loadMatchPredictions } from "@/lib/match-predictions";
 import { supabaseServer } from "@/lib/supabase-server";
 
 import { LiveMatch } from "./live-match";
@@ -91,34 +91,6 @@ async function loadMatch(matchId: number): Promise<MatchHeader | null> {
   };
 }
 
-async function loadPredictions(matchId: number): Promise<WinProbPrediction[]> {
-  const supabase = supabaseServer();
-  const { data, error } = await supabase
-    .from("predictions")
-    .select("prediction_id, created_at, model_version, payload, match_id, batting_team_id")
-    .eq("match_id", matchId)
-    .eq("prediction_type", "win_prob")
-    // Migration 20260918000003's stated contract: "every Phase 3 reader
-    // filters on innings IS NOT NULL". This page did not, and was the only
-    // user-facing surface rendering unkeyed rows - so for match 13143 it drew
-    // a curve out of ten interleaved runs of a twelve-ball deploy smoke test,
-    // while /matches listed the same match as never replayed. Two surfaces
-    // disagreeing about what counts as a prediction meant one of them was
-    // wrong, and it was this one.
-    //
-    // The unkeyed rows are not merely old. They sit outside the partial
-    // unique index, so nothing dedupes them: match 13143 holds 121 such rows
-    // carrying 13 distinct payloads.
-    .not("innings", "is", null)
-    .order("prediction_id", { ascending: true });
-  if (error || !data) return [];
-  // A malformed row - one written before the payload was enriched, say -
-  // is dropped rather than throwing. A single bad row must not blank a page.
-  return data
-    .map((row) => parsePrediction(row as never))
-    .filter((x): x is WinProbPrediction => x !== null);
-}
-
 export default async function MatchPage({
   params,
 }: {
@@ -136,7 +108,7 @@ export default async function MatchPage({
 
   const [match, initial] = await Promise.all([
     loadMatch(matchId),
-    loadPredictions(matchId),
+    loadMatchPredictions(matchId),
   ]);
 
   if (match === null) {
@@ -158,7 +130,8 @@ export default async function MatchPage({
       <LiveMatch
         matchId={matchId}
         header={match}
-        initialPredictions={initial}
+        initialPredictions={initial.predictions}
+        modelVersion={initial.modelVersion}
       />
       <p className="page-links">
         <Link href="/about/model">How good is this model?</Link> · predictions are

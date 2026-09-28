@@ -24,6 +24,8 @@ import { NextResponse } from "next/server";
 
 import { battingTeamName } from "@/lib/batting-team";
 import { LIVE_WINDOW_MS, isLiveMatch, shortName } from "@/lib/live-match";
+import { loadModelVersions } from "@/lib/load-model-versions";
+import { oneVersionPerMatch } from "@/lib/model-version";
 import { parsePrediction, type WinProbPrediction } from "@/lib/prediction";
 import { supabaseServer } from "@/lib/supabase-server";
 
@@ -46,18 +48,25 @@ async function readLive(): Promise<LivePayload | null> {
   // migration rejects deriving it from timestamps, because a replay of a
   // match played today would be misclassified. Recency on top of it is what
   // makes this self-clearing: when the worker stops, rows stop arriving.
-  const { data, error } = await supabase
-    .from("predictions")
-    .select("prediction_id, created_at, model_version, payload, match_id, batting_team_id")
-    .eq("source", "live")
-    .eq("prediction_type", "win_prob")
-    .not("innings", "is", null)
-    .gte("created_at", new Date(Date.now() - LIVE_WINDOW_MS).toISOString())
-    .order("prediction_id", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  //
+  // One model version per match (lib/model-version.ts): the newest row of the
+  // version that match's page shows, not the newest row of any version. So a
+  // window of rows is read rather than one - 50 is minutes of balls.
+  const [{ data: recent, error }, versions] = await Promise.all([
+    supabase
+      .from("predictions")
+      .select("prediction_id, created_at, model_version, payload, match_id, batting_team_id")
+      .eq("source", "live")
+      .eq("prediction_type", "win_prob")
+      .not("innings", "is", null)
+      .gte("created_at", new Date(Date.now() - LIVE_WINDOW_MS).toISOString())
+      .order("prediction_id", { ascending: false })
+      .limit(50),
+    loadModelVersions(),
+  ]);
 
-  if (error || !data) return null;
+  const data = error || !recent ? null : (oneVersionPerMatch(recent, versions)[0] ?? null);
+  if (!data) return null;
 
   const prediction = parsePrediction(data as never);
   if (prediction === null) return null;

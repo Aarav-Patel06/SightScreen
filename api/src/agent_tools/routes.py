@@ -213,14 +213,28 @@ RESOLVE_SQL = "SELECT {id_column} AS entity_id, name FROM {view}"
 # could otherwise attach it to either team in the answer. From the row's
 # batting_team_id (migration 20260925000001) - never team order, which puts
 # the side that batted FIRST in team_a - and 'batting side' when unknown.
+#
+# One model version per match (SPEC.md section 12.2, web/lib/model-version.ts):
+# the active version if the match has rows from it, otherwise the newest by
+# trained_at, then by newest row. The newest row of ANY version would quote a
+# shadow model's probability while every page shows the served one's.
 LIVE_PREDICTION_SQL = (
+    "WITH keyed AS ("
+    "  SELECT * FROM predictions "
+    "  WHERE match_id = %s AND prediction_type = 'win_prob' AND innings IS NOT NULL"
+    "), chosen AS ("
+    "  SELECT k.model_version FROM keyed k LEFT JOIN model_versions mv USING (model_version) "
+    "  GROUP BY k.model_version, mv.is_active, mv.trained_at "
+    "  ORDER BY COALESCE(mv.is_active, false) DESC, mv.trained_at DESC NULLS LAST, "
+    "           max(k.prediction_id) DESC "
+    "  LIMIT 1"
+    ") "
     "SELECT p.prediction_id, p.match_id, p.model_version, "
     "       (p.payload->>'p')::float AS win_probability, "
     "       COALESCE(t.name, 'batting side') AS win_probability_for, "
     "       p.innings, p.over_num, p.ball_in_over, p.created_at "
-    "FROM predictions p LEFT JOIN teams t ON t.team_id = p.batting_team_id "
-    "WHERE p.match_id = %s "
-    "  AND p.prediction_type = 'win_prob' AND p.innings IS NOT NULL "
+    "FROM keyed p LEFT JOIN teams t ON t.team_id = p.batting_team_id "
+    "WHERE p.model_version = (SELECT model_version FROM chosen) "
     "ORDER BY p.prediction_id DESC LIMIT 1"
 )
 

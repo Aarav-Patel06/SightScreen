@@ -31,6 +31,7 @@ import { chaseSummary, type ChaseSummary } from "@/lib/chase-summary";
 import { resultText } from "@/lib/match-result";
 import { formatProbability } from "@/lib/probability";
 import { highWaterMark, mergePredictions } from "@/lib/merge-predictions";
+import { isShownVersion } from "@/lib/model-version";
 import { parsePrediction, type Phase, type WinProbPrediction } from "@/lib/prediction";
 import { HATCH_PITCH_PX, describeEvent, toMarks } from "@/lib/ball-strip";
 import { BallStrip } from "@/components/ball-strip";
@@ -146,10 +147,16 @@ export function LiveMatch({
   matchId,
   header,
   initialPredictions,
+  modelVersion = null,
 }: {
   matchId: number;
   header: Header;
   initialPredictions: WinProbPrediction[];
+  /**
+   * The one model version this page shows (lib/model-version.ts), chosen on
+   * the server. Null: the server had none, so any version is accepted.
+   */
+  modelVersion?: string | null;
 }) {
   const [predictions, setPredictions] = useState(initialPredictions);
   const [connection, setConnection] = useState<"connecting" | "live" | "error">(
@@ -193,6 +200,7 @@ export function LiveMatch({
         .order("prediction_id", { ascending: true });
       if (error || data === null) return [];
       return data
+        .filter((row) => isShownVersion(row.model_version, modelVersion))
         .map((row) => parsePrediction(row as never))
         .filter((x): x is WinProbPrediction => x !== null);
     }
@@ -215,6 +223,9 @@ export function LiveMatch({
           // `p: 0.5` probe rows with no ball key and does not clean them up,
           // which is exactly what this stops appearing mid-match.
           if ((message.new as { innings?: number | null }).innings == null) return;
+          // One model version per match: a shadow model's rows for this match
+          // must not stream onto the curve the page is showing.
+          if (!isShownVersion((message.new as { model_version: string }).model_version, modelVersion)) return;
 
           const parsed = parsePrediction(message.new as never);
           if (parsed === null) return;
@@ -272,7 +283,7 @@ export function LiveMatch({
       clearInterval(timer);
       void supabase.removeChannel(channel);
     };
-  }, [matchId]);
+  }, [matchId, modelVersion]);
 
   const current = predictions.at(-1) ?? null;
   const previousOver = useMemo(() => {

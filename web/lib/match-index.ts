@@ -38,6 +38,8 @@
 
 import { toMarks, type Mark } from "./ball-strip";
 import { resultText, type MatchOutcome } from "./match-result";
+import { loadModelVersions } from "./load-model-versions";
+import { oneVersionPerMatch } from "./model-version";
 import { parsePrediction, type WinProbPrediction } from "./prediction";
 import { supabaseServer } from "./supabase-server";
 
@@ -125,24 +127,30 @@ async function loadPredictionsByMatch(): Promise<Map<number, WinProbPrediction[]
   // Parallel, not sequential: the page count is known up front, so thirteen
   // round trips can overlap rather than stack into thirteen latencies.
   const pages = Math.ceil(count / PAGE);
-  const results = await Promise.all(
-    Array.from({ length: pages }, (_, i) => base().range(i * PAGE, i * PAGE + PAGE - 1))
-  );
+  const [versions, ...results] = await Promise.all([
+    loadModelVersions(),
+    ...Array.from({ length: pages }, (_, i) => base().range(i * PAGE, i * PAGE + PAGE - 1)),
+  ]);
 
-  const byMatch = new Map<number, WinProbPrediction[]>();
+  const swept = [];
   for (const { data, error } of results) {
     if (error || !data) {
       console.warn(`[matches] sparkline sweep failed mid-page: ${describe(error)}`);
       return null;
     }
-    for (const row of data) {
-      const parsed = parsePrediction(row as never);
-      if (parsed === null) continue;
-      const matchId = (row as { match_id: number }).match_id;
-      const list = byMatch.get(matchId);
-      if (list) list.push(parsed);
-      else byMatch.set(matchId, [parsed]);
-    }
+    swept.push(...data);
+  }
+
+  // One model version per match (lib/model-version.ts), decided over the
+  // whole sweep: a match's two versions can straddle a page boundary.
+  const byMatch = new Map<number, WinProbPrediction[]>();
+  for (const row of oneVersionPerMatch(swept, versions)) {
+    const parsed = parsePrediction(row as never);
+    if (parsed === null) continue;
+    const matchId = (row as { match_id: number }).match_id;
+    const list = byMatch.get(matchId);
+    if (list) list.push(parsed);
+    else byMatch.set(matchId, [parsed]);
   }
   return byMatch;
 }

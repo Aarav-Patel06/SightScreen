@@ -19,6 +19,8 @@
  */
 
 import { toMarks, type Mark } from "./ball-strip";
+import { loadModelVersions } from "./load-model-versions";
+import { oneVersion } from "./model-version";
 import { parsePrediction } from "./prediction";
 import { supabaseServer } from "./supabase-server";
 
@@ -107,8 +109,9 @@ async function loadPreviewMatches(): Promise<PreviewMatch[] | null> {
   // request - so once the candidates passed that, the NEWEST previews, the
   // ones shown first, silently lost their strips. One match is at most ~305
   // keyed rows, which a single request always holds.
-  const strips = await Promise.all(
-    shown.map((match) =>
+  const [versions, ...strips] = await Promise.all([
+    loadModelVersions(),
+    ...shown.map((match) =>
       supabase
         .from("predictions")
         .select("prediction_id, created_at, model_version, payload, match_id")
@@ -116,13 +119,14 @@ async function loadPreviewMatches(): Promise<PreviewMatch[] | null> {
         .eq("prediction_type", "win_prob")
         .not("innings", "is", null)
         .order("prediction_id", { ascending: true })
-    )
-  );
+    ),
+  ]);
 
   const out: PreviewMatch[] = shown.map((match, i) => {
     const { data, error } = strips[i];
     if (error) console.warn(`[previews] strip unavailable for ${match.matchId}: ${describe(error)}`);
-    const parsed = (data ?? [])
+    // One model version per match (lib/model-version.ts).
+    const parsed = oneVersion(data ?? [], versions)
       .map((row) => parsePrediction(row as never))
       .filter((p) => p !== null);
     return { ...match, marks: parsed.length > 1 ? toMarks(parsed) : null };

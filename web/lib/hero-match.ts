@@ -36,6 +36,8 @@ import { toMarks, type Mark } from "./ball-strip";
 import { battingTeamName } from "./batting-team";
 import { isLiveMatch } from "./live-match";
 import { resultText } from "./match-result";
+import { loadModelVersions } from "./load-model-versions";
+import { oneVersion } from "./model-version";
 import { parsePrediction, type WinProbPrediction } from "./prediction";
 import { supabaseServer } from "./supabase-server";
 
@@ -157,7 +159,10 @@ async function loadPredictions(matchId: number): Promise<WinProbPrediction[]> {
     console.warn(`[hero] no strip for match ${matchId}: ${describe(error)}`);
     return [];
   }
-  return data.map((row) => parsePrediction(row as never)).filter((p) => p !== null);
+  // One model version per match (lib/model-version.ts).
+  return oneVersion(data, await loadModelVersions())
+    .map((row) => parsePrediction(row as never))
+    .filter((p) => p !== null);
 }
 
 export async function loadHeroMatch(): Promise<HeroResult> {
