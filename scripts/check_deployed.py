@@ -23,9 +23,16 @@ what was pushed. This does, from outside, and costs nothing: no model call.
               (SPEC.md section 0a). A 200 there means the corpus arrived:
               the check fails so CORPUS_DEFERRED gets turned off deliberately.
 
+  heartbeat  The worker's newest `worker_heartbeat` pipeline_runs row, written
+          by every hourly fixture check even when nothing is picked. Older
+          than `--max-age-minutes` (120), or absent, fails: the worker has
+          stopped checking - crashed, wedged, on a quota hold, or unable to
+          write - and would miss the day's match in silence.
+
     python scripts/check_deployed.py settled --minutes 20   # prints the commit to expect
     python scripts/check_deployed.py sha --expect <sha>
     python scripts/check_deployed.py smoke
+    python scripts/check_deployed.py heartbeat --max-age-minutes 120
 
 The Deployed workflow runs these hourly, never waits, and always succeeds: a
 failure opens a "[ops] Production is behind main" issue (scripts/ops_alert.py)
@@ -145,6 +152,35 @@ def check_sha(expected: str, wait_minutes: float) -> int:
         time.sleep(30)
 
 
+HEARTBEAT_ISSUE = "Worker heartbeat missing"
+
+
+def newest_heartbeat():
+    """When the worker last completed a fixture check, or None."""
+    import psycopg
+
+    with psycopg.connect(os.environ["SUPABASE_SESSION_POOLER_URL"], connect_timeout=30) as conn:
+        row = conn.execute(
+            "SELECT max(started_at) FROM pipeline_runs WHERE pipeline = 'worker_heartbeat'").fetchone()
+    return row[0] if row else None
+
+
+def heartbeat(max_age_minutes: float) -> int:
+    from datetime import datetime, timezone
+
+    newest = newest_heartbeat()
+    if newest is None:
+        print("::error::no worker heartbeat recorded")
+        return 1
+    age = (datetime.now(timezone.utc) - newest).total_seconds() / 60
+    if age > max_age_minutes:
+        print(f"::error::worker heartbeat is {age:.0f} minutes old (newest {newest.isoformat(timespec='minutes')}), "
+              f"over {max_age_minutes:g}")
+        return 1
+    print(f"worker heartbeat {age:.0f} minutes old")
+    return 0
+
+
 def smoke() -> int:
     failures, notes = [], []
     for tool in ALL_TOOLS:
@@ -192,8 +228,12 @@ if __name__ == "__main__":
     t = sub.add_parser("settled")
     t.add_argument("--minutes", type=float, default=20)
     sub.add_parser("smoke")
+    h = sub.add_parser("heartbeat")
+    h.add_argument("--max-age-minutes", type=float, default=120)
     args = parser.parse_args()
     if args.command == "settled":
         print(settled_ci_commit(args.minutes))
         sys.exit(0)
+    if args.command == "heartbeat":
+        sys.exit(heartbeat(args.max_age_minutes))
     sys.exit(check_sha(args.expect, args.wait_minutes) if args.command == "sha" else smoke())

@@ -88,3 +88,71 @@ def test_the_expected_commit_is_the_newest_ci_pass_that_has_settled():
             {"headSha": "settled", "updatedAt": (now - timedelta(minutes=25)).isoformat()},
             {"headSha": "old", "updatedAt": (now - timedelta(hours=3)).isoformat()}]
     assert check.settled_ci_commit(20, gh=lambda *a: _json.dumps(runs)) == "settled"
+
+
+# --- The worker's heartbeat (session 3) -------------------------------------------
+#
+# Each hourly fixture check writes a `worker_heartbeat` pipeline_runs row, even
+# when nothing is picked. A worker that has stopped checking - crashed, wedged,
+# holding on quota, unable to write - is otherwise silent until a match it
+# should have picked goes unpredicted.
+
+_OPS_SPEC = importlib.util.spec_from_file_location(
+    "ops_alert", Path(__file__).resolve().parent.parent / "scripts" / "ops_alert.py")
+ops = importlib.util.module_from_spec(_OPS_SPEC)
+_OPS_SPEC.loader.exec_module(ops)
+
+
+class _FakeGh:
+    def __init__(self, open_titles=()):
+        self.open = {n: t for n, t in enumerate(open_titles, start=1)}
+        self.created = []
+
+    def __call__(self, *args):
+        import json as _json
+
+        if args[:2] == ("issue", "list"):
+            return _json.dumps([{"number": n, "title": t} for n, t in self.open.items()])
+        if args[:2] == ("issue", "create"):
+            self.created.append(args[args.index("--title") + 1])
+        if args[:2] == ("issue", "close"):
+            self.open.pop(int(args[2]))
+        return ""
+
+
+def _beat(monkeypatch, minutes_ago):
+    from datetime import datetime, timedelta, timezone
+
+    when = None if minutes_ago is None else datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+    monkeypatch.setattr(check, "newest_heartbeat", lambda: when)
+
+
+def test_a_stale_heartbeat_opens_the_issue(monkeypatch):
+    _beat(monkeypatch, 150)
+    code = check.heartbeat(max_age_minutes=120)
+    gh = _FakeGh()
+    outcome = ops.report(check.HEARTBEAT_ISSUE, failing=code == 1, details="", run_url="u", gh=gh)
+    assert code == 1
+    assert (outcome, gh.created) == ("opened", ["[ops] Worker heartbeat missing"])
+
+
+def test_no_heartbeat_at_all_is_stale(monkeypatch):
+    _beat(monkeypatch, None)
+    assert check.heartbeat(max_age_minutes=120) == 1
+
+
+def test_a_fresh_heartbeat_closes_the_issue(monkeypatch):
+    _beat(monkeypatch, 30)
+    code = check.heartbeat(max_age_minutes=120)
+    gh = _FakeGh(open_titles=["[ops] Worker heartbeat missing"])
+    outcome = ops.report(check.HEARTBEAT_ISSUE, failing=code == 1, details="", run_url="u", gh=gh)
+    assert (code, outcome, gh.open) == (0, "closed", {})
+
+
+def test_the_hourly_workflow_reports_the_heartbeat():
+    """The check only matters if the Deployed workflow runs it and hands its
+    outcome to ops_alert under the issue's title."""
+    workflow = (Path(__file__).resolve().parent.parent / ".github" / "workflows" / "deployed.yml").read_text()
+    assert "check_deployed.py heartbeat" in workflow
+    assert f'--title "{check.HEARTBEAT_ISSUE}"' in workflow
+    assert "steps.heartbeat.outcome == 'failure'" in workflow

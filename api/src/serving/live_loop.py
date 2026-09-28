@@ -575,7 +575,10 @@ class Worker:
     `step` takes the time and returns how long to wait, so the harness can
     drive the real thing on a fake clock (ingest.snapshot_replay)."""
 
-    def __init__(self, client, subs: Subscriptions, predictor, *, log=_log, record_pick=lambda _r: None) -> None:
+    def __init__(
+        self, client, subs: Subscriptions, predictor, *, log=_log,
+        record_pick=lambda _r: None, record_heartbeat=lambda _r: None,
+    ) -> None:
         self.client = client
         self.subs = subs
         self.predictor = predictor
@@ -583,6 +586,7 @@ class Worker:
         self.next_check: datetime | None = None
         self._log = log
         self._record_pick = record_pick
+        self._record_heartbeat = record_heartbeat
 
     def step(self, now: datetime) -> float:
         if self.next_check is None or now >= self.next_check:
@@ -590,6 +594,14 @@ class Worker:
             record = self.subs.check(self.client, now)
             if record is not None:
                 self._record_pick(record)
+            # Every check, picked or not: the Deployed workflow opens
+            # "[ops] Worker heartbeat missing" when the newest is 2h old.
+            budget = self.client.budget
+            self._record_heartbeat({
+                "picked": sorted(self.subs.provider_ids),
+                "hits_today": budget.hits_today if budget.observed_at else None,
+                "hits_limit": budget.hits_limit,
+            })
 
         if self.subs.polling_due(now):
             interval = run_once(
@@ -635,7 +647,9 @@ def run(*, max_iterations: int | None = None, log=_log) -> dict:
     predictor = LivePredictor(conn, state["model"], state["version_guard"], log=log)
     worker = Worker(
         client, Subscriptions(_pick_resolver(client), log=log), predictor,
-        log=log, record_pick=lambda record: _record_pick(client._conn, record, log),
+        log=log,
+        record_pick=lambda record: _record_run(client._conn, "worker_pick", record, log),
+        record_heartbeat=lambda facts: _record_run(client._conn, "worker_heartbeat", facts, log),
     )
     shutdown = Shutdown().install()
     iterations = 0
@@ -749,19 +763,20 @@ def _pick_resolver(client: CricketDataClient):
     return resolve
 
 
-def _record_pick(conn, record: dict, log=_log) -> None:
-    """One pipeline_runs row per change of pick: `worker_pick`, carrying what
-    was picked, what was refused and why, and the provider's quota figure.
-    Best effort, like startup.record_start."""
+def _record_run(conn, pipeline: str, facts: dict, log=_log) -> None:
+    """One pipeline_runs row: `worker_pick` per change of pick (what was
+    picked, what was refused and why, the provider's quota figure), and
+    `worker_heartbeat` per fixture check. Best effort, like
+    startup.record_start."""
     try:
         with conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO pipeline_runs (pipeline, started_at, finished_at, status, counts) "
-                "VALUES ('worker_pick', now(), now(), 'success', %s)",
-                (json.dumps(record),),
+                "VALUES (%s, now(), now(), 'success', %s)",
+                (pipeline, json.dumps(facts)),
             )
     except Exception as exc:  # noqa: BLE001 - see docstring
-        log(f"could not record the pick in pipeline_runs: {type(exc).__name__}")
+        log(f"could not record {pipeline} in pipeline_runs: {type(exc).__name__}")
 
 
 if __name__ == "__main__":

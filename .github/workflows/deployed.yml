@@ -67,3 +67,18 @@ jobs:
           --failing ${{ steps.smoke.outcome == 'failure' }}
           --details "$(tail -n 3 "$RUNNER_TEMP/smoke.txt" 2>/dev/null)"
           --run-url "$RUN_URL"
+      - name: The worker's hourly fixture check is still running
+        id: heartbeat
+        continue-on-error: true
+        env:
+          SUPABASE_SESSION_POOLER_URL: ${{ secrets.SUPABASE_SESSION_POOLER_URL }}
+        run: |
+          set -o pipefail
+          python scripts/check_deployed.py heartbeat --max-age-minutes 120 2>&1 | tee "$RUNNER_TEMP/heartbeat.txt"
+      - name: Report heartbeat
+        if: always()
+        run: >-
+          python scripts/ops_alert.py --title "Worker heartbeat missing"
+          --failing ${{ steps.heartbeat.outcome == 'failure' }}
+          --details "$(tail -n 3 "$RUNNER_TEMP/heartbeat.txt" 2>/dev/null)"
+          --run-url "$RUN_URL"

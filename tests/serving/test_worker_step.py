@@ -118,3 +118,18 @@ def test_a_finished_match_stops_being_polled():
     calls = client.live_calls
     worker.step(T0 + timedelta(minutes=10))
     assert client.live_calls == calls
+
+
+def test_every_fixture_check_writes_a_heartbeat_even_with_nothing_picked():
+    """The Deployed workflow's '[ops] Worker heartbeat missing' reads these:
+    silence for two hours means the worker stopped checking."""
+    beats: list[dict] = []
+    client = _Client([])
+    subs = Subscriptions(lambda name: None, log=lambda _m: None)
+    worker = Worker(client, subs, predictor=None, log=lambda _m: None, record_heartbeat=beats.append)
+    now = T0
+    while now < T0 + timedelta(days=1):
+        now += timedelta(seconds=worker.step(now))
+
+    assert len(beats) == FIXTURE_CALLS_PER_DAY == 24
+    assert beats[0] == {"picked": [], "hits_today": 10, "hits_limit": 2000}
