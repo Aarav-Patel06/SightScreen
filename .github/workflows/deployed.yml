@@ -1,0 +1,47 @@
+name: Deployed
+
+# "Deployed" is checked, not assumed (SPEC.md section 15, 2026-09-27): both
+# Railway services ran week-old code for seven days while every health check
+# was green. After CI passes on main - and hourly, to catch drift - this asks
+# each production service which commit it runs, and fails if any is behind the
+# commit CI passed 20 minutes later. Then it smoke-tests the agent's tool path
+# without calling the model. scripts/check_deployed.py says what each check is.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deployed:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deployed
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # "a later commit on main" is an ancestry question
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install "psycopg[binary]"
+      - name: Every service runs the commit CI passed
+        env:
+          SUPABASE_SESSION_POOLER_URL: ${{ secrets.SUPABASE_SESSION_POOLER_URL }}
+          EXPECT: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: python scripts/check_deployed.py sha --expect "$EXPECT" --wait-minutes 20
+      - name: Agent smoke check (no model call)
+        env:
+          # Not a repository secret yet: without it the unauthenticated half
+          # runs, and the job says the rest was skipped.
+          AGENT_TOOL_SHARED_SECRET: ${{ secrets.AGENT_TOOL_SHARED_SECRET }}
+        run: python scripts/check_deployed.py smoke

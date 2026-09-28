@@ -30,3 +30,35 @@ def test_the_banner_includes_it(monkeypatch):
     facts = startup.banner("worker", log=lines.append)
     assert facts["git_sha"] == "abc123"
     assert any("git_sha" in line and "abc123" in line for line in lines)
+
+
+class _RecordingConn:
+    def __init__(self, fail: bool = False) -> None:
+        self.calls: list[tuple] = []
+        self.fail = fail
+
+    def execute(self, sql, params=None):
+        if self.fail:
+            raise OSError("database unreachable")
+        self.calls.append((sql, params))
+
+
+def test_each_start_is_recorded_with_its_commit(monkeypatch):
+    """The worker has no HTTP endpoint, so its commit is checkable only if
+    it writes it somewhere: one pipeline_runs row per start, which
+    scripts/check_deployed.py reads."""
+    import json
+
+    monkeypatch.setenv("RAILWAY_GIT_COMMIT_SHA", "9ce5722abc")
+    conn = _RecordingConn()
+    startup.record_start(conn, "worker", {"git_sha": "9ce5722abc", "model_version": "winprob2-20260910"})
+    (sql, params), = conn.calls
+    assert "INSERT INTO pipeline_runs" in sql
+    assert params[0] == "worker_start"
+    assert json.loads(params[1]) == {"git_sha": "9ce5722abc", "model_version": "winprob2-20260910"}
+
+
+def test_a_failed_record_never_stops_a_start():
+    lines: list[str] = []
+    startup.record_start(_RecordingConn(fail=True), "api", {"git_sha": "x", "model_version": "y"}, log=lines.append)
+    assert any("could not record" in line for line in lines)

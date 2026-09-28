@@ -143,6 +143,7 @@ def run_checks(role: str, *, log=print) -> dict:
     if resolved["notes"]:
         log(f"  model_notes          {resolved['notes'][:120]}")
 
+    record_start(conn, role, {"git_sha": facts["git_sha"], "model_version": resolved["model_version"]}, log=log)
     log(f"sightscreen {role} ready")
     return {
         "conn": conn,
@@ -154,6 +155,25 @@ def run_checks(role: str, *, log=print) -> dict:
         # on /health is not sufficient.
         "version_guard": ActiveVersionGuard(resolved["model_version"]),
     }
+
+
+def record_start(conn, role: str, facts: dict, *, log=print) -> None:
+    """One pipeline_runs row per process start: `<role>_start`, carrying the
+    commit and the model. The worker has no HTTP endpoint, so this is how
+    scripts/check_deployed.py learns what it runs. Best effort, like the
+    daily job's record_run: failing to record must never stop a start.
+    /accuracy reads only pipeline = 'cricsheet_daily', so these rows are
+    invisible there."""
+    import json
+
+    try:
+        conn.execute(
+            "INSERT INTO pipeline_runs (pipeline, started_at, finished_at, status, counts) "
+            "VALUES (%s, now(), now(), 'success', %s)",
+            (f"{role}_start", json.dumps(facts)),
+        )
+    except Exception as exc:  # noqa: BLE001 - see docstring
+        log(f"  could not record the start in pipeline_runs: {type(exc).__name__}")
 
 
 def uptime_seconds() -> float:
