@@ -68,3 +68,12 @@ def test_a_long_or_garbled_health_reply_is_read_not_crashed_on(monkeypatch):
     now = check.reported()
     assert now["api"] == "c" * 40
     assert now["web"] == "unreadable reply"
+
+
+def test_main_is_fetched_before_ancestry_is_judged(monkeypatch):
+    """A service on a commit newer than this checkout must not read as behind."""
+    calls = []
+    monkeypatch.setattr(check.subprocess, "run", lambda args, **kw: calls.append(args) or type("R", (), {"returncode": 0})())
+    monkeypatch.setattr(check, "reported", lambda: {"web": "b" * 40, "api": "b" * 40, "worker": "b" * 40})
+    assert check.check_sha("a" * 40, wait_minutes=0) == 0
+    assert calls[0][:3] == ["git", "fetch", "--quiet"]

@@ -103,6 +103,11 @@ def _at_or_after(expected: str, sha: str) -> bool:
 def check_sha(expected: str, wait_minutes: float) -> int:
     deadline = time.monotonic() + wait_minutes * 60
     while True:
+        # A service may already run a commit pushed after this job checked out;
+        # the ancestry test can only see it once it is fetched. Found by the
+        # first false alarm: every service on 50c2b9f, a descendant of the
+        # 69d8bf8 being checked, reported as behind.
+        subprocess.run(["git", "fetch", "--quiet", "origin", "main"], capture_output=True)
         now = reported()
         behind = {name: sha for name, sha in now.items() if not _at_or_after(expected, sha)}
         if not behind:
