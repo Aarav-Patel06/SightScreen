@@ -11,9 +11,15 @@ dependencies = [
     "psycopg[binary]>=3.1",
     "python-dotenv>=1.0",
     "rapidfuzz>=3.9",
-    "numpy>=1.26",
-    "scikit-learn>=1.4",
-    "lightgbm>=4.3",
+    # Pinned exactly (2026-09-28): these three decide a probability's last
+    # bits. Golden parity (ingest/golden_parity.py) compares production with
+    # api/data/golden/match_8429.json bit for bit, and that reference was
+    # written with these versions; the daily Action and Railway both install
+    # from here. An upgrade is a deliberate change: bump them together,
+    # regenerate the reference, and say why.
+    "numpy==2.4.6",
+    "scikit-learn==1.9.1",
+    "lightgbm==4.7.0",
     "joblib>=1.4",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
