@@ -396,8 +396,13 @@ class IncrementalMatchStateBuilder:
         required_run_rate = None
         if d.innings == 2 and balls_remaining > 0 and self.target_runs is not None:
             required_run_rate = (self.target_runs - self._score) / (balls_remaining / 6.0)
+        # REBUILD_SQL subtracts the two columns AFTER each is cast ::real -
+        # float4 minus float4 - so the difference is taken between the
+        # float32 values, not the unrounded ones. Subtracting first and
+        # rounding after gives a different float32 about a third of the time
+        # (tests/models/test_train_serve_identity.py, live path).
         rrr_minus_crr = (
-            required_run_rate - current_run_rate
+            float(np.float32(required_run_rate) - np.float32(current_run_rate))
             if (required_run_rate is not None and current_run_rate is not None)
             else None
         )

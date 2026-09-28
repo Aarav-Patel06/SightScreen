@@ -232,6 +232,18 @@ def predict_win_prob(artifact: dict, row: MatchStateRow, as_of_features: dict) -
     """
     if row.innings != 2:
         return None
+    X = serving_features(artifact, row, as_of_features)
+    raw = artifact["booster"].predict(X, num_iteration=artifact["booster"].best_iteration)
+    return float(artifact["calibrator"].predict(raw, phase=np.array([row.phase]))[0])
+
+
+def serving_features(artifact: dict, row: MatchStateRow, as_of_features: dict) -> np.ndarray:
+    """The 1 x n model input for one ball, in the artifact's feature order.
+
+    Every serving path builds its input here - the live worker, the daily
+    job, the backfill logger and /predict - so tests/models/
+    test_train_serve_identity.py can compare it with training's
+    `build_feature_bundle` for every feature of a model, bit for bit."""
     phase_code = {"powerplay": 0, "middle": 1, "death": 2}[row.phase]
     values = {
         "balls_remaining": row.balls_remaining,
@@ -247,9 +259,34 @@ def predict_win_prob(artifact: dict, row: MatchStateRow, as_of_features: dict) -
         "phase_code": phase_code,
         **as_of_features,
     }
-    X = np.array([[values[name] if values[name] is not None else np.nan for name in artifact["feature_names"]]])
-    raw = artifact["booster"].predict(X, num_iteration=artifact["booster"].best_iteration)
-    return float(artifact["calibrator"].predict(raw, phase=np.array([row.phase]))[0])
+    for name, as_trained in _AS_TRAINED.items():
+        if values[name] is not None:
+            values[name] = as_trained(values[name])
+    return np.array([[values[name] if values[name] is not None else np.nan for name in artifact["feature_names"]]])
+
+
+# The float64 each match_states REAL (float32) column had in TRAINING, which
+# the model was fit on and is therefore the reference. Training reads
+# required_run_rate into a float32 array (eval/splits.py), and the other two as
+# psycopg's parse of Postgres's shortest float32 text (models/win_prob_2nd.py
+# _fetch_enrichment). Serving arrives with either form - the backfill path reads
+# the text, the live builder rounds through float32 - and both conversions are
+# idempotent, so each lands on training's value exactly.
+# tests/models/test_train_serve_identity.py found the two paths differing from
+# training in the 8th significant digit, for the served model as much as any.
+def _via_float32(x: float) -> float:
+    return float(np.float32(x))
+
+
+def _via_float32_text(x: float) -> float:
+    return float(str(np.float32(x)))
+
+
+_AS_TRAINED = {
+    "required_run_rate": _via_float32,
+    "current_run_rate": _via_float32_text,
+    "rrr_minus_crr": _via_float32_text,
+}
 
 
 def run_cli(match_id: int, speed: Speed, start_ball: int, with_predictions: bool, poll_interval: float) -> None:
