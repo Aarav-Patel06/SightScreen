@@ -141,6 +141,12 @@ try {
        * first panel's top edge meeting its bottom edge exactly, because
        * `main` had no top padding and those pages do not open with a heading
        * that brings its own margin.
+       *
+       * Footer on the bottom edge: the footer followed the content in normal
+       * flow, so /ask signed out ended at 666px of a 900px viewport with bare
+       * wash beneath it (2026-09-28). Its bottom must be the document's, and
+       * the document at least the viewport - on a short page as well as a
+       * long one.
        */
       const structure = await page.evaluate(() => {
         const SEL = ".band, .panel, .level-1, .level-2, .page-links, .ask-intro";
@@ -158,7 +164,14 @@ try {
           header && first
             ? Math.round(first.getBoundingClientRect().top - header.getBoundingClientRect().bottom)
             : null;
-        return { nested, clearance };
+        const footer = document.querySelector(".site-footer");
+        const footerGap = footer
+          ? Math.round(
+              Math.max(document.documentElement.scrollHeight, window.innerHeight) -
+                (footer.getBoundingClientRect().bottom + window.scrollY)
+            )
+          : null;
+        return { nested, clearance, footerGap };
       });
 
       if (structure.nested.length > 0) {
@@ -166,6 +179,10 @@ try {
       }
       if (structure.clearance !== null && structure.clearance < 8) {
         fail(`${route} at ${width}px: only ${structure.clearance}px between the sticky header and the first panel`);
+      }
+
+      if (structure.footerGap !== null && Math.abs(structure.footerGap) > 1) {
+        fail(`${route} at ${width}px: the footer stops ${structure.footerGap}px above the bottom edge`);
       }
 
       if (result.scrollWidth > result.clientWidth + 1) {

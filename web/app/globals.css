@@ -247,11 +247,22 @@ body { margin: 0; }
   background: linear-gradient(180deg, var(--paper) 0%, var(--paper-deep) 100%);
   background-repeat: no-repeat;
   min-height: 100vh;
+  /* THE FOOTER SITS ON THE BOTTOM EDGE. In normal flow it followed the
+     content, so a short page - /ask signed out, an unknown match - ended
+     with the footer a third of the way up the screen and bare wash below
+     it. A column with #main taking the slack puts it at the foot of the
+     viewport on a short page and changes nothing on a long one. Safe
+     because main spaces itself with padding, not vertical margins, so no
+     margin that used to collapse now adds; the skip link is absolute, the
+     corner graphics fixed, and the sticky header sticks as a flex item. */
+  display: flex;
+  flex-direction: column;
   color: var(--ink);
   font-family: var(--font-plex), ui-sans-serif, system-ui, sans-serif;
   font-size: var(--t-s);
   line-height: 1.6;
 }
+.theme-paper #main { flex: 1 0 auto; }
 
 /* §1.5: every number that can change while you watch it. A win probability
    that jitters horizontally as digits change width reads as broken. */
