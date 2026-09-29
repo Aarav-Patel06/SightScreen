@@ -368,7 +368,7 @@ export function LiveMatch({
             )}
             {previousOver !== null && (
               <div className="tiny muted">
-                {`${previousOver >= 0 ? "+" : ""}${Math.round(previousOver * 100)} percentage points last over`}
+                {`${previousOver >= 0 ? "+" : ""}${Math.round(previousOver * 100)}% points last over`}
               </div>
             )}
           </div>

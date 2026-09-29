@@ -498,7 +498,7 @@ function Readout({
     >
       {mark === null ? (
         <>
-          <span>Biggest swing: {Math.round(peak * 100)} percentage points</span>
+          <span>Biggest swing: {Math.round(peak * 100)}% points</span>
           <span>Hover to see ball-by-ball</span>
         </>
       ) : mark.event === "unknown" ? (

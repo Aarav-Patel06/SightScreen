@@ -219,7 +219,7 @@ describe("describeStrip", () => {
     expect(text).toContain("50%");
     expect(text).toContain("42%");
     expect(text).toContain("1 wicket,");
-    expect(text).toContain("20 percentage points");
+    expect(text).toContain("20% points");
     expect(text).toContain("not recorded");
   });
 

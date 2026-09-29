@@ -98,5 +98,5 @@ export function swingSentence(biggest: NonNullable<ChaseSummary["biggest"]>, sub
       : biggest.event === "dot"
         ? "a dot ball"
         : describeEvent({ event: biggest.event, runs: biggest.runs, legal: biggest.legal } as Mark);
-  return `Biggest swing: ${biggest.pp} percentage points, ${biggest.direction} for ${subject} on ${onWhat} at ${biggest.at}`;
+  return `Biggest swing: ${biggest.pp}% points, ${biggest.direction} for ${subject} on ${onWhat} at ${biggest.at}`;
 }

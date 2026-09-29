@@ -42,7 +42,7 @@ describe("the strip on 8429", () => {
   it("captions the biggest swing in percentage points, without the start-of-chase drop", () => {
     render(<BallStrip marks={marks} defaultWidth={1108} battingTeam="India" />);
     const rest = Math.round(Math.max(...marks.slice(1).map((m) => Math.abs(m.swing))) * 100);
-    expect(readoutLines()[0]).toBe(`Biggest swing: ${rest} percentage points`);
+    expect(readoutLines()[0]).toBe(`Biggest swing: ${rest}% points`);
   });
 
   it("reads every ball in words and percentage points", () => {

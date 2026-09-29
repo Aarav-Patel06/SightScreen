@@ -433,7 +433,7 @@ describe("the last-over change on a live page", () => {
     ];
     render(<LiveMatch matchId={9339} header={header} initialPredictions={rows} />);
     // 0.45 now against 0.41 after ball 1: +4, not 0.45 - 0.60 = -15.
-    expect(screen.getByText("+4 percentage points last over")).toBeTruthy();
+    expect(screen.getByText("+4% points last over")).toBeTruthy();
     expect(screen.queryByText(/pts last over/)).toBeNull();
   });
 });
@@ -485,7 +485,7 @@ describe("a completed match page", () => {
     expect(screen.getByText(new RegExp(String.raw`^India's chance peaked at ${peak}% after \d+\.\d overs$`))).toBeTruthy();
     // The summary's sentence (the strip's caption says "Biggest swing" too).
     expect(
-      screen.getByText(/^Biggest swing: \d+ percentage points, (up|down) for India on .+ at \d+\.\d$/)
+      screen.getByText(/^Biggest swing: \d+% points, (up|down) for India on .+ at \d+\.\d$/)
     ).toBeTruthy();
   });
 

@@ -307,7 +307,7 @@ export function describeStrip(marks: readonly Mark[], subject?: string): string 
     `${subject ? `${subject} win probability` : "Win probability"} across ${marks.length} deliveries, ` +
     `starting at ${asPercent(first.p)} and ending at ${asPercent(last.p)}. ` +
     `${wickets} wicket${wickets === 1 ? "" : "s"}, ${dots} dot balls. ` +
-    `Biggest swing: ${peak} percentage points. ` +
+    `Biggest swing: ${peak}% points. ` +
     `The final delivery's outcome is not recorded, because no prediction ` +
     `follows it.`
   );

@@ -43,7 +43,7 @@ describe("the start-of-chase transition on 8429", () => {
 
   it("is not what the screen-reader description calls the biggest swing", () => {
     const rest = Math.round(Math.max(...marks.slice(1).map((m) => Math.abs(m.swing))) * 100);
-    expect(describeStrip(marks, "India")).toContain(`Biggest swing: ${rest} percentage points`);
+    expect(describeStrip(marks, "India")).toContain(`Biggest swing: ${rest}% points`);
   });
 });
 
