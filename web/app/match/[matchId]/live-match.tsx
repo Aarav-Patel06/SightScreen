@@ -24,7 +24,7 @@ import { isShownVersion, oneSource } from "@/lib/model-version";
 import { parsePrediction, type Phase, type WinProbPrediction } from "@/lib/prediction";
 import { HATCH_PITCH_PX, toMarks } from "@/lib/ball-strip";
 import { BallStrip } from "@/components/ball-strip";
-import { WinProbChart } from "@/components/win-prob-chart";
+import { MarkerGlyph, WinProbChart, type ChartMarker } from "@/components/win-prob-chart";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
 interface Header {
@@ -275,6 +275,7 @@ export function LiveMatch({
 
   const marks = useMemo(() => toMarks(predictions), [predictions]);
   const summary = useMemo(() => chaseSummary(predictions), [predictions]);
+  const complete = header.status === "complete";
 
   // Whose probability p is: the batting side recorded on the row, never
   // team_a (the side that batted first) and never any other guess.
@@ -287,6 +288,15 @@ export function LiveMatch({
   // known and agree - a tie, a no-result or an unknown batting side is not a
   // won chase.
   const chaseWon = battingName !== null && header.winner === battingName;
+  // The facts ChaseFacts states, where they happened. SPEC §12.1 item 6 asks
+  // for the curve "with markers on the highest-|WPA| balls".
+  const turn = chaseWon ? summary.low : summary.peak;
+  const markers: ChartMarker[] = complete
+    ? [
+        ...(turn ? [{ index: turn.index, kind: "turn" as const }] : []),
+        ...(summary.biggest ? [{ index: summary.biggest.index, kind: "swing" as const }] : []),
+      ]
+    : [];
   const live = isLiveMatch(header.status, current?.created_at ?? null, now);
   const percent = current ? formatProbability(current.p) : "--";
   const confidence = current ? CONFIDENCE[current.phase] : null;
@@ -345,13 +355,13 @@ export function LiveMatch({
           hierarchy rather than applied uniformly. The heading above stays
           level 0 - a page title is not an object. */}
       {header.status === "complete" ? (
-        // A finished match gets the chase in two facts rather than the live
-        // furniture: a big number for the last ball, a bar, a confidence line
-        // and three "not produced" phase boxes all describe a match in
-        // progress. The curve and the strip below stay.
-        <div className="level-2 match-hero">
-          <CompletedSummary summary={summary} subject={subject} chaseWon={chaseWon} />
-        </div>
+        // A finished match gets none of the live furniture: a big number for
+        // the last ball, a bar, a confidence line and three "not produced"
+        // phase boxes all describe a match in progress. Nor a box of its own
+        // for the summary facts - they are about moments on the curve, so
+        // they are marked there and captioned under it, and the curve comes
+        // straight after the title.
+        null
       ) : (
       <div className="level-2 match-hero">
         <div className="row">
@@ -426,7 +436,10 @@ export function LiveMatch({
             <code>python -m ingest.drive_replay --match-id {matchId}</code>.
           </p>
         ) : (
-          <WinProbChart points={chartPoints} subject={subject} />
+          <>
+            <WinProbChart points={chartPoints} subject={subject} markers={markers} />
+            {complete ? <ChaseFacts summary={summary} subject={subject} chaseWon={chaseWon} /> : null}
+          </>
         )}
         <div className="tiny muted">
           {predictions.length} predictions · x axis is one mark per delivery;
@@ -494,9 +507,10 @@ export function LiveMatch({
 
 /**
  * The completed chase in two facts (lib/chase-summary.ts), neither of which
- * is taken from the chase's first over.
+ * is taken from the chase's first over, each beside the shape that marks it
+ * on the curve above.
  */
-function CompletedSummary({
+function ChaseFacts({
   summary,
   subject,
   chaseWon,
@@ -510,9 +524,17 @@ function CompletedSummary({
     return <p className="small muted">Too few predictions to summarise this chase.</p>;
   }
   return (
-    <>
-      <p className="small">{turn}</p>
-      {summary.biggest ? <p className="small">{swingSentence(summary.biggest, subject)}</p> : null}
-    </>
+    <div className="chase-facts">
+      <p className="small">
+        <MarkerGlyph kind="turn" />
+        {turn}
+      </p>
+      {summary.biggest ? (
+        <p className="small">
+          <MarkerGlyph kind="swing" />
+          {swingSentence(summary.biggest, subject)}
+        </p>
+      ) : null}
+    </div>
   );
 }

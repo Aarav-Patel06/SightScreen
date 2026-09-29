@@ -1015,6 +1015,10 @@ body { margin: 0; }
    middle of one figure. */
 .theme-paper .match-figure > div + div { margin-top: var(--space-5); }
 .theme-paper .match-figure h2 { margin-top: 0; }
+/* The completed chase's two facts, under the curve that marks them: a pair,
+   so set closer to each other than to the footnote below. */
+.theme-paper .chase-facts { margin: var(--space-3) 0; }
+.theme-paper .chase-facts p { margin: 0 0 var(--space-1); }
 
 /* /ask. The exchanges keep their own hairline separators inside the panel;
    the first one does not need a rule above it now that the panel edge is

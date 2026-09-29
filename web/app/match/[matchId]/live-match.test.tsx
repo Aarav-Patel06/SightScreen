@@ -10,6 +10,7 @@
  */
 
 import { act, cleanup, render, screen } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import FIXTURE_8429 from "@/lib/fixtures/match-8429-predictions.json";
@@ -487,6 +488,23 @@ describe("a completed match page", () => {
     expect(
       screen.getByText(/^Biggest swing: \d+% points, (up|down) for India on .+ at \d+\.\d$/)
     ).toBeTruthy();
+  });
+
+  it("has no summary box before the curve: the facts are captioned under it and marked on it", () => {
+    const { container } = render(<LiveMatch matchId={8429} header={completed} initialPredictions={real} />);
+    expect(container.querySelector(".match-hero")).toBeNull();
+    const figure = container.querySelector(".match-figure")!;
+    const facts = [...figure.querySelectorAll(".chase-facts p")].map((p) => p.textContent);
+    expect(facts).toHaveLength(2);
+    expect(facts[0]).toMatch(/^India's chance peaked at/);
+    expect(facts[1]).toMatch(/^Biggest swing: \d+% points/);
+  });
+
+  it("marks each fact on the curve", () => {
+    // In the server render: jsdom measures the chart's container as 0px wide
+    // once mounted, and Recharts then draws nothing at all.
+    const html = renderToString(<LiveMatch matchId={8429} header={completed} initialPredictions={real} />);
+    expect(html.match(/recharts-reference-dot-dot/g)?.length).toBe(2);
   });
 
   it("keeps the curve and the strip", () => {
