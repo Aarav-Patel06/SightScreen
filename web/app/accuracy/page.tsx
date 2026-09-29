@@ -393,6 +393,23 @@ export default async function AccuracyPage() {
         <IngestStatus lastSucceededAt={ingest.at} rejected={ingest.rejected} now={Date.now()} />
       </div>
 
+      {/* What is being measured, before the measurements. Moved here from the
+          landing page, where it pointed at this page as the track record. */}
+      <section className="panel">
+        <p className="small">
+          SightScreen predicts who wins a Twenty20 or one-day chase, updated
+          after every ball, from the match situation and nothing else. It
+          covers the second innings only — the last section says why.
+        </p>
+        <p className="small">
+          What makes it different is that it publishes its own track record,
+          which is this page: including the probability bands where it is
+          miscalibrated and the matches it got most wrong. The{" "}
+          <Link href="/model-card">model card</Link> says what it was trained on
+          and where it should not be trusted.
+        </p>
+      </section>
+
       {/* LIVE FIRST, deliberately. It is the smaller number and the honest
           one, and putting the flattering sample at the top would be the whole
           problem this page exists to avoid. */}
@@ -459,6 +476,11 @@ export default async function AccuracyPage() {
       <section className="panel not-attempted">
         <p className="section-kicker">Not measured, because not attempted</p>
         <h2>What it doesn&rsquo;t do</h2>
+        <p className="small">
+          There is a good deal this does not do — no first-innings predictions,
+          no estimate of a player&rsquo;s current form, nothing about matches
+          that have not started. Each is below, with why.
+        </p>
         <p className="small muted">
           The sections above are where the model is measurably wrong. This is
           what it does not try to do at all — the same refusal to let silence
