@@ -14,27 +14,17 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-
 import { battingTeamName, winSubject } from "@/lib/batting-team";
 import { isLiveMatch } from "@/lib/live-match";
-import { chaseSummary, type ChaseSummary } from "@/lib/chase-summary";
+import { chaseSummary, swingSentence, turnSentence, type ChaseSummary } from "@/lib/chase-summary";
 import { resultText } from "@/lib/match-result";
 import { formatProbability } from "@/lib/probability";
 import { highWaterMark, mergePredictions } from "@/lib/merge-predictions";
 import { isShownVersion, oneSource } from "@/lib/model-version";
 import { parsePrediction, type Phase, type WinProbPrediction } from "@/lib/prediction";
-import { HATCH_PITCH_PX, describeEvent, toMarks } from "@/lib/ball-strip";
+import { HATCH_PITCH_PX, toMarks } from "@/lib/ball-strip";
 import { BallStrip } from "@/components/ball-strip";
+import { WinProbChart } from "@/components/win-prob-chart";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
 interface Header {
@@ -70,32 +60,6 @@ const CONFIDENCE: Record<Phase, { label: string; low: boolean }> = {
   middle: { label: "middle overs · medium confidence", low: false },
   death: { label: "death overs · higher confidence", low: false },
 };
-
-/**
- * The light palette's values, duplicated as literals.
- *
- * Recharts takes colours as JS props and renders them into inline SVG
- * attributes, so `var(--rule)` reaches the DOM uninterpreted and resolves to
- * nothing. accuracy/charts.tsx makes the same compromise for the same reason
- * and says so. The hand-rolled ball strip below does NOT need this - it uses
- * CSS custom properties directly, which is one of the reasons it is
- * hand-rolled.
- *
- * Keep in step with .theme-paper in globals.css; lib/tokens.test.ts holds
- * that block to its contrast floors but cannot see these copies.
- *
- * Two have no light counterpart. The old tooltip background was --panel and
- * the old 50% line was a one-off #3a4148; neither exists in a palette with no
- * raised surfaces, so the tooltip sits on --paper inside a --rule border and
- * the reference line is --rule.
- */
-const CHART = {
-  paper: "#F7F6E9",
-  ink: "#2A2419",
-  soft: "#6B6152",
-  rule: "#DFD6BD",
-  bat: "#366C73",
-} as const;
 
 /**
  * The phase-confidence mark (§1.3).
@@ -302,19 +266,10 @@ export function LiveMatch({
     return sixAgo && sixAgo !== current ? current.p - sixAgo.p : null;
   }, [predictions, current]);
 
-  // x IS THE POSITIONAL INDEX, NOT balls_bowled, so this curve and the ball
-  // strip below it share one domain. balls_bowled repeats on an extra - the
-  // footnote under the chart has always said so - which means two deliveries
-  // land on the same x, and the strip, which is indexed by position, could
-  // never line up with it. The tick formatter still prints balls_bowled, so
-  // the axis reads as it did before.
-  const chartData = useMemo(
-    () =>
-      predictions.map((p, index) => ({
-        index,
-        ball: p.balls_bowled,
-        wp: Math.round(p.p * 1000) / 10,
-      })),
+  // Positional, like the strip below it: components/win-prob-chart.tsx says
+  // why the curve and the strip share one index rather than balls_bowled.
+  const chartPoints = useMemo(
+    () => predictions.map((p) => ({ ball: p.balls_bowled, p: p.p })),
     [predictions]
   );
 
@@ -465,50 +420,13 @@ export function LiveMatch({
       {/* 12.1 item 6 - the curve */}
       <div>
         <h2>Win probability, {subject}</h2>
-        {chartData.length === 0 ? (
+        {chartPoints.length === 0 ? (
           <p className="small muted">
             Nothing to plot yet. Drive a replay with{" "}
             <code>python -m ingest.drive_replay --match-id {matchId}</code>.
           </p>
         ) : (
-          <div style={{ height: 240 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 4, left: -18 }}>
-                <CartesianGrid stroke={CHART.rule} vertical={false} />
-                <XAxis
-                  dataKey="index"
-                  tick={{ fill: CHART.soft, fontSize: 11 }}
-                  stroke={CHART.rule}
-                  tickFormatter={(i: number) => String(chartData[i]?.ball ?? "")}
-                />
-                <YAxis
-                  domain={[0, 100]}
-                  ticks={[0, 25, 50, 75, 100]}
-                  tick={{ fill: CHART.soft, fontSize: 11 }}
-                  stroke={CHART.rule}
-                />
-                <ReferenceLine y={50} stroke={CHART.rule} strokeDasharray="3 3" />
-                <Tooltip
-                  contentStyle={{
-                    background: "#171a1d",
-                    border: "1px solid #262b30",
-                    borderRadius: 8,
-                    fontSize: 12,
-                  }}
-                  labelFormatter={(i: number) => `after ${chartData[i]?.ball ?? 0} balls`}
-                  formatter={(value: number) => [formatProbability(value / 100), `${subject} win probability`]}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="wp"
-                  stroke={CHART.bat}
-                  strokeWidth={2}
-                  dot={false}
-                  isAnimationActive={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+          <WinProbChart points={chartPoints} subject={subject} />
         )}
         <div className="tiny muted">
           {predictions.length} predictions · x axis is one mark per delivery;
@@ -587,32 +505,14 @@ function CompletedSummary({
   subject: string;
   chaseWon: boolean;
 }) {
-  if (summary.peak === null || summary.low === null) {
+  const turn = turnSentence(summary, subject, chaseWon);
+  if (turn === null) {
     return <p className="small muted">Too few predictions to summarise this chase.</p>;
   }
-  const whose = subject === "batting side" ? "The batting side's" : `${subject}'s`;
-  const biggest = summary.biggest;
-  const onWhat = biggest
-    ? biggest.event === "wicket"
-      ? "a wicket"
-      : biggest.event === "dot"
-        ? "a dot ball"
-        : describeEvent({ event: biggest.event, runs: biggest.runs, legal: biggest.legal } as never)
-    : null;
   return (
     <>
-      <p className="small">
-        {/* A lost chase is told by its peak - how close it came. A won one
-            by its low point: its peak is the end, which says nothing. */}
-        {chaseWon
-          ? `${whose} chance fell to ${formatProbability(summary.low.p)} after ${summary.low.afterOvers} overs`
-          : `${whose} chance peaked at ${formatProbability(summary.peak.p)} after ${summary.peak.afterOvers} overs`}
-      </p>
-      {biggest ? (
-        <p className="small">
-          {`Biggest swing: ${biggest.pp} percentage points, ${biggest.direction} for ${subject} on ${onWhat} at ${biggest.at}`}
-        </p>
-      ) : null}
+      <p className="small">{turn}</p>
+      {summary.biggest ? <p className="small">{swingSentence(summary.biggest, subject)}</p> : null}
     </>
   );
 }

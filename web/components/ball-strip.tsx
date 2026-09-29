@@ -31,7 +31,7 @@
 
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   describeStrip,
@@ -102,12 +102,6 @@ export interface BallStripProps {
    * than an abbreviation.
    */
   battingTeam?: string;
-  /**
-   * Draw the strip left to right once on load (§1.7). The landing hero only -
-   * it is the page's single piece of non-user-triggered motion, and a second
-   * one anywhere would make it ordinary.
-   */
-  draw?: boolean;
   className?: string;
 }
 
@@ -116,7 +110,6 @@ export function BallStrip({
   height = 64,
   defaultWidth = 640,
   interactive = true,
-  draw = false,
   decorative = false,
   battingTeam,
   className,
@@ -124,10 +117,6 @@ export function BallStrip({
   const hostRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(defaultWidth);
   const [active, setActive] = useState<number | null>(null);
-
-  // Scoped per instance: clipPath ids share one document-wide namespace, and
-  // the landing page renders the hero alongside the header's slot.
-  const clipId = `strip-clip-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -220,11 +209,7 @@ export function BallStrip({
           style={{ display: "block", overflow: "visible" }}
         >
           {/* The axis. Marks sit above it if the ball helped the batting side,
-              below if it helped the bowling side.
-
-              Outside the clip deliberately: the baseline is the page's
-              promise that a strip is coming, so it is drawn in full while the
-              marks sweep across it. */}
+              below if it helped the bowling side. */}
           <line
             x1={0}
             y1={axis}
@@ -235,34 +220,7 @@ export function BallStrip({
             vectorEffect="non-scaling-stroke"
           />
 
-          {/* A clip that sweeps across, rather than 125 individually delayed
-              marks. One animation, no library, and the mark geometry is
-              untouched - so every tier draws the same way and nothing can
-              animate into a different layout.
-
-              DRIVEN BY CSS, NOT STATE, AND THAT IS THE WHOLE POINT. The
-              obvious version starts the clip at width 0 and opens it on
-              mount, which puts `width="0"` in the server-rendered HTML - so
-              the hero is invisible until hydration, and permanently invisible
-              without JavaScript. For the one element on the site that must
-              always render, that is the wrong failure. Here the rect is
-              always full width and CSS scales it from zero, so the finished
-              strip is what the HTML says, the animation is decoration on top,
-              and `prefers-reduced-motion` is a media query rather than a
-              branch nobody runs. */}
-          <defs>
-            <clipPath id={clipId}>
-              <rect
-                x={0}
-                y={-4}
-                height={height + 14}
-                width={width}
-                className={draw ? "strip-draw" : undefined}
-              />
-            </clipPath>
-          </defs>
-
-          <g clipPath={`url(#${clipId})`}>
+          <g>
             {tier === "area" ? (
               <AreaTier marks={marks} width={width} axis={axis} half={half} peak={peak} />
             ) : (

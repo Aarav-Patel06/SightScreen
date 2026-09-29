@@ -34,6 +34,7 @@
 import HERO_FIXTURE from "./fixtures/hero-match.json";
 import { toMarks, type Mark } from "./ball-strip";
 import { battingTeamName } from "./batting-team";
+import { chaseSummary, type ChaseSummary } from "./chase-summary";
 import { isLiveMatch } from "./live-match";
 import { resultText } from "./match-result";
 import { loadModelVersions } from "./load-model-versions";
@@ -95,6 +96,11 @@ export interface HeroResult {
    * and a hero with real teams and no chart is better than a fixture.
    */
   marks: Mark[] | null;
+  /**
+   * The chase's summary facts (lib/chase-summary.ts), for the caption under
+   * the curve. Null exactly when `marks` is.
+   */
+  summary: ChaseSummary | null;
   /** True when the query failed or found nothing and the fixture was used. */
   stale: boolean;
   /** Set only when stale: when the fixture was taken. */
@@ -131,6 +137,7 @@ function fallback(reason: string): HeroResult {
       chase: null,
     },
     marks: null,
+    summary: null,
     stale: true,
     capturedAt: HERO_FIXTURE.capturedAt,
   };
@@ -248,6 +255,7 @@ export async function loadHeroMatch(): Promise<HeroResult> {
 
   return {
     marks: predictions.length > 1 ? toMarks(predictions) : null,
+    summary: predictions.length > 1 ? chaseSummary(predictions) : null,
     match: {
       matchId: hit.match_id,
       competition: hit.competition,

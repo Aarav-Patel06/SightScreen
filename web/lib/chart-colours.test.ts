@@ -28,7 +28,7 @@ const MAPPING: Record<string, string> = {
   bat: "--bat",
 };
 
-const FILES = ["app/accuracy/charts.tsx", "app/match/[matchId]/live-match.tsx"];
+const FILES = ["app/accuracy/charts.tsx", "components/win-prob-chart.tsx"];
 
 function chartColours(file: string): Record<string, string> {
   const source = read(file);

@@ -24,6 +24,7 @@
 import Link from "next/link";
 
 import { BallStrip } from "@/components/ball-strip";
+import { MarkerGlyph, WinProbChart } from "@/components/win-prob-chart";
 import {
   parseReport,
   score,
@@ -32,6 +33,7 @@ import {
   type PopulationReport,
 } from "@/lib/accuracy";
 import { winSubject } from "@/lib/batting-team";
+import { swingSentence } from "@/lib/chase-summary";
 import { CORPUS_FACTS } from "@/lib/corpus-facts";
 import { loadHeroMatch } from "@/lib/hero-match";
 import { loadLandingFigures } from "@/lib/landing-figures";
@@ -116,9 +118,9 @@ export default async function Home() {
           ) : null}
         </p>
 
-        {/* THE TITLE IS THE LINK, not the whole card: an <a> around the strip
-            would be invalid (the strip is itself interactive - it takes
-            focus and arrow keys) and would swallow its hover. */}
+        {/* THE TITLE IS THE LINK, not the whole card: an <a> around the
+            chart would swallow its hover, and the tooltip is how a reader
+            finds the number at any ball. */}
         <p className="hero-teams" id="hero-teams">
           <Link className="hero-link" href={`/match/${hero.match.matchId}`}>
             {hero.match.teamA} <span className="soft">v</span> {hero.match.teamB}
@@ -130,35 +132,39 @@ export default async function Home() {
         {hero.marks ? (
           <>
             {hero.match.chase ? (
-              // The strip is the second innings only - the model scores
+              // The curve is the second innings only - the model scores
               // nothing before the chase starts - so it says whose chase.
               <p className="hero-chase soft">{hero.match.chase}</p>
             ) : null}
-            <BallStrip
-              marks={hero.marks}
-              height={96}
-              defaultWidth={1108}
-              draw
-              className="hero-strip"
-              battingTeam={winSubject(hero.match.battingTeam)}
-            />
-            <p className="hero-legend soft">
-              <span className="hero-legend-wicket" aria-hidden="true" /> wicket
-              <span aria-hidden="true"> · </span>
-              baseline dotted to solid: the model&apos;s confidence, lowest to highest
-            </p>
+            {/* The same curve as the match page, and the one swing it names
+                is marked on it, so the caption points at something. */}
+            <div className="hero-chart">
+              <WinProbChart
+                points={hero.marks.map((mark) => ({ ball: mark.ballsBowled, p: mark.p }))}
+                subject={winSubject(hero.match.battingTeam)}
+                defaultWidth={1108}
+                markers={
+                  hero.summary?.biggest ? [{ index: hero.summary.biggest.index, kind: "swing" }] : []
+                }
+              />
+            </div>
+            {hero.summary?.biggest ? (
+              <p className="hero-legend soft">
+                <MarkerGlyph kind="swing" />
+                {swingSentence(hero.summary.biggest, winSubject(hero.match.battingTeam))}
+              </p>
+            ) : null}
             <p className="prose hero-note">
-              Every mark is one delivery. Its height is how much that ball
-              changed who was going to win, above the line for{" "}
+              The line is{" "}
               {hero.match.battingTeam
-                ? `${hero.match.battingTeam}, batting,`
-                : "the batting side"}{" "}
-              and below it for the bowling side.
+                ? `${hero.match.battingTeam}’s`
+                : "the batting side’s"}{" "}
+              chance of winning, as the model saw it after every ball of the chase.
             </p>
           </>
         ) : (
           <p className="prose hero-note soft">
-            The ball-by-ball strip for this match is not available right now.
+            The win probability curve for this match is not available right now.
           </p>
         )}
       </section>

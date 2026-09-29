@@ -454,7 +454,7 @@ body { margin: 0; }
    came later in the file won - the same source-order accident as the hero's
    radius. */
 .theme-paper .hero-state { font-size: var(--t-m); margin: 0 0 20px; }
-.theme-paper .hero-strip { margin-bottom: var(--space-4); }
+.theme-paper .hero-chart { margin-bottom: var(--space-2); }
 
 /* The ball readout is two lines - match state, then what the model thought.
    Stacked rather than wrapped, so the split is the same on every width. */
@@ -539,28 +539,6 @@ body { margin: 0; }
 @media (max-width: 640px) {
   .theme-paper .hero-teams { font-size: var(--t-xl); }
   .theme-paper .entry-figure { font-size: var(--t-xl); }
-}
-
-/* §1.7: the page's single piece of non-user-triggered motion. The hero strip
-   draws itself left to right once on load, then stops.
-
-   Scoped to the clip rect, not the marks, so the geometry is identical
-   whether or not it animates - and declared here rather than in JS so the
-   server-rendered HTML already contains the finished strip. A visitor with
-   JavaScript off, or one who arrives before hydration, sees the complete
-   hero rather than an empty box. */
-@keyframes strip-draw {
-  from { transform: scaleX(0); }
-  to   { transform: scaleX(1); }
-}
-
-.strip-draw {
-  transform-origin: left center;
-  animation: strip-draw 1.2s cubic-bezier(0.2, 0.6, 0.2, 1) both;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .strip-draw { animation: none; }
 }
 
 /* ------------------------------------------------------------------------
@@ -861,22 +839,16 @@ body { margin: 0; }
 .theme-paper .hero-label { color: var(--ink); font-weight: 600; }
 .theme-paper .hero-chase { margin: 0 0 var(--space-1); font-size: var(--t-xs); }
 
-/* The legend: quiet on purpose - one line, the kicker's size, soft ink. The
-   wicket swatch is the strip's own hairline, not a new symbol. */
+/* The caption under the hero curve: quiet on purpose - one line, the
+   kicker's size, soft ink. The glyph is the chart's own marker, not a new
+   symbol. */
 .theme-paper .hero-legend {
   margin: var(--space-1) 0 0;
   font-size: var(--t-xs);
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  flex-wrap: wrap;
 }
-.theme-paper .hero-legend-wicket {
-  display: inline-block;
-  width: 1px;
-  height: 0.9em;
-  background: var(--flag);
-}
+/* Inline, not a flex item, so on a phone the glyph stays with the first word
+   of its caption instead of wrapping onto a line of its own. */
+.theme-paper .marker-glyph { display: inline-block; vertical-align: -1px; margin-right: var(--space-1); }
 
 /* BETA on /ask: the same register as LIVE NOW - a fact, not a badge. No pill,
    no background, no border: small letter-spaced soft ink beside the title,

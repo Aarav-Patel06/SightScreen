@@ -55,6 +55,17 @@ describe("chaseSummary on 8429", () => {
     expect(summary.biggest?.pp).not.toBe(20); // the start-of-chase 45% -> 26%
     expect(["up", "down"]).toContain(summary.biggest?.direction);
   });
+
+  it("says where on the curve each fact is, so the page can mark it", () => {
+    expect(predictions[summary.peak!.index].p).toBe(summary.peak!.p);
+    expect(predictions[summary.low!.index].p).toBe(summary.low!.p);
+    // The swing is marked at the state AFTER the ball, which is where its
+    // over is read from and where the curve shows the move.
+    const after = predictions[summary.biggest!.index];
+    const before = predictions[summary.biggest!.index - 1];
+    expect(Math.round(Math.abs(after.p - before.p) * 100)).toBe(summary.biggest!.pp);
+    expect(formatOvers(after.balls_bowled)).toBe(summary.biggest!.at);
+  });
 });
 
 describe("chaseSummary on a chase whose extremes fall in the first over", () => {
